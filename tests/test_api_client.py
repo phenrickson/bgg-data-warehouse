@@ -10,19 +10,11 @@ from google.cloud import bigquery
 from src.api_client.client import BGGAPIClient
 
 @pytest.fixture
-def mock_config():
-    """Create mock configuration."""
-    return {
-        "project": {"id": "test-project"},
-        "datasets": {"raw": "test_raw"},
-        "tables": {"raw": {"request_log": "request_log"}},
-    }
-
-@pytest.fixture
-def api_client(mock_config):
-    """Create API client with mocked configuration."""
-    with mock.patch("src.api_client.client.get_bigquery_config", return_value=mock_config):
+def api_client(sample_config, mock_bigquery_client, mock_env):
+    """Create API client with mocked configuration and clients."""
+    with mock.patch("src.api_client.client.get_bigquery_config", return_value=sample_config):
         client = BGGAPIClient()
+        client.client = mock_bigquery_client
         yield client
 
 @pytest.fixture

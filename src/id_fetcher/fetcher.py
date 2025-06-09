@@ -63,8 +63,10 @@ class BGGIDFetcher:
         """
         logger.info("Parsing game IDs from %s", file_path)
         with open(file_path, "r") as f:
+            content = f.read()
+            logger.info("File content: %s", content[:1000])  # Print first 1000 chars
             # File contains one ID per line
-            ids = {int(line.strip()) for line in f if line.strip().isdigit()}
+            ids = {int(line.strip()) for line in content.splitlines() if line.strip().isdigit()}
         logger.info("Found %d game IDs", len(ids))
         return ids
 

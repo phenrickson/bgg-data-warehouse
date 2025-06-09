@@ -1,10 +1,10 @@
 .PHONY: install test lint clean fetch load update quality create-datasets
 
 install:
-	uv pip install -e ".[dev]"
+	uv pip install -e .
 
 test:
-	pytest
+	uv run -m pytest
 
 lint:
 	black .
@@ -21,21 +21,24 @@ clean:
 	rm -rf *.egg-info
 
 # Data pipeline tasks
-fetch:
-	python -m src.pipeline.fetch_data
+fetch-ids:
+	uv run -m src.id_fetcher.fetcher
+
+fetch-games:
+	uv run -m src.pipeline.fetch_data
 
 load:
-	python -m src.pipeline.load_data
+	uv run -m src.pipeline.load_data
 
 update:
-	python -m src.pipeline.update_data
+	uv run -m src.pipeline.update_data
 
 quality:
-	python -m src.pipeline.quality_checks
+	uv run -m src.pipeline.quality_checks
 
 # BigQuery setup tasks
 create-datasets:
-	python -m src.warehouse.setup_bigquery
+	uv run -m src.warehouse.setup_bigquery
 
 # Development tasks
 dev-setup: install create-datasets
@@ -43,7 +46,7 @@ dev-setup: install create-datasets
 
 # Visualization
 dashboard:
-	streamlit run src/visualization/dashboard.py
+	uv streamlit run src/visualization/dashboard.py
 
 .DEFAULT_GOAL := help
 help:
@@ -52,7 +55,8 @@ help:
 	@echo "  test           Run tests"
 	@echo "  lint           Run code quality checks"
 	@echo "  clean          Clean temporary files"
-	@echo "  fetch          Fetch data from BGG API"
+	@echo "  fetch-ids      Fetch game IDs from BGG"
+	@echo "  fetch-games    Fetch game data from BGG API"
 	@echo "  load           Load data to BigQuery"
 	@echo "  update         Update data in BigQuery"
 	@echo "  quality        Run data quality checks"

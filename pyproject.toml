@@ -17,6 +17,7 @@ dependencies = [
     "streamlit>=1.29.0",
     "plotly>=5.18.0",
     "pandas>=2.1.0",
+    "db-dtypes>=1.2.0",
 ]
 
 [project.optional-dependencies]

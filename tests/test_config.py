@@ -17,8 +17,26 @@ def mock_config_file(tmp_path):
             "id": "test-project",
             "location": "US"
         },
+        "datasets": {
+            "raw": "test_raw",
+            "transformed": "test_transformed",
+            "reporting": "test_reporting",
+            "monitoring": "test_monitoring"
+        },
         "storage": {
-            "bucket": "test-bucket"
+            "bucket": "test-bucket",
+            "temp_prefix": "tmp/",
+            "archive_prefix": "archive/"
+        },
+        "loading": {
+            "batch_size": 1000,
+            "max_bad_records": 0,
+            "write_disposition": "WRITE_APPEND"
+        },
+        "monitoring": {
+            "freshness_threshold_hours": 24,
+            "quality_check_schedule": "0 */4 * * *",
+            "alert_on_failures": True
         }
     }
     
@@ -43,7 +61,7 @@ def test_load_config_invalid_yaml(tmp_path):
     config_file = config_dir / "invalid.yaml"
     
     with open(config_file, "w") as f:
-        f.write("invalid: yaml: content")
+        f.write("invalid: :")  # This is invalid YAML syntax
     
     with mock.patch("src.config.Path.parent", return_value=tmp_path):
         with pytest.raises(yaml.YAMLError):

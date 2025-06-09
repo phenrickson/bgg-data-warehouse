@@ -1,39 +1,29 @@
-"""Shared test configuration and fixtures."""
+"""Common test fixtures."""
 
 import os
 from pathlib import Path
 from unittest import mock
 
 import pytest
+from google.auth import credentials
 from google.cloud import bigquery
 
-@pytest.fixture(autouse=True)
-def mock_env():
-    """Mock environment variables."""
-    with mock.patch.dict(os.environ, {
-        "GCP_PROJECT_ID": "test-project",
-        "GCS_BUCKET": "test-bucket",
-        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/credentials.json"
-    }):
-        yield
+@pytest.fixture
+def mock_credentials():
+    """Mock GCP credentials."""
+    return mock.create_autospec(credentials.Credentials)
 
 @pytest.fixture
-def mock_bigquery_client():
-    """Create a mock BigQuery client."""
-    client = mock.Mock(spec=bigquery.Client)
-    client.project = "test-project"
-    return client
-
-@pytest.fixture
-def test_data_dir(tmp_path):
-    """Create a temporary directory for test data."""
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    return data_dir
+def mock_bigquery_client(mock_credentials):
+    """Mock BigQuery client."""
+    with mock.patch("google.cloud.bigquery.Client", autospec=True) as mock_client:
+        client = mock_client.return_value
+        client._credentials = mock_credentials
+        yield client
 
 @pytest.fixture
 def sample_config():
-    """Create a sample configuration dictionary."""
+    """Sample configuration for testing."""
     return {
         "project": {
             "id": "test-project",
@@ -45,32 +35,13 @@ def sample_config():
             "reporting": "test_reporting",
             "monitoring": "test_monitoring"
         },
-        "tables": {
-            "raw": {
-                "games": "games",
-                "request_log": "request_log",
-                "thing_ids": "thing_ids"
-            },
-            "transformed": {
-                "dim_games": "dim_games",
-                "dim_categories": "dim_categories",
-                "dim_mechanics": "dim_mechanics",
-                "fact_ratings": "fact_ratings",
-                "fact_weights": "fact_weights"
-            },
-            "reporting": {
-                "game_metrics": "game_metrics",
-                "trending": "trending",
-                "rankings": "rankings"
-            }
-        },
         "storage": {
             "bucket": "test-bucket",
             "temp_prefix": "tmp/",
             "archive_prefix": "archive/"
         },
         "loading": {
-            "batch_size": 100,
+            "batch_size": 1000,
             "max_bad_records": 0,
             "write_disposition": "WRITE_APPEND"
         },
@@ -82,85 +53,41 @@ def sample_config():
     }
 
 @pytest.fixture
-def sample_game_data():
-    """Create sample game data for testing."""
-    return {
-        "game_id": 13,
-        "name": "Catan",
-        "year_published": 1995,
-        "min_players": 3,
-        "max_players": 4,
-        "playing_time": 120,
-        "min_age": 10,
-        "description": "Build, trade, settle!",
-        "thumbnail": "thumbnail.jpg",
-        "image": "image.jpg",
-        "categories": ["Strategy", "Negotiation"],
-        "mechanics": ["Dice Rolling", "Trading"],
-        "families": ["Base Game"],
-        "average": 7.5,
-        "num_ratings": 1000,
-        "owned": 500,
-        "weight": 2.5,
-        "load_timestamp": "2025-06-09T00:00:00Z"
-    }
+def mock_env():
+    """Mock environment variables."""
+    with mock.patch.dict(os.environ, {
+        "GCP_PROJECT_ID": "test-project",
+        "GCS_BUCKET": "test-bucket",
+        "GOOGLE_APPLICATION_CREDENTIALS": str(Path.cwd() / "credentials" / "service-account-key.json")
+    }):
+        yield
 
 @pytest.fixture
-def sample_api_response():
-    """Create a sample BGG API response."""
-    return {
-        "items": {
-            "item": {
-                "@id": "13",
-                "@type": "boardgame",
-                "name": [
-                    {
-                        "@type": "primary",
-                        "@value": "Catan"
-                    },
-                    {
-                        "@type": "alternate",
-                        "@value": "Settlers of Catan"
-                    }
-                ],
-                "yearpublished": {"@value": "1995"},
-                "minplayers": {"@value": "3"},
-                "maxplayers": {"@value": "4"},
-                "playingtime": {"@value": "120"},
-                "minage": {"@value": "10"},
-                "description": "Build, trade, settle!",
-                "thumbnail": "thumbnail.jpg",
-                "image": "image.jpg",
-                "link": [
-                    {"@type": "boardgamecategory", "@value": "Strategy"},
-                    {"@type": "boardgamecategory", "@value": "Negotiation"},
-                    {"@type": "boardgamemechanic", "@value": "Dice Rolling"},
-                    {"@type": "boardgamemechanic", "@value": "Trading"},
-                    {"@type": "boardgamefamily", "@value": "Base Game"}
-                ],
-                "statistics": {
-                    "ratings": {
-                        "average": {"@value": "7.5"},
-                        "usersrated": {"@value": "1000"},
-                        "owned": {"@value": "500"},
-                        "averageweight": {"@value": "2.5"}
-                    }
-                }
-            }
-        }
-    }
+def mock_storage_client(mock_credentials):
+    """Mock GCS client."""
+    with mock.patch("google.cloud.storage.Client", autospec=True) as mock_client:
+        client = mock_client.return_value
+        client._credentials = mock_credentials
+        yield client
 
 @pytest.fixture
-def mock_responses():
-    """Create mock HTTP responses."""
-    class MockResponse:
-        def __init__(self, status_code, text):
-            self.status_code = status_code
-            self.text = text
-    
-    return {
-        "success": MockResponse(200, "<items><item id='13'></item></items>"),
-        "rate_limit": MockResponse(429, "Too Many Requests"),
-        "error": MockResponse(500, "Internal Server Error"),
-        "not_found": MockResponse(404, "Not Found")
-    }
+def mock_blob():
+    """Mock GCS blob."""
+    mock_blob = mock.MagicMock()
+    mock_blob.exists.return_value = True
+    mock_blob.download_as_string.return_value = b"test data"
+    return mock_blob
+
+@pytest.fixture
+def mock_bucket(mock_blob):
+    """Mock GCS bucket."""
+    mock_bucket = mock.MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    return mock_bucket
+
+@pytest.fixture
+def temp_data_dir(tmp_path):
+    """Create temporary data directory."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    return data_dir
