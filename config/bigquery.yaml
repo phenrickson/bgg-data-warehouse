@@ -1,0 +1,42 @@
+project:
+  id: "bgg-data-warehouse"  # Update this with your actual GCP project ID
+  location: "US"
+
+datasets:
+  raw: "bgg_raw"
+  transformed: "bgg_transformed"
+  reporting: "bgg_reporting"
+  monitoring: "bgg_monitoring"
+
+tables:
+  raw:
+    games: "games"
+    request_log: "request_log"
+    thing_ids: "thing_ids"
+  
+  transformed:
+    dim_games: "dim_games"
+    dim_categories: "dim_categories"
+    dim_mechanics: "dim_mechanics"
+    fact_ratings: "fact_ratings"
+    fact_weights: "fact_weights"
+  
+  reporting:
+    game_metrics: "game_metrics"
+    trending: "trending"
+    rankings: "rankings"
+
+storage:
+  bucket: "bgg-data-staging"  # Update this with your actual GCS bucket name
+  temp_prefix: "tmp/"
+  archive_prefix: "archive/"
+
+loading:
+  batch_size: 1000
+  max_bad_records: 0
+  write_disposition: "WRITE_APPEND"
+
+monitoring:
+  freshness_threshold_hours: 24
+  quality_check_schedule: "0 */4 * * *"  # Every 4 hours
+  alert_on_failures: true

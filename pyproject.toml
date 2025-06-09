@@ -1,9 +1,41 @@
 [project]
 name = "bgg-data-warehouse"
 version = "0.1.0"
-description = "Add your description here"
+description = "BoardGameGeek Data Warehouse using BigQuery"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "polars>=1.30.0",
+    "requests>=2.31.0",
+    "pytest>=8.0.0",
+    "google-cloud-bigquery>=3.14.0",
+    "google-cloud-storage>=2.14.0",
+    "pyarrow>=15.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.1",
+    "xmltodict>=0.13.0",
+    "streamlit>=1.29.0",
+    "plotly>=5.18.0",
+    "pandas>=2.1.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.1.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
