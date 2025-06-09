@@ -65,8 +65,8 @@ class BGGIDFetcher:
         with open(file_path, "r") as f:
             content = f.read()
             logger.info("File content: %s", content[:1000])  # Print first 1000 chars
-            # File contains one ID per line
-            ids = {int(line.strip()) for line in content.splitlines() if line.strip().isdigit()}
+            # File contains "ID boardgame" per line
+            ids = {int(line.split()[0]) for line in content.splitlines() if line.strip() and line.split()[0].isdigit()}
         logger.info("Found %d game IDs", len(ids))
         return ids
 

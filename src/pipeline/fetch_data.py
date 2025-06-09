@@ -7,6 +7,7 @@ from typing import List, Optional, Set
 from ..api_client.client import BGGAPIClient
 from ..data_processor.processor import BGGDataProcessor
 from ..id_fetcher.fetcher import BGGIDFetcher
+from ..pipeline.load_data import BigQueryLoader
 from ..config import get_bigquery_config
 
 # Configure logging
@@ -30,6 +31,7 @@ class BGGPipeline:
         self.id_fetcher = BGGIDFetcher()
         self.api_client = BGGAPIClient()
         self.processor = BGGDataProcessor()
+        self.loader = BigQueryLoader()
 
     def get_unprocessed_ids(self) -> Set[int]:
         """Get IDs that haven't been processed yet.
@@ -115,11 +117,9 @@ class BGGPipeline:
             temp_dir = Path("temp")
             self.id_fetcher.update_ids(temp_dir)
 
-            # Get unprocessed IDs
-            game_ids = self.get_unprocessed_ids()
-            if not game_ids:
-                logger.info("No unprocessed games found")
-                return
+            # For testing, just process a few specific IDs
+            game_ids = {110, 111, 112}  # These IDs worked in previous run
+            logger.info("Using test IDs: %s", game_ids)
 
             logger.info("Processing %d games", len(game_ids))
 
@@ -143,12 +143,34 @@ class BGGPipeline:
                 logger.error("Data validation failed")
                 return
 
-            # Mark games as processed
-            processed_ids = {game["game_id"] for game in processed_games}
-            self.mark_ids_as_processed(processed_ids)
+            # Load data to BigQuery
+            success = all([
+                self.loader.load_table(
+                    games_df,
+                    self.config["datasets"]["raw"],
+                    self.config["tables"]["raw"]["games"]
+                ),
+                self.loader.load_table(
+                    categories_df,
+                    self.config["datasets"]["raw"],
+                    self.config["tables"]["raw"]["categories"]
+                ),
+                self.loader.load_table(
+                    mechanics_df,
+                    self.config["datasets"]["raw"],
+                    self.config["tables"]["raw"]["mechanics"]
+                )
+            ])
 
-            logger.info("Pipeline completed successfully")
-            logger.info("Processed %d games", len(processed_games))
+            if success:
+                # Mark games as processed
+                processed_ids = {game["game_id"] for game in processed_games}
+                self.mark_ids_as_processed(processed_ids)
+                logger.info("Pipeline completed successfully")
+                logger.info("Processed %d games", len(processed_games))
+            else:
+                logger.error("Failed to load data to BigQuery")
+                return
             
             # Log API request statistics
             stats = self.api_client.get_request_stats(minutes=60)
@@ -167,7 +189,8 @@ class BGGPipeline:
 
 def main() -> None:
     """Main entry point for the pipeline."""
-    pipeline = BGGPipeline()
+    # Use smaller batch size for testing
+    pipeline = BGGPipeline(batch_size=5)
     pipeline.run()
 
 if __name__ == "__main__":

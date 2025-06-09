@@ -25,6 +25,12 @@ class BigQueryLoader:
         self.client = bigquery.Client(project=self.config["project"]["id"])
         self.storage_client = storage.Client(project=self.config["project"]["id"])
         self.bucket = self.storage_client.bucket(self.config["storage"]["bucket"])
+        
+        # Create temp and archive folders if they don't exist
+        for prefix in [self.config["storage"]["temp_prefix"], self.config["storage"]["archive_prefix"]]:
+            blob = self.bucket.blob(prefix.rstrip("/") + "/.keep")
+            if not blob.exists():
+                blob.upload_from_string("")
 
     def _upload_to_gcs(
         self, 
@@ -77,9 +83,13 @@ class BigQueryLoader:
             True if load succeeds, False otherwise
         """
         try:
+            # Get table schema
+            table = self.client.get_table(table_ref)
+            
             job_config = bigquery.LoadJobConfig(
                 write_disposition=write_disposition,
                 source_format=bigquery.SourceFormat.PARQUET,
+                schema=table.schema
             )
 
             load_job = self.client.load_table_from_uri(
@@ -129,6 +139,19 @@ class BigQueryLoader:
             True if load succeeds, False otherwise
         """
         try:
+            # Ensure REQUIRED fields are not null
+            required_fields = {
+                "games": ["game_id", "name"],
+                "categories": ["category_name"],
+                "mechanics": ["mechanic_name"],
+                "request_log": ["request_id"],
+                "thing_ids": ["game_id"]
+            }
+
+            if table_id in required_fields:
+                for field in required_fields[table_id]:
+                    df = df.filter(~pl.col(field).is_null())
+
             # Upload to GCS first
             gcs_uri = self._upload_to_gcs(df, table_id)
             if not gcs_uri:

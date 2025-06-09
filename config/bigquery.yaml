@@ -1,5 +1,5 @@
 project:
-  id: "bgg-data-warehouse"  # Update this with your actual GCP project ID
+  id: "gcp-demos-411520"  # GCP project ID
   location: "US"
 
 datasets:
@@ -13,6 +13,8 @@ tables:
     games: "games"
     request_log: "request_log"
     thing_ids: "thing_ids"
+    categories: "categories"
+    mechanics: "mechanics"
   
   transformed:
     dim_games: "dim_games"
@@ -27,7 +29,7 @@ tables:
     rankings: "rankings"
 
 storage:
-  bucket: "bgg-data-staging"  # Update this with your actual GCS bucket name
+  bucket: "bgg-data-warehouse"  # GCS bucket name from .env
   temp_prefix: "tmp/"
   archive_prefix: "archive/"
 

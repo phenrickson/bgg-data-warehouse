@@ -44,7 +44,7 @@ class BGGDataProcessor:
         year = item.get("yearpublished", {}).get("@value")
         return int(year) if year and year.isdigit() else None
 
-    def _extract_list_field(self, item: Dict[str, Any], field: str) -> List[str]:
+    def _extract_list_field(self, item: Dict[str, Any], field: str) -> List[Dict[str, Any]]:
         """Extract a list field (categories, mechanics, etc.).
         
         Args:
@@ -52,7 +52,7 @@ class BGGDataProcessor:
             field: Field name to extract
             
         Returns:
-            List of values
+            List of dictionaries with id and name
         """
         values = item.get(field, [])
         if not values:
@@ -61,7 +61,11 @@ class BGGDataProcessor:
         if isinstance(values, dict):
             values = [values]
             
-        return [v.get("@value", "") for v in values if v.get("@value")]
+        return [
+            {"id": int(v.get("@id", 0)), "name": v.get("@value", "Unknown")}
+            for v in values 
+            if v.get("@value") and v.get("@id", "").isdigit()
+        ]
 
     def _extract_stats(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Extract statistics from the game data.
@@ -155,26 +159,40 @@ class BGGDataProcessor:
         games_df = pl.DataFrame(processed_games)
 
         # Extract unique categories and mechanics
-        categories = set()
-        mechanics = set()
+        categories_dict = {}
+        mechanics_dict = {}
         
         for game in processed_games:
-            categories.update(game.get("categories", []))
-            mechanics.update(game.get("mechanics", []))
+            for cat in game.get("categories", []):
+                if cat["name"] != "Unknown":
+                    categories_dict[cat["id"]] = cat["name"]
+            for mech in game.get("mechanics", []):
+                if mech["name"] != "Unknown":
+                    mechanics_dict[mech["id"]] = mech["name"]
 
         # Create category mappings
-        categories_data = [
-            {"category_id": i, "category_name": cat}
-            for i, cat in enumerate(sorted(categories), 1)
-        ]
-        categories_df = pl.DataFrame(categories_data)
+        categories_data = []
+        for cat_id, name in sorted(categories_dict.items()):
+            if name and name != "Unknown":  # Ensure name is valid
+                categories_data.append({
+                    "category_id": cat_id,
+                    "category_name": name
+                })
+        categories_df = pl.DataFrame(categories_data).with_columns([
+            pl.col("category_name").cast(pl.String).fill_null("Unknown")
+        ])
 
         # Create mechanics mappings
-        mechanics_data = [
-            {"mechanic_id": i, "mechanic_name": mech}
-            for i, mech in enumerate(sorted(mechanics), 1)
-        ]
-        mechanics_df = pl.DataFrame(mechanics_data)
+        mechanics_data = []
+        for mech_id, name in sorted(mechanics_dict.items()):
+            if name and name != "Unknown":  # Ensure name is valid
+                mechanics_data.append({
+                    "mechanic_id": mech_id,
+                    "mechanic_name": name
+                })
+        mechanics_df = pl.DataFrame(mechanics_data).with_columns([
+            pl.col("mechanic_name").cast(pl.String).fill_null("Unknown")
+        ])
 
         return games_df, categories_df, mechanics_df
 

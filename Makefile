@@ -34,7 +34,7 @@ update:
 	uv run -m src.pipeline.update_data
 
 quality:
-	uv run -m src.pipeline.quality_checks
+	uv run -m src.quality_monitor.monitor
 
 # BigQuery setup tasks
 create-datasets:

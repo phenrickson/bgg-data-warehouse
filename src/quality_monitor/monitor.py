@@ -46,7 +46,7 @@ class DataQualityMonitor:
             details: Additional details about the check
         """
         row = {
-            "check_timestamp": datetime.utcnow(),
+            "check_timestamp": datetime.utcnow().isoformat(),
             "check_name": check_name,
             "table_name": table_name,
             "check_status": "PASSED" if passed else "FAILED",
@@ -74,12 +74,19 @@ class DataQualityMonitor:
         columns_str = ", ".join(required_columns)
         nulls_str = " OR ".join(f"{col} IS NULL" for col in required_columns)
         
+        # Get timestamp column based on table
+        timestamp_col = {
+            'games': 'load_timestamp',
+            'request_log': 'request_timestamp',
+            'thing_ids': 'process_timestamp'
+        }[table_name]
+
         query = f"""
         WITH null_checks AS (
             SELECT COUNT(*) as total_records,
                    COUNTIF({nulls_str}) as null_records
             FROM `{self.config['project']['id']}.{self.raw_dataset}.{table_name}`
-            WHERE DATE(load_timestamp) = CURRENT_DATE()
+            WHERE DATE({timestamp_col}) = CURRENT_DATE()
         )
         SELECT *
         FROM null_checks
@@ -121,11 +128,18 @@ class DataQualityMonitor:
         Returns:
             True if check passes, False otherwise
         """
+        # Get timestamp column based on table
+        timestamp_col = {
+            'games': 'load_timestamp',
+            'request_log': 'request_timestamp',
+            'thing_ids': 'process_timestamp'
+        }[table_name]
+
         query = f"""
         SELECT
             TIMESTAMP_DIFF(
                 CURRENT_TIMESTAMP(),
-                MAX(load_timestamp),
+                MAX({timestamp_col}),
                 HOUR
             ) as hours_since_update,
             COUNT(*) as total_records
@@ -134,11 +148,14 @@ class DataQualityMonitor:
         
         try:
             df = self.client.query(query).to_dataframe()
-            hours_since_update = int(df["hours_since_update"].iloc[0])
             total_records = int(df["total_records"].iloc[0])
-            
-            passed = hours_since_update <= hours
-            details = f"Last update was {hours_since_update} hours ago"
+            if total_records == 0:
+                passed = True  # Empty tables are considered fresh
+                details = "Table is empty"
+            else:
+                hours_since_update = int(df["hours_since_update"].iloc[0])
+                passed = hours_since_update <= hours
+                details = f"Last update was {hours_since_update} hours ago"
             
             self._log_check_result(
                 check_name="freshness",
@@ -185,12 +202,19 @@ class DataQualityMonitor:
             logger.warning("No validity checks defined for table %s", table_name)
             return True
         
+        # Get timestamp column based on table
+        timestamp_col = {
+            'games': 'load_timestamp',
+            'request_log': 'request_timestamp',
+            'thing_ids': 'process_timestamp'
+        }[table_name]
+
         query = f"""
         WITH validity_check AS (
             SELECT COUNT(*) as total_records,
                    COUNTIF({validity_checks[table_name]}) as invalid_records
             FROM `{self.config['project']['id']}.{self.raw_dataset}.{table_name}`
-            WHERE DATE(load_timestamp) = CURRENT_DATE()
+            WHERE DATE({timestamp_col}) = CURRENT_DATE()
         )
         SELECT *
         FROM validity_check

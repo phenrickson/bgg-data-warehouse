@@ -69,8 +69,8 @@ class BGGAPIClient:
         row = {
             "request_id": request_id,
             "game_id": game_id,
-            "request_timestamp": start_time,
-            "response_timestamp": end_time,
+            "request_timestamp": start_time.isoformat(),
+            "response_timestamp": end_time.isoformat(),
             "status_code": status_code,
             "success": success,
             "error_message": error_message,
