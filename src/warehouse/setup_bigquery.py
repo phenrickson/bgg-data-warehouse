@@ -15,9 +15,13 @@ logger = logging.getLogger(__name__)
 class BigQuerySetup:
     """Sets up BigQuery tables for the BGG data warehouse."""
     
-    def __init__(self):
-        """Initialize BigQuery client and configuration."""
-        self.config = get_bigquery_config()
+    def __init__(self, environment: str = None):
+        """Initialize BigQuery client and configuration.
+        
+        Args:
+            environment: Optional environment name (dev/prod)
+        """
+        self.config = get_bigquery_config(environment)
         self.client = bigquery.Client()
         
         # Get dataset reference

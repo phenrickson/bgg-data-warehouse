@@ -1,50 +1,37 @@
-"""Configuration management for the BGG data warehouse."""
+"""Configuration module for the BGG data warehouse."""
 
 import os
-from pathlib import Path
-from typing import Any, Dict
+from typing import Dict, Optional
 
 import yaml
-from dotenv import load_dotenv
 
-# Load environment variables from .env file if it exists
-load_dotenv()
-
-def load_config(config_name: str) -> Dict[str, Any]:
-    """Load configuration from a YAML file.
+def get_bigquery_config(environment: Optional[str] = None) -> Dict:
+    """Get BigQuery configuration.
     
     Args:
-        config_name: Name of the configuration file (without .yaml extension)
-        
-    Returns:
-        Dictionary containing the configuration
-        
-    Raises:
-        FileNotFoundError: If the configuration file doesn't exist
-        yaml.YAMLError: If the configuration file is invalid
-    """
-    config_path = Path(__file__).parent.parent / "config" / f"{config_name}.yaml"
-    
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
-    with open(config_path, "r") as f:
-        try:
-            config = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            raise yaml.YAMLError(f"Error parsing configuration file: {e}")
-    
-    # Override with environment variables if they exist
-    if config_name == "bigquery":
-        config["project"]["id"] = os.getenv("GCP_PROJECT_ID", config["project"]["id"])
-        config["storage"]["bucket"] = os.getenv("GCS_BUCKET", config["storage"]["bucket"])
-    
-    return config
-
-def get_bigquery_config() -> Dict[str, Any]:
-    """Load BigQuery-specific configuration.
+        environment: Optional environment name (dev/prod). If not provided,
+                    uses default_environment from config.
     
     Returns:
         Dictionary containing BigQuery configuration
     """
-    return load_config("bigquery")
+    config_path = os.path.join("config", "bigquery.yaml")
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+    
+    # Get environment
+    env = environment or config.get("default_environment", "dev")
+    if env not in config["environments"]:
+        raise ValueError(f"Invalid environment: {env}")
+        
+    # Build config with environment-specific values
+    env_config = config["environments"][env]
+    return {
+        "project": {
+            "id": env_config["project_id"],
+            "dataset": env_config["dataset"],
+            "location": env_config["location"]
+        },
+        "storage": config["storage"],
+        "tables": config["tables"]
+    }

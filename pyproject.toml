@@ -20,6 +20,7 @@ dependencies = [
     "db-dtypes>=1.2.0",
     "ipykernel>=6.29.5",
     "pip>=25.1.1",
+    "pandas-gbq>=0.29.1",
 ]
 
 [project.optional-dependencies]

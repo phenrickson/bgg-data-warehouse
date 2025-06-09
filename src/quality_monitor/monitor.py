@@ -264,25 +264,28 @@ class DataQualityMonitor:
         Returns:
             Dictionary containing summary statistics
         """
-        query = """
+        project = self.config['project']['id']
+        dataset = self.dataset_id
+        query = f"""
         SELECT
             -- Basic counts
-            (SELECT COUNT(*) FROM `{}.{}.games`) as total_games,
-            (SELECT COUNT(*) FROM `{}.{}.categories`) as total_categories,
-            (SELECT COUNT(*) FROM `{}.{}.mechanics`) as total_mechanics,
-            (SELECT COUNT(*) FROM `{}.{}.families`) as total_families,
-            (SELECT COUNT(*) FROM `{}.{}.designers`) as total_designers,
-            (SELECT COUNT(*) FROM `{}.{}.artists`) as total_artists,
-            (SELECT COUNT(*) FROM `{}.{}.publishers`) as total_publishers,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.games`) as total_games,
+            (SELECT COUNT(DISTINCT game_id) FROM `{project}.{dataset}.games`) as unique_games,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.categories`) as total_categories,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.mechanics`) as total_mechanics,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.families`) as total_families,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.designers`) as total_designers,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.artists`) as total_artists,
+            (SELECT COUNT(*) FROM `{project}.{dataset}.publishers`) as total_publishers,
             
             -- Game statistics
-            (SELECT AVG(average_rating) FROM `{}.{}.games`) as avg_rating,
-            (SELECT AVG(owned_count) FROM `{}.{}.games`) as avg_owned,
-            (SELECT AVG(year_published) FROM `{}.{}.games` WHERE year_published IS NOT NULL) as avg_year,
+            (SELECT AVG(average_rating) FROM `{project}.{dataset}.games`) as avg_rating,
+            (SELECT AVG(owned_count) FROM `{project}.{dataset}.games`) as avg_owned,
+            (SELECT AVG(year_published) FROM `{project}.{dataset}.games` WHERE year_published IS NOT NULL) as avg_year,
             
             -- Latest update
-            (SELECT MAX(load_timestamp) FROM `{}.{}.games`) as last_update
-        """.format(*(self.config['project']['id'], self.dataset_id) * 11)
+            (SELECT MAX(load_timestamp) FROM `{project}.{dataset}.games`) as last_update
+        """
         
         try:
             df = self.client.query(query).to_dataframe()
@@ -319,7 +322,9 @@ class DataQualityMonitor:
         if summary:
             logger.info("\nData Warehouse Summary:")
             logger.info("=====================")
-            logger.info(f"Total Games: {summary['total_games']}")
+            logger.info(f"Total Game Records: {summary['total_games']}")
+            logger.info(f"Unique Games: {summary['unique_games']}")
+            logger.info(f"Duplicate Records: {summary['total_games'] - summary['unique_games']}")
             logger.info(f"Categories: {summary['total_categories']}")
             logger.info(f"Mechanics: {summary['total_mechanics']}")
             logger.info(f"Families: {summary['total_families']}")
