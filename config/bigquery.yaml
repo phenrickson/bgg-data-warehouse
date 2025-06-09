@@ -1,0 +1,107 @@
+environments:
+  dev:
+    project_id: gcp-demos-411520
+    dataset: bgg_data_dev
+    location: US
+  prod:
+    project_id: gcp-demos-411520
+    dataset: bgg_data
+    location: US
+
+# Default to dev environment unless specified
+default_environment: dev
+
+storage:
+  bucket: bgg-data-warehouse
+
+tables:
+  # Core game data
+  games:
+    name: games
+    description: "Core game information and statistics"
+    time_partitioning: load_timestamp
+    clustering_fields: [game_id]
+
+  # Dimension tables
+  alternate_names:
+    name: alternate_names
+    description: "Alternative names and translations for games"
+    clustering_fields: [game_id]
+
+  categories:
+    name: categories
+    description: "Game categories"
+    
+  mechanics:
+    name: mechanics
+    description: "Game mechanics"
+    
+  families:
+    name: families
+    description: "Game families/series"
+    
+  designers:
+    name: designers
+    description: "Game designers"
+    
+  artists:
+    name: artists
+    description: "Game artists"
+    
+  publishers:
+    name: publishers
+    description: "Game publishers"
+
+  # Bridge tables
+  game_categories:
+    name: game_categories
+    description: "Game to category relationships"
+    clustering_fields: [game_id]
+
+  game_mechanics:
+    name: game_mechanics
+    description: "Game to mechanic relationships"
+    clustering_fields: [game_id]
+
+  game_families:
+    name: game_families
+    description: "Game to family relationships"
+    clustering_fields: [game_id]
+
+  game_designers:
+    name: game_designers
+    description: "Game to designer relationships"
+    clustering_fields: [game_id]
+
+  game_artists:
+    name: game_artists
+    description: "Game to artist relationships"
+    clustering_fields: [game_id]
+
+  game_publishers:
+    name: game_publishers
+    description: "Game to publisher relationships"
+    clustering_fields: [game_id]
+
+  # Poll results
+  player_counts:
+    name: player_counts
+    description: "Player count voting results"
+    clustering_fields: [game_id]
+
+  language_dependence:
+    name: language_dependence
+    description: "Language dependence ratings"
+    clustering_fields: [game_id]
+
+  suggested_ages:
+    name: suggested_ages
+    description: "Age suggestion voting results"
+    clustering_fields: [game_id]
+
+  # Rankings
+  rankings:
+    name: rankings
+    description: "Game rankings by category"
+    time_partitioning: load_timestamp
+    clustering_fields: [game_id]

@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bgg-data-warehouse:latest
+    container_name: bgg-pipeline
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCS_BUCKET=${GCS_BUCKET}
+      # Health check endpoint port
+      - PORT=8080
+    volumes:
+      - ./data:/app/data
+      - ./credentials:/app/credentials
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5m
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    command: src.pipeline.fetch_data
+
+  quality-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bgg-data-warehouse:latest
+    container_name: bgg-quality-monitor
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCS_BUCKET=${GCS_BUCKET}
+    volumes:
+      - ./credentials:/app/credentials
+    restart: unless-stopped
+    command: src.quality_monitor.monitor
+
+  # Scheduled data updates
+  updater:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bgg-data-warehouse:latest
+    container_name: bgg-updater
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCS_BUCKET=${GCS_BUCKET}
+    volumes:
+      - ./data:/app/data
+      - ./credentials:/app/credentials
+    restart: unless-stopped
+    command: src.pipeline.load_data
+
+  # Visualization dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bgg-data-warehouse:latest
+    container_name: bgg-dashboard
+    environment:
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCS_BUCKET=${GCS_BUCKET}
+    ports:
+      - "8501:8501"  # Streamlit default port
+    volumes:
+      - ./credentials:/app/credentials
+    restart: unless-stopped
+    command: streamlit run src/visualization/dashboard.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  default:
+    name: bgg-network
+
+volumes:
+  data:
+    name: bgg-data
+  credentials:
+    name: bgg-credentials
+
+# Example .env file:
+#
+# GCP_PROJECT_ID=your-project-id
+# GCS_BUCKET=your-bucket-name
