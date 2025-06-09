@@ -1,175 +1,218 @@
-"""BigQuery setup module for creating datasets and tables."""
+"""BigQuery setup for the BGG data warehouse."""
+
+import logging
+from typing import Dict, List, Optional
 
 from google.cloud import bigquery
-from google.api_core import exceptions
+from google.cloud.exceptions import NotFound
 
-from ..config import get_bigquery_config
+from src.config import get_bigquery_config
 
-def create_dataset(client: bigquery.Client, dataset_id: str) -> None:
-    """Create a BigQuery dataset if it doesn't exist.
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class BigQuerySetup:
+    """Sets up BigQuery tables for the BGG data warehouse."""
     
-    Args:
-        client: BigQuery client
-        dataset_id: ID of the dataset to create
-    """
-    dataset_ref = client.dataset(dataset_id)
-    dataset = bigquery.Dataset(dataset_ref)
-    dataset.location = "US"
-
-    try:
-        client.create_dataset(dataset)
-        print(f"Created dataset {dataset_id}")
-    except exceptions.Conflict:
-        print(f"Dataset {dataset_id} already exists")
-
-def create_monitoring_tables(client: bigquery.Client, dataset_id: str) -> None:
-    """Create tables in the monitoring dataset.
-    
-    Args:
-        client: BigQuery client
-        dataset_id: ID of the dataset to create tables in
-    """
-    tables = {
-        "data_quality": [
-            bigquery.SchemaField("check_timestamp", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("check_name", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("table_name", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("check_status", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("records_checked", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("failed_records", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("details", "STRING"),
-        ],
-    }
-
-    for table_id, schema in tables.items():
-        table = bigquery.Table(f"{client.project}.{dataset_id}.{table_id}", schema=schema)
-        table.time_partitioning = bigquery.TimePartitioning(
-            type_=bigquery.TimePartitioningType.DAY,
-            field="check_timestamp",
-        )
-
-        try:
-            client.create_table(table)
-            print(f"Created table {table_id}")
-        except exceptions.Conflict:
-            print(f"Table {table_id} already exists")
-
-def create_raw_tables(client: bigquery.Client, dataset_id: str) -> None:
-    """Create tables in the raw dataset.
-    
-    Args:
-        client: BigQuery client
-        dataset_id: ID of the dataset to create tables in
-    """
-    tables = {
-        "games": [
-            bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("year_published", "INTEGER"),
-            bigquery.SchemaField("min_players", "INTEGER"),
-            bigquery.SchemaField("max_players", "INTEGER"),
-            bigquery.SchemaField("playing_time", "INTEGER"),
-            bigquery.SchemaField("min_age", "INTEGER"),
-            bigquery.SchemaField("description", "STRING"),
-            bigquery.SchemaField("thumbnail", "STRING"),
-            bigquery.SchemaField("image", "STRING"),
-            bigquery.SchemaField("categories", "RECORD", mode="REPEATED", fields=[
-                bigquery.SchemaField("id", "INTEGER"),
-                bigquery.SchemaField("name", "STRING"),
-            ]),
-            bigquery.SchemaField("mechanics", "RECORD", mode="REPEATED", fields=[
-                bigquery.SchemaField("id", "INTEGER"),
-                bigquery.SchemaField("name", "STRING"),
-            ]),
-            bigquery.SchemaField("families", "RECORD", mode="REPEATED", fields=[
-                bigquery.SchemaField("id", "INTEGER"),
-                bigquery.SchemaField("name", "STRING"),
-            ]),
-            bigquery.SchemaField("raw_data", "STRING"),  # Store original XML
-            bigquery.SchemaField("load_timestamp", "TIMESTAMP"),
-            # Game statistics
-            bigquery.SchemaField("average", "FLOAT64"),
-            bigquery.SchemaField("num_ratings", "INTEGER"),
-            bigquery.SchemaField("owned", "INTEGER"),
-            bigquery.SchemaField("weight", "FLOAT64"),
-        ],
-        "request_log": [
-            bigquery.SchemaField("request_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("game_id", "INTEGER"),
-            bigquery.SchemaField("request_timestamp", "TIMESTAMP"),
-            bigquery.SchemaField("response_timestamp", "TIMESTAMP"),
-            bigquery.SchemaField("status_code", "INTEGER"),
-            bigquery.SchemaField("success", "BOOLEAN"),
-            bigquery.SchemaField("error_message", "STRING"),
-            bigquery.SchemaField("retry_count", "INTEGER"),
-        ],
-        "thing_ids": [
-            bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
-            bigquery.SchemaField("processed", "BOOLEAN"),
-            bigquery.SchemaField("process_timestamp", "TIMESTAMP"),
-            bigquery.SchemaField("source", "STRING"),
-            bigquery.SchemaField("load_timestamp", "TIMESTAMP"),
-        ],
-        "categories": [
-            bigquery.SchemaField("category_id", "INTEGER"),
-            bigquery.SchemaField("category_name", "STRING", mode="REQUIRED"),
-        ],
-        "mechanics": [
-            bigquery.SchemaField("mechanic_id", "INTEGER"),
-            bigquery.SchemaField("mechanic_name", "STRING", mode="REQUIRED"),
-        ],
-    }
-
-    for table_id, schema in tables.items():
-        table = bigquery.Table(f"{client.project}.{dataset_id}.{table_id}", schema=schema)
+    def __init__(self):
+        """Initialize BigQuery client and configuration."""
+        self.config = get_bigquery_config()
+        self.client = bigquery.Client()
         
-        if table_id == "request_log":
-            table.time_partitioning = bigquery.TimePartitioning(
-                type_=bigquery.TimePartitioningType.DAY,
-                field="request_timestamp",
-            )
-        elif table_id == "games":
-            table.clustering_fields = ["game_id"]
+        # Get dataset reference
+        project_id = self.config["project"]["id"]
+        dataset_id = self.config["project"]["dataset"]
+        self.dataset_ref = f"{project_id}.{dataset_id}"
 
-        try:
-            client.create_table(table)
-            print(f"Created table {table_id}")
-        except exceptions.Conflict:
-            print(f"Table {table_id} already exists")
+    def _get_schema(self, table_name: str) -> List[bigquery.SchemaField]:
+        """Get schema for a specific table.
+        
+        Args:
+            table_name: Name of the table
+            
+        Returns:
+            List of BigQuery schema fields
+        """
+        schemas = {
+            "games": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("primary_name", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("year_published", "INTEGER"),
+                bigquery.SchemaField("min_players", "INTEGER"),
+                bigquery.SchemaField("max_players", "INTEGER"),
+                bigquery.SchemaField("playing_time", "INTEGER"),
+                bigquery.SchemaField("min_playtime", "INTEGER"),
+                bigquery.SchemaField("max_playtime", "INTEGER"),
+                bigquery.SchemaField("min_age", "INTEGER"),
+                bigquery.SchemaField("description", "STRING"),
+                bigquery.SchemaField("thumbnail", "STRING"),
+                bigquery.SchemaField("image", "STRING"),
+                bigquery.SchemaField("users_rated", "INTEGER"),
+                bigquery.SchemaField("average_rating", "FLOAT64"),
+                bigquery.SchemaField("bayes_average", "FLOAT64"),
+                bigquery.SchemaField("standard_deviation", "FLOAT64"),
+                bigquery.SchemaField("median_rating", "FLOAT64"),
+                bigquery.SchemaField("owned_count", "INTEGER"),
+                bigquery.SchemaField("trading_count", "INTEGER"),
+                bigquery.SchemaField("wanting_count", "INTEGER"),
+                bigquery.SchemaField("wishing_count", "INTEGER"),
+                bigquery.SchemaField("num_comments", "INTEGER"),
+                bigquery.SchemaField("num_weights", "INTEGER"),
+                bigquery.SchemaField("average_weight", "FLOAT64"),
+                bigquery.SchemaField("raw_data", "STRING"),
+                bigquery.SchemaField("load_timestamp", "TIMESTAMP", mode="REQUIRED")
+            ],
+            "alternate_names": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("sort_index", "INTEGER")
+            ],
+            "categories": [
+                bigquery.SchemaField("category_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED")
+            ],
+            "mechanics": [
+                bigquery.SchemaField("mechanic_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED")
+            ],
+            "families": [
+                bigquery.SchemaField("family_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED")
+            ],
+            "designers": [
+                bigquery.SchemaField("designer_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED")
+            ],
+            "artists": [
+                bigquery.SchemaField("artist_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED")
+            ],
+            "publishers": [
+                bigquery.SchemaField("publisher_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("name", "STRING", mode="REQUIRED")
+            ],
+            "game_categories": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("category_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_mechanics": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("mechanic_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_families": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("family_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_designers": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("designer_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_artists": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("artist_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_publishers": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("publisher_id", "INTEGER", mode="REQUIRED")
+            ],
+            "player_counts": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("player_count", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("best_votes", "INTEGER"),
+                bigquery.SchemaField("recommended_votes", "INTEGER"),
+                bigquery.SchemaField("not_recommended_votes", "INTEGER")
+            ],
+            "language_dependence": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("level", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("description", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("votes", "INTEGER")
+            ],
+            "suggested_ages": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("age", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("votes", "INTEGER")
+            ],
+            "rankings": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("ranking_type", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("ranking_name", "STRING", mode="REQUIRED"),  # Now part of composite key
+                bigquery.SchemaField("friendly_name", "STRING"),
+                bigquery.SchemaField("value", "INTEGER"),
+                bigquery.SchemaField("bayes_average", "FLOAT64"),
+                bigquery.SchemaField("load_timestamp", "TIMESTAMP", mode="REQUIRED")
+            ]
+        }
+        
+        return schemas.get(table_name, [])
 
-def drop_tables(client: bigquery.Client, dataset_id: str) -> None:
-    """Drop all tables in a dataset.
-    
-    Args:
-        client: BigQuery client
-        dataset_id: ID of the dataset containing tables to drop
-    """
-    tables = client.list_tables(dataset_id)
-    for table in tables:
+    def create_dataset(self) -> None:
+        """Create the dataset if it doesn't exist."""
         try:
-            client.delete_table(table)
-            print(f"Dropped table {table.table_id}")
+            dataset = bigquery.Dataset(self.dataset_ref)
+            dataset.location = self.config["project"]["location"]
+            self.client.create_dataset(dataset, exists_ok=True)
+            logger.info(f"Dataset {self.dataset_ref} is ready")
         except Exception as e:
-            print(f"Failed to drop table {table.table_id}: {e}")
+            logger.error(f"Failed to create dataset: {e}")
+            raise
 
-def main() -> None:
-    """Create BigQuery datasets and tables."""
-    config = get_bigquery_config()
-    client = bigquery.Client(project=config["project"]["id"])
+    def create_table(self, table_config: Dict) -> None:
+        """Create a BigQuery table with the specified configuration.
+        
+        Args:
+            table_config: Table configuration from bigquery.yaml
+        """
+        table_id = f"{self.dataset_ref}.{table_config['name']}"
+        schema = self._get_schema(table_config['name'])
+        
+        if not schema:
+            logger.error(f"No schema defined for table {table_config['name']}")
+            return
+            
+        try:
+            table = bigquery.Table(table_id, schema=schema)
+            table.description = table_config.get('description', '')
+            
+            # Configure partitioning if specified
+            if 'time_partitioning' in table_config:
+                table.time_partitioning = bigquery.TimePartitioning(
+                    type_=bigquery.TimePartitioningType.DAY,
+                    field=table_config['time_partitioning']
+                )
+            
+            # Configure clustering if specified
+            if 'clustering_fields' in table_config:
+                table.clustering_fields = table_config['clustering_fields']
+            
+            self.client.create_table(table, exists_ok=True)
+            logger.info(f"Table {table_id} is ready")
+            
+        except Exception as e:
+            logger.error(f"Failed to create table {table_id}: {e}")
+            raise
 
-    # Create datasets
-    for dataset_id in config["datasets"].values():
-        create_dataset(client, dataset_id)
+    def setup_warehouse(self) -> None:
+        """Set up all required BigQuery resources."""
+        try:
+            # Create dataset
+            self.create_dataset()
+            
+            # Create all tables
+            for table_config in self.config["tables"].values():
+                self.create_table(table_config)
+                
+            logger.info("BigQuery setup completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to setup warehouse: {e}")
+            raise
 
-    # Drop existing tables
-    drop_tables(client, config["datasets"]["raw"])
-    drop_tables(client, config["datasets"]["monitoring"])
-
-    # Create raw and monitoring tables
-    create_raw_tables(client, config["datasets"]["raw"])
-    create_monitoring_tables(client, config["datasets"]["monitoring"])
-
-    print("BigQuery setup complete")
+def main():
+    """Main entry point for BigQuery setup."""
+    setup = BigQuerySetup()
+    setup.setup_warehouse()
 
 if __name__ == "__main__":
     main()

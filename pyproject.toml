@@ -18,6 +18,8 @@ dependencies = [
     "plotly>=5.18.0",
     "pandas>=2.1.0",
     "db-dtypes>=1.2.0",
+    "ipykernel>=6.29.5",
+    "pip>=25.1.1",
 ]
 
 [project.optional-dependencies]

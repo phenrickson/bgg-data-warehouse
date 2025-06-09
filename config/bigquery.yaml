@@ -1,44 +1,99 @@
 project:
-  id: "gcp-demos-411520"  # GCP project ID
-  location: "US"
-
-datasets:
-  raw: "bgg_raw"
-  transformed: "bgg_transformed"
-  reporting: "bgg_reporting"
-  monitoring: "bgg_monitoring"
-
-tables:
-  raw:
-    games: "games"
-    request_log: "request_log"
-    thing_ids: "thing_ids"
-    categories: "categories"
-    mechanics: "mechanics"
-  
-  transformed:
-    dim_games: "dim_games"
-    dim_categories: "dim_categories"
-    dim_mechanics: "dim_mechanics"
-    fact_ratings: "fact_ratings"
-    fact_weights: "fact_weights"
-  
-  reporting:
-    game_metrics: "game_metrics"
-    trending: "trending"
-    rankings: "rankings"
+  id: gcp-demos-411520
+  dataset: bgg_data
+  location: US
 
 storage:
-  bucket: "bgg-data-warehouse"  # GCS bucket name from .env
-  temp_prefix: "tmp/"
-  archive_prefix: "archive/"
+  bucket: bgg-data-warehouse
 
-loading:
-  batch_size: 1000
-  max_bad_records: 0
-  write_disposition: "WRITE_APPEND"
+tables:
+  # Core game data
+  games:
+    name: games
+    description: "Core game information and statistics"
+    time_partitioning: load_timestamp
+    clustering_fields: [game_id]
 
-monitoring:
-  freshness_threshold_hours: 24
-  quality_check_schedule: "0 */4 * * *"  # Every 4 hours
-  alert_on_failures: true
+  # Dimension tables
+  alternate_names:
+    name: alternate_names
+    description: "Alternative names and translations for games"
+    clustering_fields: [game_id]
+
+  categories:
+    name: categories
+    description: "Game categories"
+    
+  mechanics:
+    name: mechanics
+    description: "Game mechanics"
+    
+  families:
+    name: families
+    description: "Game families/series"
+    
+  designers:
+    name: designers
+    description: "Game designers"
+    
+  artists:
+    name: artists
+    description: "Game artists"
+    
+  publishers:
+    name: publishers
+    description: "Game publishers"
+
+  # Bridge tables
+  game_categories:
+    name: game_categories
+    description: "Game to category relationships"
+    clustering_fields: [game_id]
+
+  game_mechanics:
+    name: game_mechanics
+    description: "Game to mechanic relationships"
+    clustering_fields: [game_id]
+
+  game_families:
+    name: game_families
+    description: "Game to family relationships"
+    clustering_fields: [game_id]
+
+  game_designers:
+    name: game_designers
+    description: "Game to designer relationships"
+    clustering_fields: [game_id]
+
+  game_artists:
+    name: game_artists
+    description: "Game to artist relationships"
+    clustering_fields: [game_id]
+
+  game_publishers:
+    name: game_publishers
+    description: "Game to publisher relationships"
+    clustering_fields: [game_id]
+
+  # Poll results
+  player_counts:
+    name: player_counts
+    description: "Player count voting results"
+    clustering_fields: [game_id]
+
+  language_dependence:
+    name: language_dependence
+    description: "Language dependence ratings"
+    clustering_fields: [game_id]
+
+  suggested_ages:
+    name: suggested_ages
+    description: "Age suggestion voting results"
+    clustering_fields: [game_id]
+
+  # Rankings
+  rankings:
+    name: rankings
+    description: "Game rankings by category"
+    time_partitioning: load_timestamp
+    clustering_fields: [game_id]

@@ -1,218 +1,142 @@
-"""Module for loading processed data into BigQuery."""
+"""Pipeline for loading processed BGG data into BigQuery."""
 
 import logging
-from typing import List, Optional
+from typing import Dict, List
 
 import polars as pl
 from google.cloud import bigquery
-from google.cloud import storage
 
-from ..config import get_bigquery_config
+from src.config import get_bigquery_config
+from src.data_processor.processor import BGGDataProcessor
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class BigQueryLoader:
-    """Handles loading data into BigQuery."""
-
-    def __init__(self) -> None:
-        """Initialize the loader with configuration."""
+class DataLoader:
+    """Loads processed BGG data into BigQuery."""
+    
+    def __init__(self):
+        """Initialize BigQuery client and configuration."""
         self.config = get_bigquery_config()
-        self.client = bigquery.Client(project=self.config["project"]["id"])
-        self.storage_client = storage.Client(project=self.config["project"]["id"])
-        self.bucket = self.storage_client.bucket(self.config["storage"]["bucket"])
+        self.client = bigquery.Client()
+        self.processor = BGGDataProcessor()
         
-        # Create temp and archive folders if they don't exist
-        for prefix in [self.config["storage"]["temp_prefix"], self.config["storage"]["archive_prefix"]]:
-            blob = self.bucket.blob(prefix.rstrip("/") + "/.keep")
-            if not blob.exists():
-                blob.upload_from_string("")
+        # Get dataset reference
+        project_id = self.config["project"]["id"]
+        dataset_id = self.config["project"]["dataset"]
+        self.dataset_ref = f"{project_id}.{dataset_id}"
 
-    def _upload_to_gcs(
-        self, 
-        df: pl.DataFrame, 
-        table_name: str
-    ) -> Optional[str]:
-        """Upload DataFrame to Google Cloud Storage.
+    def _get_table_id(self, table_name: str) -> str:
+        """Get fully qualified table ID.
         
         Args:
-            df: DataFrame to upload
-            table_name: Name of the target table
+            table_name: Name of the table
             
         Returns:
-            GCS URI of the uploaded file or None if upload fails
+            Fully qualified table ID
         """
-        try:
-            # Convert to parquet for efficient loading
-            temp_path = f"{self.config['storage']['temp_prefix']}{table_name}.parquet"
-            
-            # Convert polars DataFrame to pandas and save as parquet
-            pandas_df = df.to_pandas()
-            blob = self.bucket.blob(temp_path)
-            
-            # Upload to GCS
-            with blob.open("wb") as f:
-                pandas_df.to_parquet(f)
-            
-            gcs_uri = f"gs://{self.config['storage']['bucket']}/{temp_path}"
-            logger.info("Uploaded data to %s", gcs_uri)
-            return gcs_uri
+        return f"{self.dataset_ref}.{table_name}"
 
-        except Exception as e:
-            logger.error("Failed to upload to GCS: %s", e)
-            return None
-
-    def _load_from_gcs(
-        self, 
-        gcs_uri: str, 
-        table_ref: str,
+    def _load_dataframe(
+        self,
+        df: pl.DataFrame,
+        table_name: str,
         write_disposition: str = "WRITE_APPEND"
-    ) -> bool:
-        """Load data from GCS to BigQuery.
-        
-        Args:
-            gcs_uri: URI of the file in GCS
-            table_ref: Full reference to the BigQuery table
-            write_disposition: How to handle existing data
-            
-        Returns:
-            True if load succeeds, False otherwise
-        """
-        try:
-            # Get table schema
-            table = self.client.get_table(table_ref)
-            
-            job_config = bigquery.LoadJobConfig(
-                write_disposition=write_disposition,
-                source_format=bigquery.SourceFormat.PARQUET,
-                schema=table.schema
-            )
-
-            load_job = self.client.load_table_from_uri(
-                gcs_uri,
-                table_ref,
-                job_config=job_config,
-            )
-            load_job.result()  # Wait for the job to complete
-
-            logger.info("Loaded data into %s", table_ref)
-            return True
-
-        except Exception as e:
-            logger.error("Failed to load to BigQuery: %s", e)
-            return False
-
-    def _cleanup_gcs(self, table_name: str) -> None:
-        """Clean up temporary files from GCS.
-        
-        Args:
-            table_name: Name of the table whose files to clean up
-        """
-        try:
-            temp_path = f"{self.config['storage']['temp_prefix']}{table_name}.parquet"
-            blob = self.bucket.blob(temp_path)
-            blob.delete()
-            logger.info("Cleaned up temporary file %s", temp_path)
-        except Exception as e:
-            logger.error("Failed to cleanup GCS: %s", e)
-
-    def load_table(
-        self, 
-        df: pl.DataFrame, 
-        dataset_id: str,
-        table_id: str,
-        write_disposition: str = "WRITE_APPEND"
-    ) -> bool:
-        """Load a DataFrame into a BigQuery table.
+    ) -> None:
+        """Load a DataFrame into BigQuery.
         
         Args:
             df: DataFrame to load
-            dataset_id: ID of the target dataset
-            table_id: ID of the target table
-            write_disposition: How to handle existing data
-            
-        Returns:
-            True if load succeeds, False otherwise
+            table_name: Name of the target table
+            write_disposition: BigQuery write disposition
         """
-        try:
-            # Ensure REQUIRED fields are not null
-            required_fields = {
-                "games": ["game_id", "name"],
-                "categories": ["category_name"],
-                "mechanics": ["mechanic_name"],
-                "request_log": ["request_id"],
-                "thing_ids": ["game_id"]
-            }
-
-            if table_id in required_fields:
-                for field in required_fields[table_id]:
-                    df = df.filter(~pl.col(field).is_null())
-
-            # Upload to GCS first
-            gcs_uri = self._upload_to_gcs(df, table_id)
-            if not gcs_uri:
-                return False
-
-            # Load from GCS to BigQuery
-            table_ref = f"{self.config['project']['id']}.{dataset_id}.{table_id}"
-            success = self._load_from_gcs(gcs_uri, table_ref, write_disposition)
-
-            # Cleanup
-            self._cleanup_gcs(table_id)
-
-            return success
-
-        except Exception as e:
-            logger.error("Failed to load table %s: %s", table_id, e)
-            return False
-
-    def archive_raw_data(self, table_name: str) -> None:
-        """Archive raw data to GCS.
-        
-        Args:
-            table_name: Name of the table to archive
-        """
-        try:
-            query = f"""
-            SELECT *
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{table_name}`
-            WHERE DATE(load_timestamp) = CURRENT_DATE()
-            """
+        if df.height == 0:
+            logger.info(f"No data to load for table {table_name}")
+            return
             
-            df = self.client.query(query).to_dataframe()
-            if df.empty:
-                logger.info("No data to archive for %s", table_name)
+        try:
+            # Validate data before loading
+            if not self.processor.validate_data(df, table_name):
+                logger.error(f"Data validation failed for table {table_name}")
                 return
-
-            # Convert to polars
-            pl_df = pl.from_pandas(df)
+                
+            # Convert to pandas for BigQuery loading
+            pdf = df.to_pandas()
             
-            # Archive path includes date
-            archive_path = (
-                f"{self.config['storage']['archive_prefix']}"
-                f"{table_name}/{table_name}_{pl_df['load_timestamp'][0].date()}.parquet"
+            # Load to BigQuery
+            job_config = bigquery.LoadJobConfig(
+                write_disposition=write_disposition
             )
             
-            blob = self.bucket.blob(archive_path)
-            with blob.open("wb") as f:
-                df.to_parquet(f)
+            table_id = self._get_table_id(table_name)
+            job = self.client.load_table_from_dataframe(
+                pdf, table_id, job_config=job_config
+            )
+            job.result()  # Wait for job to complete
             
-            logger.info("Archived %s data to %s", table_name, archive_path)
-
+            logger.info(f"Loaded {df.height} rows into {table_name}")
+            
         except Exception as e:
-            logger.error("Failed to archive %s: %s", table_name, e)
+            logger.error(f"Failed to load data into {table_name}: {e}")
+            raise
 
-def main() -> None:
-    """Main function to load data into BigQuery."""
-    loader = BigQueryLoader()
-    
-    # Archive raw data
-    for table in ["games", "request_log", "thing_ids"]:
-        loader.archive_raw_data(table)
+    def load_games(self, processed_games: List[Dict]) -> None:
+        """Load processed game data into BigQuery.
+        
+        Args:
+            processed_games: List of processed game dictionaries
+        """
+        try:
+            # Prepare data for all tables
+            dataframes = self.processor.prepare_for_bigquery(processed_games)
+            
+            # Load dimension tables first (overwrite existing data)
+            dimension_tables = [
+                "categories", "mechanics", "families", "designers",
+                "artists", "publishers"
+            ]
+            
+            for table_name in dimension_tables:
+                if table_name in dataframes:
+                    self._load_dataframe(
+                        dataframes[table_name],
+                        table_name,
+                        write_disposition="WRITE_TRUNCATE"
+                    )
+            
+            # Load bridge tables (append new relationships)
+            bridge_tables = [
+                "game_categories", "game_mechanics", "game_families",
+                "game_designers", "game_artists", "game_publishers"
+            ]
+            
+            for table_name in bridge_tables:
+                if table_name in dataframes:
+                    self._load_dataframe(dataframes[table_name], table_name)
+            
+            # Load game-specific data (append new data)
+            game_tables = [
+                "games", "alternate_names", "player_counts",
+                "language_dependence", "suggested_ages", "rankings"
+            ]
+            
+            for table_name in game_tables:
+                if table_name in dataframes:
+                    self._load_dataframe(dataframes[table_name], table_name)
+            
+            logger.info("Successfully loaded all game data")
+            
+        except Exception as e:
+            logger.error(f"Failed to load game data: {e}")
+            raise
+
+def main():
+    """Main entry point for data loading."""
+    loader = DataLoader()
+    # Example usage:
+    # processed_games = [...] # Get processed games from somewhere
+    # loader.load_games(processed_games)
 
 if __name__ == "__main__":
     main()

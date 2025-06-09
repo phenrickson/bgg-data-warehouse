@@ -14,3 +14,4 @@
 - create process for querying data from the data warehouse
 - create process for visualizing data from the data warehouse
 - create process for monitoring data quality in the data warehouse
+- create process for a high level summary of the data in the data warehouse

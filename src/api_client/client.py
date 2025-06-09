@@ -28,10 +28,6 @@ class BGGAPIClient:
 
     def __init__(self) -> None:
         """Initialize the API client."""
-        self.config = get_bigquery_config()
-        self.client = bigquery.Client(project=self.config["project"]["id"])
-        self.dataset_id = self.config["datasets"]["raw"]
-        self.table_id = self.config["tables"]["raw"]["request_log"]
         self.last_request_time = datetime.min
         self.session = requests.Session()
 
@@ -54,7 +50,7 @@ class BGGAPIClient:
         error_message: Optional[str],
         retry_count: int,
     ) -> None:
-        """Log request details to BigQuery.
+        """Log request details (currently just logs to console).
         
         Args:
             request_id: Unique identifier for the request
@@ -66,22 +62,14 @@ class BGGAPIClient:
             error_message: Error message if request failed
             retry_count: Number of retries attempted
         """
-        row = {
-            "request_id": request_id,
-            "game_id": game_id,
-            "request_timestamp": start_time.isoformat(),
-            "response_timestamp": end_time.isoformat(),
-            "status_code": status_code,
-            "success": success,
-            "error_message": error_message,
-            "retry_count": retry_count,
-        }
-
-        table_ref = f"{self.config['project']['id']}.{self.dataset_id}.{self.table_id}"
-        
-        errors = self.client.insert_rows_json(table_ref, [row])
-        if errors:
-            logger.error("Failed to log request: %s", errors)
+        duration = (end_time - start_time).total_seconds()
+        status = "SUCCESS" if success else "FAILED"
+        logger.info(
+            f"API Request {request_id} for game {game_id}: {status} "
+            f"(status={status_code}, duration={duration:.2f}s, retries={retry_count})"
+        )
+        if error_message:
+            logger.error(f"Error details: {error_message}")
 
     def get_thing(self, game_id: int, stats: bool = True) -> Optional[Dict]:
         """Get details for a specific game.
@@ -195,7 +183,7 @@ class BGGAPIClient:
         self, 
         minutes: int = 60
     ) -> Dict[str, Union[int, float]]:
-        """Get statistics about API requests.
+        """Get statistics about API requests (currently a stub).
         
         Args:
             minutes: Number of minutes to look back
@@ -203,30 +191,10 @@ class BGGAPIClient:
         Returns:
             Dictionary containing request statistics
         """
-        query = f"""
-        WITH recent_requests AS (
-            SELECT *
-            FROM `{self.config['project']['id']}.{self.dataset_id}.{self.table_id}`
-            WHERE request_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {minutes} MINUTE)
-        )
-        SELECT
-            COUNT(*) as total_requests,
-            COUNTIF(success) as successful_requests,
-            COUNTIF(NOT success) as failed_requests,
-            AVG(TIMESTAMP_DIFF(response_timestamp, request_timestamp, SECOND)) as avg_response_time,
-            AVG(retry_count) as avg_retries
-        FROM recent_requests
-        """
-        
-        try:
-            df = self.client.query(query).to_dataframe()
-            return df.iloc[0].to_dict()
-        except Exception as e:
-            logger.error("Failed to fetch request stats: %s", e)
-            return {
-                "total_requests": 0,
-                "successful_requests": 0,
-                "failed_requests": 0,
-                "avg_response_time": 0,
-                "avg_retries": 0,
-            }
+        return {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "avg_response_time": 0,
+            "avg_retries": 0,
+        }
