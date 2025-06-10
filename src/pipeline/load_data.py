@@ -9,9 +9,10 @@ from google.cloud import bigquery
 from src.config import get_bigquery_config
 from src.data_processor.processor import BGGDataProcessor
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from ..utils.logging_config import setup_logging
+
+# Set up logging
+logger = setup_logging(__name__)
 
 class DataLoader:
     """Loads processed BGG data into BigQuery."""

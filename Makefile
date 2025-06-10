@@ -27,8 +27,30 @@ fetch-ids:
 fetch-games:
 	uv run -m src.pipeline.fetch_data
 
-load:
-	uv run -m src.pipeline.load_data
+# Utility tasks
+examine-game:
+	@if [ -z "$(GAME)" ]; then \
+		echo "Usage: make examine-game GAME=1234"; \
+		exit 1; \
+	fi
+	uv run -m src.scripts.examine_game $(GAME)
+
+check-duplicates:
+	uv run -m src.scripts.check_duplicates
+
+# Load data tasks
+load-unprocessed:
+	uv run -m src.scripts.load_games
+
+load-games:
+	@if [ -z "$(GAMES)" ]; then \
+		echo "Usage: make load-games GAMES='1234 5678 9012'"; \
+		exit 1; \
+	fi
+	uv run -m src.scripts.load_games $(GAMES)
+
+load: load-unprocessed
+	@echo "Loaded all unprocessed games"
 
 update:
 	uv run -m src.pipeline.update_data
@@ -57,7 +79,11 @@ help:
 	@echo "  clean          Clean temporary files"
 	@echo "  fetch-ids      Fetch game IDs from BGG"
 	@echo "  fetch-games    Fetch game data from BGG API"
-	@echo "  load           Load data to BigQuery"
+	@echo "  examine-game   Examine a specific game (Usage: make examine-game GAME=1234)"
+	@echo "  check-duplicates Check for duplicate game entries"
+	@echo "  load           Load all unprocessed games to BigQuery"
+	@echo "  load-unprocessed Load all unprocessed games to BigQuery"
+	@echo "  load-games     Load specific games (Usage: make load-games GAMES='1234 5678')"
 	@echo "  update         Update data in BigQuery"
 	@echo "  quality        Run data quality checks"
 	@echo "  create-datasets Setup BigQuery datasets"
