@@ -108,8 +108,11 @@ class BGGIDFetcher:
             logger.info("No new IDs to upload")
             return
 
+        # Create temp table for new data
+        temp_table = f"{self.config['project']['id']}.{self.dataset_id}.temp_thing_ids"
+        
         # Create DataFrame with new IDs
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         df = pl.DataFrame({
             "game_id": [game["game_id"] for game in new_games],
             "type": [game["type"] for game in new_games],
@@ -120,29 +123,52 @@ class BGGIDFetcher:
         })
 
         # Log DataFrame info before upload
-        logger.info("DataFrame schema:")
-        logger.info(df.schema)
         logger.info("DataFrame preview:")
-        logger.info(df.head())
-        
-        # Convert to pandas for BigQuery upload
-        pandas_df = df.to_pandas()
-        
-        # Upload to BigQuery
-        table_ref = f"{self.config['project']['id']}.{self.dataset_id}.{self.table_id}"
-        job_config = bigquery.LoadJobConfig(
-            write_disposition=bigquery.WriteDisposition.WRITE_APPEND
-        )
-
         try:
-            job = self.client.load_table_from_dataframe(
-                pandas_df, table_ref, job_config=job_config
+            # Convert to string and encode safely for Windows console
+            preview = str(df.head())
+            preview = preview.encode('cp1252', errors='replace').decode('cp1252')
+            logger.info(preview)
+        except Exception as e:
+            logger.info("Could not display DataFrame preview: %s", e)
+        
+        try:
+            # Load data to temp table with schema
+            pandas_df = df.to_pandas()
+            job_config = bigquery.LoadJobConfig(
+                write_disposition="WRITE_TRUNCATE",
+                schema=[
+                    bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                    bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("processed", "BOOLEAN", mode="REQUIRED"),
+                    bigquery.SchemaField("process_timestamp", "TIMESTAMP"),
+                    bigquery.SchemaField("source", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("load_timestamp", "TIMESTAMP", mode="REQUIRED")
+                ]
             )
-            job.result()  # Wait for the job to complete
-            logger.info("Uploaded %d new IDs to BigQuery", len(new_games))
+            job = self.client.load_table_from_dataframe(pandas_df, temp_table, job_config=job_config)
+            job.result()
+            
+            # Merge into main table
+            merge_query = f"""
+            MERGE `{self.config['project']['id']}.{self.dataset_id}.{self.table_id}` T
+            USING `{temp_table}` S
+            ON T.game_id = S.game_id AND T.type = S.type
+            WHEN NOT MATCHED THEN
+              INSERT (game_id, type, processed, process_timestamp, source, load_timestamp)
+              VALUES (game_id, type, processed, process_timestamp, source, load_timestamp)
+            """
+            
+            self.client.query(merge_query).result()
+            logger.info("Merged %d new IDs into BigQuery", len(new_games))
+            
         except Exception as e:
             logger.error("Failed to upload new IDs: %s", e)
             raise
+            
+        finally:
+            # Clean up temp table
+            self.client.delete_table(temp_table, not_found_ok=True)
 
     def update_ids(self, temp_dir: Path) -> None:
         """Update game IDs in BigQuery with new IDs from BGG.

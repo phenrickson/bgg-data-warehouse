@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Union
 from urllib.parse import urljoin
 
+import pandas as pd
 import requests
 import xmltodict
 from google.cloud import bigquery
@@ -49,7 +50,7 @@ class BGGAPIClient:
         error_message: Optional[str],
         retry_count: int,
     ) -> None:
-        """Log request details (currently just logs to console).
+        """Log request details to BigQuery and console.
         
         Args:
             request_id: Unique identifier for the request
@@ -63,12 +64,39 @@ class BGGAPIClient:
         """
         duration = (end_time - start_time).total_seconds()
         status = "SUCCESS" if success else "FAILED"
+        
+        # Log to console
         logger.info(
             f"API Request {request_id} for game {game_id}: {status} "
             f"(status={status_code}, duration={duration:.2f}s, retries={retry_count})"
         )
         if error_message:
             logger.error(f"Error details: {error_message}")
+            
+        # Log to BigQuery
+        try:
+            config = get_bigquery_config()
+            client = bigquery.Client()
+            
+            # Prepare request log entry
+            table_id = f"{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}"
+            rows_to_insert = [{
+                "request_id": request_id,
+                "url": f"{self.BASE_URL}thing",
+                "method": "GET",
+                "status_code": status_code,
+                "response_time": duration,
+                "error": error_message,
+                "request_timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+            }]
+            
+            # Insert into BigQuery
+            errors = client.insert_rows_json(table_id, rows_to_insert)
+            if errors:
+                logger.error(f"Failed to log request to BigQuery: {errors}")
+                
+        except Exception as e:
+            logger.error(f"Failed to log request to BigQuery: {e}")
 
     def get_thing(self, game_id: int, stats: bool = True) -> Optional[Dict]:
         """Get details for a specific game.
@@ -182,7 +210,7 @@ class BGGAPIClient:
         self, 
         minutes: int = 60
     ) -> Dict[str, Union[int, float]]:
-        """Get statistics about API requests (currently a stub).
+        """Get statistics about API requests from BigQuery.
         
         Args:
             minutes: Number of minutes to look back
@@ -190,10 +218,47 @@ class BGGAPIClient:
         Returns:
             Dictionary containing request statistics
         """
-        return {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "avg_response_time": 0,
-            "avg_retries": 0,
-        }
+        try:
+            config = get_bigquery_config()
+            client = bigquery.Client()
+            
+            # Query request log table
+            query = f"""
+            WITH recent_requests AS (
+                SELECT *
+                FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}`
+                WHERE request_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {minutes} MINUTE)
+            )
+            SELECT
+                COUNT(*) as total_requests,
+                COUNTIF(status_code = 200) as successful_requests,
+                COUNTIF(status_code != 200) as failed_requests,
+                AVG(response_time) as avg_response_time,
+                AVG(CAST(REGEXP_EXTRACT(error, r'retries=([0-9]+)') AS INT64)) as avg_retries
+            FROM recent_requests
+            """
+            
+            df = client.query(query).to_dataframe()
+            if len(df) == 0:
+                return {
+                    "total_requests": 0,
+                    "successful_requests": 0,
+                    "failed_requests": 0,
+                    "avg_response_time": 0,
+                    "avg_retries": 0,
+                }
+                
+            stats = df.iloc[0].to_dict()
+            # Convert NaN to 0
+            stats = {k: 0 if pd.isna(v) else v for k, v in stats.items()}
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Failed to get request stats: {e}")
+            return {
+                "total_requests": 0,
+                "successful_requests": 0,
+                "failed_requests": 0,
+                "avg_response_time": 0,
+                "avg_retries": 0,
+            }

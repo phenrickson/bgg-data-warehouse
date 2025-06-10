@@ -8,7 +8,8 @@ from google.cloud.exceptions import NotFound
 
 from src.config import get_bigquery_config
 
-# Get logger
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BigQuerySetup:
@@ -212,30 +213,54 @@ class BigQuerySetup:
             return
             
         try:
-            # First try to delete the table if it exists
+            # Check if table exists
             try:
-                self.client.delete_table(table_id)
-                logger.info(f"Deleted existing table {table_id}")
+                existing_table = self.client.get_table(table_id)
+                logger.info(f"Table {table_id} already exists")
+                
+                # Compare schemas to see if we need to add fields
+                existing_fields = {field.name: field for field in existing_table.schema}
+                new_fields = {field.name: field for field in schema}
+                
+                logger.info(f"Existing fields in {table_id}: {list(existing_fields.keys())}")
+                logger.info(f"Expected fields in {table_id}: {list(new_fields.keys())}")
+                
+                # Find fields that need to be added
+                fields_to_add = []
+                for name, field in new_fields.items():
+                    if name not in existing_fields:
+                        fields_to_add.append(field)
+                        logger.info(f"Field {name} missing from {table_id}")
+                
+                if fields_to_add:
+                    # Add new fields using ALTER TABLE
+                    for field in fields_to_add:
+                        query = f"""
+                        ALTER TABLE `{table_id}`
+                        ADD COLUMN IF NOT EXISTS {field.name} {field.field_type}
+                        """
+                        self.client.query(query).result()
+                        logger.info(f"Added field {field.name} to {table_id}")
+                return
+                
             except NotFound:
-                logger.info(f"Table {table_id} does not exist")
-            
-            # Create new table
-            table = bigquery.Table(table_id, schema=schema)
-            table.description = table_config.get('description', '')
-            
-            # Configure partitioning if specified
-            if 'time_partitioning' in table_config:
-                table.time_partitioning = bigquery.TimePartitioning(
-                    type_=bigquery.TimePartitioningType.DAY,
-                    field=table_config['time_partitioning']
-                )
-            
-            # Configure clustering if specified
-            if 'clustering_fields' in table_config:
-                table.clustering_fields = table_config['clustering_fields']
-            
-            self.client.create_table(table)
-            logger.info(f"Created new table {table_id}")
+                # Create new table
+                table = bigquery.Table(table_id, schema=schema)
+                table.description = table_config.get('description', '')
+                
+                # Configure partitioning if specified
+                if 'time_partitioning' in table_config:
+                    table.time_partitioning = bigquery.TimePartitioning(
+                        type_=bigquery.TimePartitioningType.DAY,
+                        field=table_config['time_partitioning']
+                    )
+                
+                # Configure clustering if specified
+                if 'clustering_fields' in table_config:
+                    table.clustering_fields = table_config['clustering_fields']
+                
+                self.client.create_table(table)
+                logger.info(f"Created new table {table_id}")
             
         except Exception as e:
             logger.error(f"Failed to create table {table_id}: {e}")
@@ -262,7 +287,10 @@ class BigQuerySetup:
 
 def main():
     """Main entry point for BigQuery setup."""
-    setup = BigQuerySetup()
+    import os
+    environment = os.environ.get("ENVIRONMENT")
+    logger.info(f"Setting up BigQuery warehouse for environment: {environment or 'dev'}")
+    setup = BigQuerySetup(environment)
     setup.setup_warehouse()
 
 if __name__ == "__main__":
