@@ -51,6 +51,7 @@ class BigQuerySetup:
                 bigquery.SchemaField("request_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("url", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("method", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("game_ids", "STRING"),  # Store as string since it could be a single ID or list
                 bigquery.SchemaField("status_code", "INTEGER"),
                 bigquery.SchemaField("response_time", "FLOAT64"),
                 bigquery.SchemaField("error", "STRING"),
