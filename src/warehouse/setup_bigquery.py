@@ -8,8 +8,7 @@ from google.cloud.exceptions import NotFound
 
 from src.config import get_bigquery_config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get logger
 logger = logging.getLogger(__name__)
 
 class BigQuerySetup:
@@ -23,14 +22,43 @@ class BigQuerySetup:
         """
         self.config = get_bigquery_config(environment)
         self.client = bigquery.Client()
+        self.project_id = self.config["project"]["id"]
         
-        # Get dataset reference
-        project_id = self.config["project"]["id"]
-        dataset_id = self.config["project"]["dataset"]
-        self.dataset_ref = f"{project_id}.{dataset_id}"
+        # Get dataset references
+        self.main_dataset = f"{self.project_id}.{self.config['project']['dataset']}"
+        self.raw_dataset = f"{self.project_id}.{self.config['datasets']['raw']}"
+
+    def _get_raw_schema(self, table_name: str) -> List[bigquery.SchemaField]:
+        """Get schema for a raw table.
+        
+        Args:
+            table_name: Name of the raw table
+            
+        Returns:
+            List of BigQuery schema fields
+        """
+        schemas = {
+            "thing_ids": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("processed", "BOOLEAN", mode="REQUIRED"),
+                bigquery.SchemaField("process_timestamp", "TIMESTAMP"),
+                bigquery.SchemaField("source", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("load_timestamp", "TIMESTAMP", mode="REQUIRED")
+            ],
+            "request_log": [
+                bigquery.SchemaField("request_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("url", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("method", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("status_code", "INTEGER"),
+                bigquery.SchemaField("response_time", "FLOAT64"),
+                bigquery.SchemaField("error", "STRING"),
+                bigquery.SchemaField("request_timestamp", "TIMESTAMP", mode="REQUIRED")
+            ]
+        }
+        return schemas.get(table_name, [])
 
     def _get_schema(self, table_name: str) -> List[bigquery.SchemaField]:
-        """Get schema for a specific table.
+        """Get schema for a warehouse table.
         
         Args:
             table_name: Name of the table
@@ -151,25 +179,31 @@ class BigQuerySetup:
         
         return schemas.get(table_name, [])
 
-    def create_dataset(self) -> None:
-        """Create the dataset if it doesn't exist."""
+    def create_dataset(self, dataset_ref: str) -> None:
+        """Create a dataset if it doesn't exist.
+        
+        Args:
+            dataset_ref: Full dataset reference (project.dataset)
+        """
         try:
-            dataset = bigquery.Dataset(self.dataset_ref)
+            dataset = bigquery.Dataset(dataset_ref)
             dataset.location = self.config["project"]["location"]
             self.client.create_dataset(dataset, exists_ok=True)
-            logger.info(f"Dataset {self.dataset_ref} is ready")
+            logger.info(f"Dataset {dataset_ref} is ready")
         except Exception as e:
             logger.error(f"Failed to create dataset: {e}")
             raise
 
-    def create_table(self, table_config: Dict) -> None:
+    def create_table(self, table_config: Dict, dataset_ref: str, is_raw: bool = False) -> None:
         """Create a BigQuery table with the specified configuration.
         
         Args:
             table_config: Table configuration from bigquery.yaml
+            dataset_ref: Full dataset reference (project.dataset)
+            is_raw: Whether this is a raw table
         """
-        table_id = f"{self.dataset_ref}.{table_config['name']}"
-        schema = self._get_schema(table_config['name'])
+        table_id = f"{dataset_ref}.{table_config['name']}"
+        schema = self._get_raw_schema(table_config['name']) if is_raw else self._get_schema(table_config['name'])
         
         if not schema:
             logger.error(f"No schema defined for table {table_config['name']}")
@@ -200,12 +234,15 @@ class BigQuerySetup:
     def setup_warehouse(self) -> None:
         """Set up all required BigQuery resources."""
         try:
-            # Create dataset
-            self.create_dataset()
-            
-            # Create all tables
+            # Create main dataset and tables
+            self.create_dataset(self.main_dataset)
             for table_config in self.config["tables"].values():
-                self.create_table(table_config)
+                self.create_table(table_config, self.main_dataset)
+            
+            # Create raw dataset and tables
+            self.create_dataset(self.raw_dataset)
+            for table_config in self.config["raw_tables"].values():
+                self.create_table(table_config, self.raw_dataset, is_raw=True)
                 
             logger.info("BigQuery setup completed successfully")
             
