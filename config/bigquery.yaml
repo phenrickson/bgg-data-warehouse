@@ -11,8 +11,26 @@ environments:
 # Default to dev environment unless specified
 default_environment: dev
 
+# Dataset configuration
+datasets:
+  raw: bgg_raw_dev
+  transformed: bgg_transformed_dev
+  reporting: bgg_reporting_dev
+  monitoring: bgg_monitoring_dev
+
 storage:
   bucket: bgg-data-warehouse
+
+# Raw data tables
+raw_tables:
+  thing_ids:
+    name: thing_ids
+    description: "Game IDs from BGG with processing status"
+    clustering_fields: [game_id]
+  request_log:
+    name: request_log
+    description: "API request tracking log"
+    time_partitioning: request_timestamp
 
 tables:
   # Core game data

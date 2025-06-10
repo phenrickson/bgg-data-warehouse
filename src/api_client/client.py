@@ -13,8 +13,7 @@ from google.cloud import bigquery
 
 from ..config import get_bigquery_config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get logger
 logger = logging.getLogger(__name__)
 
 class BGGAPIClient:

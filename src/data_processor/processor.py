@@ -6,8 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import polars as pl
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get logger
 logger = logging.getLogger(__name__)
 
 class GameStats:
