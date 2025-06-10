@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 from urllib.parse import urljoin
 
 import pandas as pd
@@ -42,7 +42,7 @@ class BGGAPIClient:
     def _log_request(
         self,
         request_id: str,
-        game_id: Optional[int],
+        game_ids: Optional[Union[int, List[int]]],
         start_time: datetime,
         end_time: datetime,
         status_code: int,
@@ -54,7 +54,7 @@ class BGGAPIClient:
         
         Args:
             request_id: Unique identifier for the request
-            game_id: ID of the requested game (if applicable)
+            game_ids: ID or list of IDs of the requested games
             start_time: When the request was initiated
             end_time: When the response was received
             status_code: HTTP status code
@@ -67,7 +67,7 @@ class BGGAPIClient:
         
         # Log to console
         logger.info(
-            f"API Request {request_id} for game {game_id}: {status} "
+            f"API Request {request_id} for games {game_ids}: {status} "
             f"(status={status_code}, duration={duration:.2f}s, retries={retry_count})"
         )
         if error_message:
@@ -84,6 +84,7 @@ class BGGAPIClient:
                 "request_id": request_id,
                 "url": f"{self.BASE_URL}thing",
                 "method": "GET",
+                "game_ids": str(game_ids) if game_ids else None,
                 "status_code": status_code,
                 "response_time": duration,
                 "error": error_message,
@@ -98,11 +99,11 @@ class BGGAPIClient:
         except Exception as e:
             logger.error(f"Failed to log request to BigQuery: {e}")
 
-    def get_thing(self, game_id: int, stats: bool = True) -> Optional[Dict]:
-        """Get details for a specific game.
+    def get_thing(self, game_ids: Union[int, List[int]], stats: bool = True) -> Optional[Dict]:
+        """Get details for one or more games.
         
         Args:
-            game_id: ID of the game to fetch
+            game_ids: Single game ID or list of game IDs to fetch
             stats: Whether to include statistics
             
         Returns:
@@ -110,8 +111,15 @@ class BGGAPIClient:
         """
         request_id = str(uuid.uuid4())
         endpoint = urljoin(self.BASE_URL, "thing")
+        # Convert single ID to list
+        if isinstance(game_ids, int):
+            game_ids = [game_ids]
+            
+        # Convert IDs to comma-separated string
+        ids_str = ",".join(str(id) for id in game_ids)
+        
         params = {
-            "id": game_id,
+            "id": ids_str,
             "stats": int(stats),
             "type": "boardgame",
         }
@@ -131,7 +139,7 @@ class BGGAPIClient:
                         data = xmltodict.parse(response.text)
                         self._log_request(
                             request_id=request_id,
-                            game_id=game_id,
+                            game_ids=game_ids,
                             start_time=start_time,
                             end_time=end_time,
                             status_code=response.status_code,
@@ -141,10 +149,10 @@ class BGGAPIClient:
                         )
                         return data
                     except Exception as e:
-                        logger.error("Failed to parse XML for game %d: %s", game_id, e)
+                        logger.error("Failed to parse XML for games %s: %s", ids_str, e)
                         self._log_request(
                             request_id=request_id,
-                            game_id=game_id,
+                            game_ids=game_ids,
                             start_time=start_time,
                             end_time=end_time,
                             status_code=response.status_code,
@@ -156,7 +164,7 @@ class BGGAPIClient:
 
                 # Handle rate limiting
                 elif response.status_code == 429:
-                    logger.warning("Rate limited for game %d, retrying...", game_id)
+                    logger.warning("Rate limited for games %s, retrying...", ids_str)
                     time.sleep(self.RETRY_DELAY * (retry_count + 1))
                     retry_count += 1
                     continue
@@ -164,14 +172,14 @@ class BGGAPIClient:
                 # Handle other errors
                 else:
                     logger.error(
-                        "Failed to fetch game %d: %s %s",
-                        game_id,
+                        "Failed to fetch games %s: %s %s",
+                        ids_str,
                         response.status_code,
                         response.text,
                     )
                     self._log_request(
                         request_id=request_id,
-                        game_id=game_id,
+                        game_ids=game_ids,
                         start_time=start_time,
                         end_time=end_time,
                         status_code=response.status_code,
@@ -187,10 +195,10 @@ class BGGAPIClient:
 
             except requests.exceptions.RequestException as e:
                 end_time = datetime.utcnow()
-                logger.error("Request failed for game %d: %s", game_id, e)
+                logger.error("Request failed for games %s: %s", ids_str, e)
                 self._log_request(
                     request_id=request_id,
-                    game_id=game_id,
+                    game_ids=game_ids,
                     start_time=start_time,
                     end_time=end_time,
                     status_code=0,

@@ -18,17 +18,31 @@ logger = logging.getLogger(__name__)
 setup_logging()
 
 class BGGPipeline:
-    """Pipeline for fetching and processing BGG data."""
+    """Pipeline for fetching and processing BGG data.
+    
+    The pipeline processes games in two levels of batching:
+    1. batch_size: Number of unprocessed games to fetch from BigQuery at once
+    2. chunk_size: Number of games to request in a single API call
+    
+    For example, with batch_size=100 and chunk_size=10:
+    - Fetches 100 unprocessed game IDs from BigQuery
+    - Makes 10 API requests, each fetching data for 10 games
+    - Processes and loads all games to BigQuery
+    - Marks successfully processed games as completed
+    - Repeats until no unprocessed games remain
+    """
 
-    def __init__(self, batch_size: int = 100, environment: str = "prod") -> None:
+    def __init__(self, batch_size: int = 1000, chunk_size: int = 20, environment: str = "prod") -> None:
         """Initialize the pipeline.
         
         Args:
-            batch_size: Number of games to process in each batch
+            batch_size: Number of games to process in each batch from BigQuery
+            chunk_size: Number of games to request in each API call
             environment: Environment to use (prod/dev/test)
         """
         self.config = get_bigquery_config()
         self.batch_size = batch_size
+        self.chunk_size = chunk_size
         self.environment = environment
         self.id_fetcher = BGGIDFetcher()
         self.api_client = BGGAPIClient()
@@ -132,30 +146,40 @@ class BGGPipeline:
         games_loaded = 0
         total_games = len(games)
         
-        logger.info(f"Processing {total_games} games...")
-        for game in games:
-            game_id = game["game_id"]
-            game_type = game["type"]
+        logger.info(f"Processing {total_games} games in chunks of {self.chunk_size}...")
+        
+        # Process games in chunks
+        for i in range(0, len(games), self.chunk_size):
+            chunk = games[i:i + self.chunk_size]
+            chunk_ids = [game["game_id"] for game in chunk]
+            
             try:
-                # Fetch game data from API
-                logger.info(f"Fetching data for game {game_id}...")
-                response = self.api_client.get_thing(game_id)
+                # Fetch data for chunk of games
+                logger.info(f"Fetching data for games {chunk_ids}...")
+                response = self.api_client.get_thing(chunk_ids)
                 if not response:
-                    logger.warning(f"No data returned for game {game_id}")
+                    logger.warning(f"No data returned for games {chunk_ids}")
                     continue
 
-                # Process the response with type information
-                logger.info(f"Processing game {game_id} (type: {game_type})...")
-                processed = self.processor.process_game(game_id, response, game_type)
-                if processed:
-                    processed_games.append(processed)
-                    games_loaded += 1
-                    logger.info(f"Successfully processed game {game_id} ({games_loaded}/{total_games})")
-                else:
-                    logger.warning(f"Failed to process game {game_id}")
+                # Process each game in the chunk
+                for game in chunk:
+                    game_id = game["game_id"]
+                    game_type = game["type"]
+                    try:
+                        # Process the response with type information
+                        logger.info(f"Processing game {game_id} (type: {game_type})...")
+                        processed = self.processor.process_game(game_id, response, game_type)
+                        if processed:
+                            processed_games.append(processed)
+                            games_loaded += 1
+                            logger.info(f"Successfully processed game {game_id} ({games_loaded}/{total_games})")
+                        else:
+                            logger.warning(f"Failed to process game {game_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to process game {game_id}: {e}")
 
             except Exception as e:
-                logger.error(f"Failed to process game {game_id}: {e}")
+                logger.error(f"Failed to process chunk {chunk_ids}: {e}")
 
         if not processed_games:
             logger.warning("No games were successfully processed in this batch")
@@ -165,11 +189,16 @@ class BGGPipeline:
         dataframes = self.processor.prepare_for_bigquery(processed_games)
 
         # Validate data
-        if not all([
+        validation_success = all([
             self.processor.validate_data(df, table_name)
             for table_name, df in dataframes.items()
-        ]):
+        ])
+        
+        if not validation_success:
             logger.error("Data validation failed for this batch")
+            # Mark games as processed with success=False to prevent reprocessing
+            game_ids = [game["game_id"] for game in processed_games]
+            self.mark_ids_as_processed(game_ids, success=False)
             return False
 
         # Load data to BigQuery
@@ -266,8 +295,13 @@ class BGGPipeline:
 
 def main() -> None:
     """Main entry point for the pipeline."""
-    # Use smaller batch size for testing
-    pipeline = BGGPipeline(batch_size=50)
+    # Configure batch and chunk sizes for optimal performance
+    # batch_size: Number of games to process in each BigQuery batch
+    # chunk_size: Number of games to request in each API call
+    pipeline = BGGPipeline(
+        batch_size=1000,  # Process 100 games at a time from BigQuery
+        chunk_size=20,   # Request 10 games per API call
+    )
     pipeline.run()
 
 if __name__ == "__main__":

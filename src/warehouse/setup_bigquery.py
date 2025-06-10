@@ -51,6 +51,7 @@ class BigQuerySetup:
                 bigquery.SchemaField("request_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("url", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("method", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("game_ids", "STRING"),  # Store as string since it could be a single ID or list
                 bigquery.SchemaField("status_code", "INTEGER"),
                 bigquery.SchemaField("response_time", "FLOAT64"),
                 bigquery.SchemaField("error", "STRING"),
@@ -150,6 +151,14 @@ class BigQuerySetup:
             "game_publishers": [
                 bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
                 bigquery.SchemaField("publisher_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_implementations": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("implementation_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_expansions": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("expansion_id", "INTEGER", mode="REQUIRED")
             ],
             "player_counts": [
                 bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
