@@ -6,22 +6,20 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-def setup_logging(name: str) -> logging.Logger:
-    """Set up logging with file output.
+def setup_logging() -> None:
+    """Set up logging with file output."""
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
     
-    Args:
-        name: Name for the logger (usually __name__)
-        
-    Returns:
-        Configured logger instance
-    """
-    # Create logger
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    # Remove any existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
     
     # Create formatters
     file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_formatter = logging.Formatter(
         '%(levelname)s:%(name)s:%(message)s'
@@ -47,8 +45,6 @@ def setup_logging(name: str) -> logging.Logger:
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(logging.INFO)
     
-    # Add handlers to logger
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-    
-    return logger
+    # Add handlers to root logger
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)

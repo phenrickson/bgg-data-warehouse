@@ -6,10 +6,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import polars as pl
 
-from ..utils.logging_config import setup_logging
-
-# Set up logging
-logger = setup_logging(__name__)
+# Get logger
+logger = logging.getLogger(__name__)
 
 class GameStats:
     """Container for game statistics."""

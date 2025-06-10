@@ -1,5 +1,6 @@
 """Script to load games into the dev data warehouse."""
 
+import logging
 import sys
 from typing import List, Set
 
@@ -13,7 +14,8 @@ from src.utils.logging_config import setup_logging
 from src.warehouse.setup_bigquery import BigQuerySetup
 
 # Set up logging
-logger = setup_logging(__name__)
+logger = logging.getLogger(__name__)
+setup_logging()
 
 def mark_games_processed(game_ids: List[int]) -> None:
     """Mark games as processed in BigQuery.

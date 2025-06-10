@@ -13,10 +13,8 @@ from google.cloud import bigquery
 
 from ..config import get_bigquery_config
 
-from ..utils.logging_config import setup_logging
-
-# Set up logging
-logger = setup_logging(__name__)
+# Get logger
+logger = logging.getLogger(__name__)
 
 class BGGAPIClient:
     """Client for the BoardGameGeek XML API2."""

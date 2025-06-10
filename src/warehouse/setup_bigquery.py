@@ -8,8 +8,7 @@ from google.cloud.exceptions import NotFound
 
 from src.config import get_bigquery_config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get logger
 logger = logging.getLogger(__name__)
 
 class BigQuerySetup:
