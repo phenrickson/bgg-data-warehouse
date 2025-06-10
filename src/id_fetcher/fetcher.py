@@ -119,6 +119,12 @@ class BGGIDFetcher:
             "load_timestamp": [now] * len(new_games)
         })
 
+        # Log DataFrame info before upload
+        logger.info("DataFrame schema:")
+        logger.info(df.schema)
+        logger.info("DataFrame preview:")
+        logger.info(df.head())
+        
         # Convert to pandas for BigQuery upload
         pandas_df = df.to_pandas()
         

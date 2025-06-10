@@ -46,32 +46,57 @@ def mark_games_processed(game_ids: List[int]) -> None:
     except Exception as e:
         logger.error(f"Failed to mark games as processed: {e}")
 
-def get_unprocessed_game_ids(limit: int = 1000) -> Set[int]:
+def get_unprocessed_game_ids(limit: int = 1000) -> List[dict]:
     """Get IDs of unprocessed games from BigQuery.
     
     Returns:
-        Set of unprocessed game IDs
+        List of dictionaries containing game IDs and types
     """
     try:
         config = get_bigquery_config()
         client = bigquery.Client()
         
-        # Query for unprocessed game IDs with limit
+        # First check total number of records
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['thing_ids']['name']}`
+        """
+        count_df = client.query(count_query).to_dataframe()
+        total_records = count_df["total"].iloc[0]
+        logger.info(f"Total records in thing_ids table: {total_records}")
+        
+        # Check number of processed records
+        processed_query = f"""
+        SELECT COUNT(*) as processed
+        FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['thing_ids']['name']}`
+        WHERE processed = TRUE
+        """
+        processed_df = client.query(processed_query).to_dataframe()
+        processed_records = processed_df["processed"].iloc[0]
+        logger.info(f"Processed records: {processed_records}")
+        logger.info(f"Unprocessed records: {total_records - processed_records}")
+        
+        # Query for unprocessed game IDs and types with limit
         query = f"""
-        SELECT game_id
+        SELECT game_id, type, processed, process_timestamp
         FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['thing_ids']['name']}`
         WHERE NOT processed
         LIMIT {limit}
         """
         
         df = client.query(query).to_dataframe()
-        return set(df["game_id"].tolist())
+        logger.info(f"Query returned {len(df)} records")
+        if len(df) > 0:
+            logger.info("Sample of records:")
+            logger.info(df.head())
+            
+        return [{"game_id": row["game_id"], "type": row["type"]} for _, row in df.iterrows()]
         
     except Exception as e:
         logger.error(f"Failed to fetch unprocessed game IDs: {e}")
         return set()
 
-def load_games(game_ids: List[int], batch_size: int = 100) -> None:
+def load_games(games: List[dict], batch_size: int = 100) -> None:
     """Load specified games into the dev data warehouse.
     
     Args:
@@ -90,13 +115,15 @@ def load_games(game_ids: List[int], batch_size: int = 100) -> None:
         
         processed_games = []
         games_loaded = 0
-        total_games = len(game_ids)
+        total_games = len(games)
         current_batch = 0
         
         # Process games
         logger.info(f"Fetching and processing {total_games} games...")
-        for game_id in game_ids:
+        for game in games:
             try:
+                game_id = game["game_id"]
+                game_type = game["type"]
                 # Fetch game data
                 logger.info(f"Fetching data for game {game_id}...")
                 response = client.get_thing(game_id)
@@ -106,8 +133,8 @@ def load_games(game_ids: List[int], batch_size: int = 100) -> None:
                     continue
                 
                 # Process game data
-                logger.info(f"Processing game {game_id}...")
-                processed = processor.process_game(game_id, response)
+                logger.info(f"Processing game {game_id} (type: {game_type})...")
+                processed = processor.process_game(game_id, response, game_type)
                 
                 if processed:
                     processed_games.append(processed)
@@ -158,20 +185,39 @@ def main():
         # No arguments - load unprocessed games in batches
         logger.info("No game IDs provided - loading unprocessed games in batches")
         while True:
-            game_ids = list(get_unprocessed_game_ids(limit=1000))
-            if not game_ids:
+            games = get_unprocessed_game_ids(limit=1000)
+            if not games:
                 logger.info("No more unprocessed games found")
                 break
-            logger.info(f"Processing batch of {len(game_ids)} games")
-            load_games(game_ids)
+            logger.info(f"Processing batch of {len(games)} games")
+            load_games(games)
     else:
         # Load specific games
         try:
+            # For command line arguments, we need to query the types
             game_ids = [int(id) for id in sys.argv[1:]]
+            config = get_bigquery_config()
+            client = bigquery.Client()
+            
+            # Query for game types
+            ids_str = ", ".join(str(id) for id in game_ids)
+            query = f"""
+            SELECT game_id, type
+            FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['thing_ids']['name']}`
+            WHERE game_id IN ({ids_str})
+            """
+            
+            df = client.query(query).to_dataframe()
+            games = [{"game_id": row["game_id"], "type": row["type"]} for _, row in df.iterrows()]
+            
+            if not games:
+                logger.error("No games found with the provided IDs")
+                sys.exit(1)
+                
+            load_games(games)
         except ValueError:
             print("Error: Game IDs must be integers")
             sys.exit(1)
-        load_games(game_ids)
 
 if __name__ == "__main__":
     main()

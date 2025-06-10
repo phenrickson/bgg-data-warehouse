@@ -1,7 +1,7 @@
 """Module for processing BGG API responses into BigQuery-compatible format."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import polars as pl
@@ -13,22 +13,77 @@ class GameStats:
     """Container for game statistics."""
     def __init__(self, stats: Dict[str, Any]):
         ratings = stats.get("statistics", {}).get("ratings", {})
-        self.users_rated = int(ratings.get("usersrated", {}).get("@value", 0))
-        self.average = float(ratings.get("average", {}).get("@value", 0))
-        self.bayes_average = float(ratings.get("bayesaverage", {}).get("@value", 0))
-        self.standard_deviation = float(ratings.get("stddev", {}).get("@value", 0))
-        self.median = float(ratings.get("median", {}).get("@value", 0))
-        self.owned = int(ratings.get("owned", {}).get("@value", 0))
-        self.trading = int(ratings.get("trading", {}).get("@value", 0))
-        self.wanting = int(ratings.get("wanting", {}).get("@value", 0))
-        self.wishing = int(ratings.get("wishing", {}).get("@value", 0))
-        self.num_comments = int(ratings.get("numcomments", {}).get("@value", 0))
-        self.num_weights = int(ratings.get("numweights", {}).get("@value", 0))
-        self.average_weight = float(ratings.get("averageweight", {}).get("@value", 0))
+        
+        def safe_int(value: Any) -> int:
+            """Safely convert a value to integer."""
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                try:
+                    val = int(value)
+                    return val if val >= 0 else 0
+                except (ValueError, TypeError):
+                    return 0
+            if isinstance(value, dict):
+                return safe_int(value.get("@value", 0))
+            return 0
+            
+        def safe_float(value: Any) -> float:
+            """Safely convert a value to float."""
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return 0.0
+            if isinstance(value, dict):
+                return safe_float(value.get("@value", 0))
+            return 0.0
+            
+        self.users_rated = safe_int(ratings.get("usersrated", 0))
+        self.average = safe_float(ratings.get("average", 0))
+        self.bayes_average = safe_float(ratings.get("bayesaverage", 0))
+        self.standard_deviation = safe_float(ratings.get("stddev", 0))
+        self.median = safe_float(ratings.get("median", 0))
+        self.owned = safe_int(ratings.get("owned", 0))
+        self.trading = safe_int(ratings.get("trading", 0))
+        self.wanting = safe_int(ratings.get("wanting", 0))
+        self.wishing = safe_int(ratings.get("wishing", 0))
+        self.num_comments = safe_int(ratings.get("numcomments", 0))
+        self.num_weights = safe_int(ratings.get("numweights", 0))
+        self.average_weight = safe_float(ratings.get("averageweight", 0))
 
 class GameRanks:
     """Container for game ranking information."""
     def __init__(self, stats: Dict[str, Any]):
+        def safe_int(value: Any) -> int:
+            """Safely convert a value to integer."""
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                try:
+                    val = int(value)
+                    return val if val >= 0 else 0
+                except (ValueError, TypeError):
+                    return 0
+            if isinstance(value, dict):
+                return safe_int(value.get("@value", 0))
+            return 0
+            
+        def safe_float(value: Any) -> float:
+            """Safely convert a value to float."""
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return 0.0
+            if isinstance(value, dict):
+                return safe_float(value.get("@value", 0))
+            return 0.0
+            
         self.ranks = []
         ratings = stats.get("statistics", {}).get("ratings", {})
         ranks = ratings.get("ranks", {}).get("rank", [])
@@ -36,17 +91,36 @@ class GameRanks:
             ranks = [ranks]
         
         for rank in ranks:
-            if rank.get("@value") != "Not Ranked":
+            if isinstance(rank, dict) and rank.get("@value") != "Not Ranked":
                 self.ranks.append({
                     "type": rank.get("@type", ""),
                     "name": rank.get("@name", ""),
                     "friendly_name": rank.get("@friendlyname", ""),
-                    "value": int(rank.get("@value", 0)),
-                    "bayes_average": float(rank.get("@bayesaverage", 0))
+                    "value": safe_int(rank.get("@value", 0)),
+                    "bayes_average": safe_float(rank.get("@bayesaverage", 0))
                 })
 
 class BGGDataProcessor:
     """Processes BGG API responses for BigQuery loading."""
+    
+    def _safe_int(self, value: Any) -> int:
+        """Safely convert a value to integer.
+        
+        Args:
+            value: Value to convert
+            
+        Returns:
+            Integer value or 0 if conversion fails
+        """
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                val = int(value)
+                return val if val >= 0 else 0
+            except (ValueError, TypeError):
+                return 0
+        return 0
     
     def _extract_names(self, item: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
         """Extract primary name and alternate names of the game.
@@ -58,22 +132,41 @@ class BGGDataProcessor:
             Tuple of (primary_name, list of alternate names)
         """
         names = item.get("name", [])
-        if not isinstance(names, list):
-            names = [names]
+        if isinstance(names, dict):
+            # Single name entry
+            name_data = {
+                "name": names.get("@value", "Unknown"),
+                "type": names.get("@type", "alternate"),
+                "sort_index": int(names.get("@sortindex", 1))
+            }
+            if names.get("@type") == "primary":
+                return names.get("@value", "Unknown"), []
+            else:
+                return "Unknown", [name_data]
+        elif not isinstance(names, list):
+            return "Unknown", []
             
         primary_name = "Unknown"
         alternate_names = []
         
         for name in names:
-            name_data = {
-                "name": name.get("@value", "Unknown"),
-                "type": name.get("@type", "alternate"),
-                "sort_index": int(name.get("@sortindex", 1))
-            }
-            
-            if name.get("@type") == "primary":
-                primary_name = name.get("@value", "Unknown")
-            else:
+            if isinstance(name, dict):
+                name_data = {
+                    "name": name.get("@value", "Unknown"),
+                    "type": name.get("@type", "alternate"),
+                    "sort_index": int(name.get("@sortindex", 1))
+                }
+                
+                if name.get("@type") == "primary":
+                    primary_name = name.get("@value", "Unknown")
+                else:
+                    alternate_names.append(name_data)
+            elif isinstance(name, str):
+                name_data = {
+                    "name": name,
+                    "type": "alternate",
+                    "sort_index": 1
+                }
                 alternate_names.append(name_data)
                 
         return primary_name, alternate_names
@@ -87,8 +180,11 @@ class BGGDataProcessor:
         Returns:
             Publication year or None if not found
         """
-        year = item.get("yearpublished", {}).get("@value")
-        return int(year) if year and year.isdigit() else None
+        year = item.get("yearpublished", {})
+        if isinstance(year, str):
+            return int(year) if year.isdigit() and int(year) > 0 else None
+        year_value = year.get("@value")
+        return int(year_value) if year_value and year_value.isdigit() and int(year_value) > 0 else None
 
     def _extract_links(self, item: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
         """Extract all linked entities (categories, mechanics, etc.).
@@ -160,7 +256,11 @@ class BGGDataProcessor:
         for poll in polls:
             poll_name = poll.get("@name")
             if poll_name == "suggested_numplayers":
-                for result in poll.get("results", []):
+                poll_results = poll.get("results", [])
+                if not isinstance(poll_results, list):
+                    poll_results = [poll_results]
+                    
+                for result in poll_results:
                     num_players = result.get("@numplayers")
                     votes = result.get("result", [])
                     if not isinstance(votes, list):
@@ -248,12 +348,12 @@ class BGGDataProcessor:
                 "primary_name": primary_name,
                 "alternate_names": alternate_names,
                 "year_published": self._extract_year(item),
-                "min_players": int(item.get("minplayers", {}).get("@value", 0)),
-                "max_players": int(item.get("maxplayers", {}).get("@value", 0)),
-                "playing_time": int(item.get("playingtime", {}).get("@value", 0)),
-                "min_playtime": int(item.get("minplaytime", {}).get("@value", 0)),
-                "max_playtime": int(item.get("maxplaytime", {}).get("@value", 0)),
-                "min_age": int(item.get("minage", {}).get("@value", 0)),
+                "min_players": self._safe_int(item.get("minplayers", {}).get("@value", "0")),
+                "max_players": self._safe_int(item.get("maxplayers", {}).get("@value", "0")),
+                "playing_time": self._safe_int(item.get("playingtime", {}).get("@value", "0")),
+                "min_playtime": self._safe_int(item.get("minplaytime", {}).get("@value", "0")),
+                "max_playtime": self._safe_int(item.get("maxplaytime", {}).get("@value", "0")),
+                "min_age": self._safe_int(item.get("minage", {}).get("@value", "0")),
                 "description": item.get("description", ""),
                 "thumbnail": item.get("thumbnail", ""),
                 "image": item.get("image", ""),
@@ -292,7 +392,7 @@ class BGGDataProcessor:
                 
                 # Metadata
                 "raw_data": str(api_response),
-                "load_timestamp": datetime.utcnow(),
+                "load_timestamp": datetime.now(UTC),
             }
 
             return processed
