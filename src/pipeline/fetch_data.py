@@ -4,10 +4,12 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Set
 
+from google.cloud import bigquery
+
 from ..api_client.client import BGGAPIClient
 from ..data_processor.processor import BGGDataProcessor
 from ..id_fetcher.fetcher import BGGIDFetcher
-from ..pipeline.load_data import BigQueryLoader
+from ..pipeline.load_data import DataLoader
 from ..config import get_bigquery_config
 
 # Configure logging
@@ -31,39 +33,40 @@ class BGGPipeline:
         self.id_fetcher = BGGIDFetcher()
         self.api_client = BGGAPIClient()
         self.processor = BGGDataProcessor()
-        self.loader = BigQueryLoader()
+        self.loader = DataLoader()
+        self.bq_client = bigquery.Client()
 
-    def get_unprocessed_ids(self) -> Set[int]:
+    def get_unprocessed_ids(self) -> List[dict]:
         """Get IDs that haven't been processed yet.
         
         Returns:
-            Set of unprocessed game IDs
+            List of dictionaries containing unprocessed game IDs and their types
         """
         query = f"""
-        SELECT game_id
-        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['tables']['raw']['thing_ids']}`
+        SELECT game_id, type
+        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
         WHERE NOT processed
         ORDER BY game_id
         LIMIT {self.batch_size}
         """
         
         try:
-            df = self.api_client.client.query(query).to_dataframe()
-            return set(df["game_id"].tolist())
+            df = self.bq_client.query(query).to_dataframe()
+            return [{"game_id": row["game_id"], "type": row["type"]} for _, row in df.iterrows()]
         except Exception as e:
             logger.error("Failed to fetch unprocessed IDs: %s", e)
-            return set()
+            return []
 
-    def mark_ids_as_processed(self, game_ids: Set[int], success: bool = True) -> None:
+    def mark_ids_as_processed(self, game_ids: List[int], success: bool = True) -> None:
         """Mark game IDs as processed in BigQuery.
         
         Args:
-            game_ids: Set of game IDs to mark
+            game_ids: List of game IDs to mark
             success: Whether processing was successful
         """
         ids_str = ", ".join(str(id) for id in game_ids)
         query = f"""
-        UPDATE `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['tables']['raw']['thing_ids']}`
+        UPDATE `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
         SET 
             processed = {str(success).lower()},
             process_timestamp = CURRENT_TIMESTAMP()
@@ -71,23 +74,25 @@ class BGGPipeline:
         """
         
         try:
-            self.api_client.client.query(query).result()
+            self.bq_client.query(query).result()
             logger.info("Marked %d IDs as processed", len(game_ids))
         except Exception as e:
             logger.error("Failed to mark IDs as processed: %s", e)
 
-    def process_games(self, game_ids: Set[int]) -> List[dict]:
+    def process_games(self, games: List[dict]) -> List[dict]:
         """Process a batch of games.
         
         Args:
-            game_ids: Set of game IDs to process
+            games: List of dictionaries containing game IDs and types to process
             
         Returns:
             List of processed game data
         """
         processed_games = []
         
-        for game_id in game_ids:
+        for game in games:
+            game_id = game["game_id"]
+            game_type = game["type"]
             try:
                 # Fetch game data from API
                 response = self.api_client.get_thing(game_id)
@@ -95,8 +100,8 @@ class BGGPipeline:
                     logger.warning("No response for game %d", game_id)
                     continue
 
-                # Process the response
-                processed = self.processor.process_game(game_id, response)
+                # Process the response with type information
+                processed = self.processor.process_game(game_id, response, game_type)
                 if processed:
                     processed_games.append(processed)
                     logger.info("Successfully processed game %d", game_id)
@@ -117,54 +122,42 @@ class BGGPipeline:
             temp_dir = Path("temp")
             self.id_fetcher.update_ids(temp_dir)
 
-            # For testing, just process a few specific IDs
-            game_ids = {110, 111, 112}  # These IDs worked in previous run
-            logger.info("Using test IDs: %s", game_ids)
+            # Get unprocessed IDs from the database
+            unprocessed_games = self.get_unprocessed_ids()
+            if not unprocessed_games:
+                logger.info("No unprocessed games found")
+                return
 
-            logger.info("Processing %d games", len(game_ids))
+            logger.info("Processing %d games", len(unprocessed_games))
 
             # Process games
-            processed_games = self.process_games(game_ids)
+            processed_games = self.process_games(unprocessed_games)
             if not processed_games:
                 logger.warning("No games were successfully processed")
                 return
 
             # Prepare data for BigQuery
-            games_df, categories_df, mechanics_df = self.processor.prepare_for_bigquery(
-                processed_games
-            )
+            dataframes = self.processor.prepare_for_bigquery(processed_games)
 
             # Validate data
             if not all([
-                self.processor.validate_data(games_df, "games"),
-                self.processor.validate_data(categories_df, "categories"),
-                self.processor.validate_data(mechanics_df, "mechanics")
+                self.processor.validate_data(df, table_name)
+                for table_name, df in dataframes.items()
             ]):
                 logger.error("Data validation failed")
                 return
 
             # Load data to BigQuery
-            success = all([
-                self.loader.load_table(
-                    games_df,
-                    self.config["datasets"]["raw"],
-                    self.config["tables"]["raw"]["games"]
-                ),
-                self.loader.load_table(
-                    categories_df,
-                    self.config["datasets"]["raw"],
-                    self.config["tables"]["raw"]["categories"]
-                ),
-                self.loader.load_table(
-                    mechanics_df,
-                    self.config["datasets"]["raw"],
-                    self.config["tables"]["raw"]["mechanics"]
-                )
-            ])
+            try:
+                self.loader.load_games(processed_games)
+                success = True
+            except Exception as e:
+                logger.error("Failed to load data: %s", e)
+                success = False
 
             if success:
                 # Mark games as processed
-                processed_ids = {game["game_id"] for game in processed_games}
+                processed_ids = [game["game_id"] for game in processed_games]
                 self.mark_ids_as_processed(processed_ids)
                 logger.info("Pipeline completed successfully")
                 logger.info("Processed %d games", len(processed_games))

@@ -40,6 +40,7 @@ class BigQuerySetup:
         schemas = {
             "thing_ids": [
                 bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("processed", "BOOLEAN", mode="REQUIRED"),
                 bigquery.SchemaField("process_timestamp", "TIMESTAMP"),
                 bigquery.SchemaField("source", "STRING", mode="REQUIRED"),
@@ -69,6 +70,7 @@ class BigQuerySetup:
         schemas = {
             "games": [
                 bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("primary_name", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("year_published", "INTEGER"),
                 bigquery.SchemaField("min_players", "INTEGER"),
@@ -210,6 +212,14 @@ class BigQuerySetup:
             return
             
         try:
+            # First try to delete the table if it exists
+            try:
+                self.client.delete_table(table_id)
+                logger.info(f"Deleted existing table {table_id}")
+            except NotFound:
+                logger.info(f"Table {table_id} does not exist")
+            
+            # Create new table
             table = bigquery.Table(table_id, schema=schema)
             table.description = table_config.get('description', '')
             
@@ -224,8 +234,8 @@ class BigQuerySetup:
             if 'clustering_fields' in table_config:
                 table.clustering_fields = table_config['clustering_fields']
             
-            self.client.create_table(table, exists_ok=True)
-            logger.info(f"Table {table_id} is ready")
+            self.client.create_table(table)
+            logger.info(f"Created new table {table_id}")
             
         except Exception as e:
             logger.error(f"Failed to create table {table_id}: {e}")

@@ -199,13 +199,15 @@ class BGGDataProcessor:
     def process_game(
         self, 
         game_id: int, 
-        api_response: Dict[str, Any]
+        api_response: Dict[str, Any],
+        game_type: str
     ) -> Optional[Dict[str, Any]]:
         """Process a game's API response data.
         
         Args:
             game_id: ID of the game
             api_response: Raw API response data
+            game_type: Type of the game (boardgame or boardgameexpansion)
             
         Returns:
             Processed game data ready for BigQuery or None if processing fails
@@ -242,6 +244,7 @@ class BGGDataProcessor:
             # Build processed data
             processed = {
                 "game_id": game_id,
+                "type": game_type,
                 "primary_name": primary_name,
                 "alternate_names": alternate_names,
                 "year_published": self._extract_year(item),
@@ -343,6 +346,7 @@ class BGGDataProcessor:
             # Basic game info
             collectors["games"].append({
                 "game_id": game_id,
+                "type": game["type"],
                 "primary_name": game["primary_name"],
                 "year_published": game["year_published"],
                 "min_players": game["min_players"],
@@ -499,7 +503,7 @@ class BGGDataProcessor:
         try:
             # Define required columns for each table
             required_columns = {
-                "games": {"game_id", "primary_name", "load_timestamp"},
+                "games": {"game_id", "type", "primary_name", "load_timestamp"},
                 "alternate_names": {"game_id", "name"},
                 "categories": {"category_id", "name"},
                 "mechanics": {"mechanic_id", "name"},
