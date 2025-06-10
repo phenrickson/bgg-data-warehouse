@@ -52,82 +52,123 @@ class BGGIDFetcher:
             logger.error("Failed to download BGG IDs: %s", e)
             raise
 
-    def parse_ids(self, file_path: Path) -> Set[int]:
-        """Parse game IDs from the downloaded file.
+    def parse_ids(self, file_path: Path) -> List[dict]:
+        """Parse game IDs and types from the downloaded file.
         
         Args:
             file_path: Path to the IDs file
             
         Returns:
-            Set of game IDs
+            List of dictionaries containing game IDs and their types
         """
         logger.info("Parsing game IDs from %s", file_path)
+        games = []
         with open(file_path, "r") as f:
             content = f.read()
             logger.info("File content: %s", content[:1000])  # Print first 1000 chars
-            # File contains "ID boardgame" per line
-            ids = {int(line.split()[0]) for line in content.splitlines() if line.strip() and line.split()[0].isdigit()}
-        logger.info("Found %d game IDs", len(ids))
-        return ids
+            # File contains "ID type" per line (e.g., "12345 boardgame" or "67890 boardgameexpansion")
+            for line in content.splitlines():
+                if line.strip() and len(line.split()) >= 2:
+                    parts = line.split()
+                    if parts[0].isdigit():
+                        games.append({
+                            "game_id": int(parts[0]),
+                            "type": parts[1]
+                        })
+        logger.info("Found %d game IDs", len(games))
+        return games
 
-    def get_existing_ids(self) -> Set[int]:
-        """Get existing game IDs from BigQuery.
+    def get_existing_ids(self) -> Set[tuple]:
+        """Get existing game IDs and types from BigQuery.
         
         Returns:
-            Set of existing game IDs
+            Set of tuples containing (game_id, type)
         """
         query = f"""
-        SELECT DISTINCT game_id
+        SELECT DISTINCT game_id, type
         FROM `{self.config['project']['id']}.{self.dataset_id}.{self.table_id}`
         """
         
         try:
             df = self.client.query(query).to_dataframe()
-            existing_ids = set(df["game_id"].tolist())
+            existing_ids = {(row["game_id"], row["type"]) for _, row in df.iterrows()}
             logger.info("Found %d existing game IDs in BigQuery", len(existing_ids))
             return existing_ids
         except Exception as e:
             logger.error("Failed to fetch existing IDs: %s", e)
             return set()
 
-    def upload_new_ids(self, new_ids: Set[int]) -> None:
+    def upload_new_ids(self, new_games: List[dict]) -> None:
         """Upload new game IDs to BigQuery.
         
         Args:
-            new_ids: Set of new game IDs to upload
+            new_games: List of dictionaries containing game IDs and types to upload
         """
-        if not new_ids:
+        if not new_games:
             logger.info("No new IDs to upload")
             return
 
+        # Create temp table for new data
+        temp_table = f"{self.config['project']['id']}.{self.dataset_id}.temp_thing_ids"
+        
         # Create DataFrame with new IDs
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         df = pl.DataFrame({
-            "game_id": list(new_ids),
-            "processed": [False] * len(new_ids),
-            "process_timestamp": [None] * len(new_ids),
-            "source": ["bgg.activityclub.org"] * len(new_ids),
-            "load_timestamp": [now] * len(new_ids)
+            "game_id": [game["game_id"] for game in new_games],
+            "type": [game["type"] for game in new_games],
+            "processed": [False] * len(new_games),
+            "process_timestamp": [None] * len(new_games),
+            "source": ["bgg.activityclub.org"] * len(new_games),
+            "load_timestamp": [now] * len(new_games)
         })
 
-        # Convert to pandas for BigQuery upload
-        pandas_df = df.to_pandas()
-        
-        # Upload to BigQuery
-        table_ref = f"{self.config['project']['id']}.{self.dataset_id}.{self.table_id}"
-        job_config = bigquery.LoadJobConfig(
-            write_disposition=bigquery.WriteDisposition.WRITE_APPEND
-        )
-
+        # Log DataFrame info before upload
+        logger.info("DataFrame preview:")
         try:
-            job = self.client.load_table_from_dataframe(
-                pandas_df, table_ref, job_config=job_config
+            # Convert to string and encode safely for Windows console
+            preview = str(df.head())
+            preview = preview.encode('cp1252', errors='replace').decode('cp1252')
+            logger.info(preview)
+        except Exception as e:
+            logger.info("Could not display DataFrame preview: %s", e)
+        
+        try:
+            # Load data to temp table with schema
+            pandas_df = df.to_pandas()
+            job_config = bigquery.LoadJobConfig(
+                write_disposition="WRITE_TRUNCATE",
+                schema=[
+                    bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                    bigquery.SchemaField("type", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("processed", "BOOLEAN", mode="REQUIRED"),
+                    bigquery.SchemaField("process_timestamp", "TIMESTAMP"),
+                    bigquery.SchemaField("source", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("load_timestamp", "TIMESTAMP", mode="REQUIRED")
+                ]
             )
-            job.result()  # Wait for the job to complete
-            logger.info("Uploaded %d new IDs to BigQuery", len(new_ids))
+            job = self.client.load_table_from_dataframe(pandas_df, temp_table, job_config=job_config)
+            job.result()
+            
+            # Merge into main table
+            merge_query = f"""
+            MERGE `{self.config['project']['id']}.{self.dataset_id}.{self.table_id}` T
+            USING `{temp_table}` S
+            ON T.game_id = S.game_id AND T.type = S.type
+            WHEN NOT MATCHED THEN
+              INSERT (game_id, type, processed, process_timestamp, source, load_timestamp)
+              VALUES (game_id, type, processed, process_timestamp, source, load_timestamp)
+            """
+            
+            self.client.query(merge_query).result()
+            logger.info("Merged %d new IDs into BigQuery", len(new_games))
+            
         except Exception as e:
             logger.error("Failed to upload new IDs: %s", e)
             raise
+            
+        finally:
+            # Clean up temp table
+            self.client.delete_table(temp_table, not_found_ok=True)
 
     def update_ids(self, temp_dir: Path) -> None:
         """Update game IDs in BigQuery with new IDs from BGG.
@@ -137,15 +178,18 @@ class BGGIDFetcher:
         """
         # Download and parse IDs
         ids_file = self.download_ids(temp_dir)
-        all_ids = self.parse_ids(ids_file)
+        all_games = self.parse_ids(ids_file)
         
         # Get existing IDs and find new ones
         existing_ids = self.get_existing_ids()
-        new_ids = all_ids - existing_ids
+        new_games = [
+            game for game in all_games 
+            if (game["game_id"], game["type"]) not in existing_ids
+        ]
         
-        if new_ids:
-            logger.info("Found %d new game IDs", len(new_ids))
-            self.upload_new_ids(new_ids)
+        if new_games:
+            logger.info("Found %d new game IDs", len(new_games))
+            self.upload_new_ids(new_games)
         else:
             logger.info("No new game IDs found")
 
