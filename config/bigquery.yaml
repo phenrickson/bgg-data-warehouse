@@ -101,6 +101,16 @@ tables:
     description: "Game to publisher relationships"
     clustering_fields: [game_id]
 
+  game_implementations:
+    name: game_implementations
+    description: "Game implementation relationships (reimplementations and original games)"
+    clustering_fields: [game_id]
+
+  game_expansions:
+    name: game_expansions
+    description: "Game expansion relationships"
+    clustering_fields: [game_id]
+
   # Poll results
   player_counts:
     name: player_counts

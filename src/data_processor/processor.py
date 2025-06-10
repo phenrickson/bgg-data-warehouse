@@ -9,100 +9,97 @@ import polars as pl
 # Get logger
 logger = logging.getLogger(__name__)
 
-class GameStats:
-    """Container for game statistics."""
-    def __init__(self, stats: Dict[str, Any]):
-        ratings = stats.get("statistics", {}).get("ratings", {})
-        
-        def safe_int(value: Any) -> int:
-            """Safely convert a value to integer."""
-            if isinstance(value, int):
-                return value
-            if isinstance(value, str):
-                try:
-                    val = int(value)
-                    return val if val >= 0 else 0
-                except (ValueError, TypeError):
-                    return 0
-            if isinstance(value, dict):
-                return safe_int(value.get("@value", 0))
-            return 0
-            
-        def safe_float(value: Any) -> float:
-            """Safely convert a value to float."""
-            if isinstance(value, (int, float)):
-                return float(value)
-            if isinstance(value, str):
-                try:
-                    return float(value)
-                except (ValueError, TypeError):
-                    return 0.0
-            if isinstance(value, dict):
-                return safe_float(value.get("@value", 0))
-            return 0.0
-            
-        self.users_rated = safe_int(ratings.get("usersrated", 0))
-        self.average = safe_float(ratings.get("average", 0))
-        self.bayes_average = safe_float(ratings.get("bayesaverage", 0))
-        self.standard_deviation = safe_float(ratings.get("stddev", 0))
-        self.median = safe_float(ratings.get("median", 0))
-        self.owned = safe_int(ratings.get("owned", 0))
-        self.trading = safe_int(ratings.get("trading", 0))
-        self.wanting = safe_int(ratings.get("wanting", 0))
-        self.wishing = safe_int(ratings.get("wishing", 0))
-        self.num_comments = safe_int(ratings.get("numcomments", 0))
-        self.num_weights = safe_int(ratings.get("numweights", 0))
-        self.average_weight = safe_float(ratings.get("averageweight", 0))
-
-class GameRanks:
-    """Container for game ranking information."""
-    def __init__(self, stats: Dict[str, Any]):
-        def safe_int(value: Any) -> int:
-            """Safely convert a value to integer."""
-            if isinstance(value, int):
-                return value
-            if isinstance(value, str):
-                try:
-                    val = int(value)
-                    return val if val >= 0 else 0
-                except (ValueError, TypeError):
-                    return 0
-            if isinstance(value, dict):
-                return safe_int(value.get("@value", 0))
-            return 0
-            
-        def safe_float(value: Any) -> float:
-            """Safely convert a value to float."""
-            if isinstance(value, (int, float)):
-                return float(value)
-            if isinstance(value, str):
-                try:
-                    return float(value)
-                except (ValueError, TypeError):
-                    return 0.0
-            if isinstance(value, dict):
-                return safe_float(value.get("@value", 0))
-            return 0.0
-            
-        self.ranks = []
-        ratings = stats.get("statistics", {}).get("ratings", {})
-        ranks = ratings.get("ranks", {}).get("rank", [])
-        if not isinstance(ranks, list):
-            ranks = [ranks]
-        
-        for rank in ranks:
-            if isinstance(rank, dict) and rank.get("@value") != "Not Ranked":
-                self.ranks.append({
-                    "type": rank.get("@type", ""),
-                    "name": rank.get("@name", ""),
-                    "friendly_name": rank.get("@friendlyname", ""),
-                    "value": safe_int(rank.get("@value", 0)),
-                    "bayes_average": safe_float(rank.get("@bayesaverage", 0))
-                })
-
 class BGGDataProcessor:
-    """Processes BGG API responses for BigQuery loading."""
-    
+    class GameStats:
+        """Container for game statistics."""
+        def __init__(self, stats: Dict[str, Any]):
+            ratings = stats.get("statistics", {}).get("ratings", {})
+            
+            def safe_int(value: Any) -> int:
+                """Safely convert a value to integer."""
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, str):
+                    try:
+                        val = int(value)
+                        return val if val >= 0 else 0
+                    except (ValueError, TypeError):
+                        return 0
+                if isinstance(value, dict):
+                    return safe_int(value.get("@value", 0))
+                return 0
+                
+            def safe_float(value: Any) -> float:
+                """Safely convert a value to float."""
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    try:
+                        return float(value)
+                    except (ValueError, TypeError):
+                        return 0.0
+                if isinstance(value, dict):
+                    return safe_float(value.get("@value", 0))
+                return 0.0
+                
+            self.users_rated = safe_int(ratings.get("usersrated", 0))
+            self.average = safe_float(ratings.get("average", 0))
+            self.bayes_average = safe_float(ratings.get("bayesaverage", 0))
+            self.standard_deviation = safe_float(ratings.get("stddev", 0))
+            self.median = safe_float(ratings.get("median", 0))
+            self.owned = safe_int(ratings.get("owned", 0))
+            self.trading = safe_int(ratings.get("trading", 0))
+            self.wanting = safe_int(ratings.get("wanting", 0))
+            self.wishing = safe_int(ratings.get("wishing", 0))
+            self.num_comments = safe_int(ratings.get("numcomments", 0))
+            self.num_weights = safe_int(ratings.get("numweights", 0))
+            self.average_weight = safe_float(ratings.get("averageweight", 0))
+
+    class GameRanks:
+        """Container for game ranking information."""
+        def __init__(self, stats: Dict[str, Any]):
+            def safe_int(value: Any) -> int:
+                """Safely convert a value to integer."""
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, str):
+                    try:
+                        val = int(value)
+                        return val if val >= 0 else 0
+                    except (ValueError, TypeError):
+                        return 0
+                if isinstance(value, dict):
+                    return safe_int(value.get("@value", 0))
+                return 0
+                
+            def safe_float(value: Any) -> float:
+                """Safely convert a value to float."""
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    try:
+                        return float(value)
+                    except (ValueError, TypeError):
+                        return 0.0
+                if isinstance(value, dict):
+                    return safe_float(value.get("@value", 0))
+                return 0.0
+                
+            self.ranks = []
+            ratings = stats.get("statistics", {}).get("ratings", {})
+            ranks = ratings.get("ranks", {}).get("rank", [])
+            if not isinstance(ranks, list):
+                ranks = [ranks]
+            
+            for rank in ranks:
+                if isinstance(rank, dict) and rank.get("@value") != "Not Ranked":
+                    self.ranks.append({
+                        "type": rank.get("@type", ""),
+                        "name": rank.get("@name", ""),
+                        "friendly_name": rank.get("@friendlyname", ""),
+                        "value": safe_int(rank.get("@value", 0)),
+                        "bayes_average": safe_float(rank.get("@bayesaverage", 0))
+                    })
     def _safe_int(self, value: Any) -> int:
         """Safely convert a value to integer.
         
@@ -143,9 +140,16 @@ class BGGDataProcessor:
                 return names.get("@value", "Unknown"), []
             else:
                 return "Unknown", [name_data]
+        elif isinstance(names, str):
+            return "Unknown", [{
+                "name": names,
+                "type": "alternate",
+                "sort_index": 1
+            }]
         elif not isinstance(names, list):
             return "Unknown", []
             
+        # Handle list of names
         primary_name = "Unknown"
         alternate_names = []
         
@@ -162,12 +166,11 @@ class BGGDataProcessor:
                 else:
                     alternate_names.append(name_data)
             elif isinstance(name, str):
-                name_data = {
+                alternate_names.append({
                     "name": name,
                     "type": "alternate",
                     "sort_index": 1
-                }
-                alternate_names.append(name_data)
+                })
                 
         return primary_name, alternate_names
 
@@ -227,10 +230,13 @@ class BGGDataProcessor:
         for link in links:
             link_type = link.get("@type")
             if link_type in type_mapping:
-                result[type_mapping[link_type]].append({
+                entity = {
                     "id": int(link.get("@id", 0)),
                     "name": link.get("@value", "Unknown")
-                })
+                }
+                if link_type == "boardgameimplementation":
+                    entity["@inbound"] = link.get("@inbound", "false") == "true"
+                result[type_mapping[link_type]].append(entity)
                 
         return result
 
@@ -275,14 +281,18 @@ class BGGDataProcessor:
             elif poll_name == "language_dependence":
                 votes = poll.get("results", {}).get("result", [])
                 if not isinstance(votes, list):
-                    votes = [votes]
+                    if isinstance(votes, dict):
+                        votes = [votes]
+                    else:
+                        votes = []
                 
                 for vote in votes:
-                    results["language_dependence"].append({
-                        "level": int(vote.get("@level", 0)),
-                        "description": vote.get("@value", ""),
-                        "votes": int(vote.get("@numvotes", 0))
-                    })
+                    if isinstance(vote, dict):
+                        results["language_dependence"].append({
+                            "level": int(vote.get("@level", 0)),
+                            "description": vote.get("@value", ""),
+                            "votes": int(vote.get("@numvotes", 0))
+                        })
             elif poll_name == "suggested_playerage":
                 votes = poll.get("results", {}).get("result", [])
                 if not isinstance(votes, list):
@@ -338,8 +348,8 @@ class BGGDataProcessor:
             polls = self._extract_poll_results(item)
 
             # Extract statistics
-            stats = GameStats(item)
-            ranks = GameRanks(item)
+            stats = self.GameStats(item)
+            ranks = self.GameRanks(item)
 
             # Build processed data
             processed = {
@@ -488,23 +498,34 @@ class BGGDataProcessor:
                 for entity in game.get(entity_type, []):
                     # Add to entity set
                     collectors[entity_type].add((entity["id"], entity["name"]))
-                    # Add to bridge table with correct column names
-                    bridge_record = {"game_id": game_id}
                     
-                    # Map entity type to correct ID column name
-                    id_mapping = {
-                        "categories": "category_id",
-                        "mechanics": "mechanic_id",
-                        "families": "family_id",
-                        "expansions": "expansion_id",
-                        "implementations": "implementation_id",
-                        "designers": "designer_id",
-                        "artists": "artist_id",
-                        "publishers": "publisher_id"
-                    }
-                    
-                    bridge_record[id_mapping[entity_type]] = entity["id"]
-                    collectors[f"game_{entity_type}"].append(bridge_record)
+                    # Special handling for implementations to avoid duplicates
+                    if entity_type == "implementations":
+                        # Only create bridge record if this game implements the other game
+                        # (not if this game is implemented by the other game)
+                        if not entity.get("@inbound"):
+                            bridge_record = {
+                                "game_id": game_id,
+                                "implementation_id": entity["id"]
+                            }
+                            collectors[f"game_{entity_type}"].append(bridge_record)
+                    else:
+                        # For all other entity types, create bridge record normally
+                        bridge_record = {"game_id": game_id}
+                        
+                        # Map entity type to correct ID column name
+                        id_mapping = {
+                            "categories": "category_id",
+                            "mechanics": "mechanic_id",
+                            "families": "family_id",
+                            "expansions": "expansion_id",
+                            "designers": "designer_id",
+                            "artists": "artist_id",
+                            "publishers": "publisher_id"
+                        }
+                        
+                        bridge_record[id_mapping[entity_type]] = entity["id"]
+                        collectors[f"game_{entity_type}"].append(bridge_record)
             
             # Player counts
             for count in game["suggested_players"]:

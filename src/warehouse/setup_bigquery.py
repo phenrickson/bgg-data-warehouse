@@ -152,6 +152,14 @@ class BigQuerySetup:
                 bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
                 bigquery.SchemaField("publisher_id", "INTEGER", mode="REQUIRED")
             ],
+            "game_implementations": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("implementation_id", "INTEGER", mode="REQUIRED")
+            ],
+            "game_expansions": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("expansion_id", "INTEGER", mode="REQUIRED")
+            ],
             "player_counts": [
                 bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
                 bigquery.SchemaField("player_count", "STRING", mode="REQUIRED"),

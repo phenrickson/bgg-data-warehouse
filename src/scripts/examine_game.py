@@ -81,11 +81,12 @@ def examine_game(game_id: int) -> None:
 
 if __name__ == "__main__":
     # Examine a few games known to have implementations
+    # Check specific games
     games_to_check = [
-        13,    # Catan
-        822,   # Carcassonne
-        171,   # Chess
-        1406   # Monopoly
+        181279,  # Example game
+        20963,   # Example game
+        936,     # Example game
+        1406     # Monopoly (should have many implementations)
     ]
     
     for game_id in games_to_check:
