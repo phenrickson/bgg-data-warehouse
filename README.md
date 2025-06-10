@@ -6,6 +6,47 @@ A data pipeline for loading BoardGameGeek data into BigQuery.
 
 This project fetches board game data from the BoardGameGeek XML API2 and loads it into a BigQuery data warehouse. It includes:
 
+```mermaid
+graph TD
+    A[BGG XML API2] -->|Fetch IDs| B[ID Fetcher]
+    B -->|Store IDs| C[(BigQuery Raw Layer)]
+    B -->|Unprocessed IDs| D[API Client]
+    D -->|Rate-limited Requests| A
+    D -->|Raw Game Data| E[Data Processor]
+    E -->|Validated Data| F[Data Loader]
+    F -->|Transform & Load| G[(BigQuery Warehouse)]
+    G -->|Monitor| H[Quality Monitor]
+    H -->|Quality Metrics| I[(BigQuery Monitoring)]
+    G -->|Visualize| J[Dashboard]
+
+    subgraph ProcessingPipeline
+        B
+        D
+        E
+        F
+    end
+
+    subgraph DataStorage
+        C -->|Feed| G
+        I -->|Alert| H
+    end
+
+    subgraph MonitoringAnalysis
+        H -->|Update| I
+        J -->|Query| G
+    end
+
+    style ProcessingPipeline fill:#f9f,stroke:#333,stroke-width:4px
+    style DataStorage fill:#bbf,stroke:#333,stroke-width:4px
+    style MonitoringAnalysis fill:#bfb,stroke:#333,stroke-width:4px
+    style A fill:#fff,stroke:#333,stroke-width:2px
+    style C fill:#bbf,stroke:#333,stroke-width:2px
+    style G fill:#bbf,stroke:#333,stroke-width:2px
+    style I fill:#bbf,stroke:#333,stroke-width:2px
+```
+
+The pipeline includes:
+
 - Automated ID collection from BGG
 - Rate-limited API client respecting BGG's terms of service
 - Data validation and transformation
@@ -67,12 +108,38 @@ This will:
 3. Load the data into BigQuery
 4. Archive raw data to Cloud Storage
 
+### Utility Scripts
+
+The project includes several utility scripts for data management and analysis:
+
+```bash
+# Examine details of a specific game
+make examine-game GAME=1234
+
+# Check for duplicate game entries in the warehouse
+make check-duplicates
+```
+
 ### Loading Data
 
-To load processed data into BigQuery:
+The project supports multiple ways to load game data into BigQuery:
+
 ```bash
+# Load all unprocessed games
 make load
+
+# Explicitly load all unprocessed games
+make load-unprocessed
+
+# Load specific games by ID
+make load-games GAMES='1234 5678 9012'
 ```
+
+The loading process:
+1. Fetches game data from the BGG API
+2. Processes and validates the data
+3. Loads into BigQuery tables
+4. Updates processing status for tracking
 
 ### Updating Data
 
@@ -148,7 +215,8 @@ bgg-data-warehouse/
 │   ├── quality_monitor/# Data quality checks
 │   ├── visualization/  # Data visualization
 │   └── warehouse/      # BigQuery integration
-└── tests/              # Test suite
+├── tests/              # Test suite
+└── src/scripts/        # Utility scripts for data management and analysis
 ```
 
 ## Data Model
@@ -156,7 +224,7 @@ bgg-data-warehouse/
 ### Raw Layer
 - `bgg_raw.games` - Raw game data
 - `bgg_raw.request_log` - API request tracking
-- `bgg_raw.thing_ids` - Game IDs mapping
+- `bgg_raw.thing_ids` - Game IDs mapping with processing status
 
 ### Transformed Layer
 - `bgg_transformed.dim_games` - Game dimensions

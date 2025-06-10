@@ -26,7 +26,7 @@ class BGGIDFetcher:
         self.config = get_bigquery_config()
         self.client = bigquery.Client(project=self.config["project"]["id"])
         self.dataset_id = self.config["datasets"]["raw"]
-        self.table_id = self.config["tables"]["raw"]["thing_ids"]
+        self.table_id = self.config["raw_tables"]["thing_ids"]["name"]
 
     def download_ids(self, output_dir: Path) -> Path:
         """Download the BGG IDs file.
