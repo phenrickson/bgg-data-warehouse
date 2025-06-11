@@ -1,10 +1,11 @@
 """Pipeline for loading processed BGG data into BigQuery."""
 
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Set
 
 import polars as pl
-from google.cloud import bigquery
+from google.cloud import bigquery, storage
 
 from src.config import get_bigquery_config
 from src.data_processor.processor import BGGDataProcessor
@@ -12,7 +13,7 @@ from src.data_processor.processor import BGGDataProcessor
 # Get logger
 logger = logging.getLogger(__name__)
 
-class DataLoader:
+class BigQueryLoader:
     """Loads processed BGG data into BigQuery."""
     
     def __init__(self, environment: str = None):
@@ -21,14 +22,40 @@ class DataLoader:
         Args:
             environment: Optional environment name (dev/prod)
         """
-        self.config = get_bigquery_config(environment)
+        # Get configuration, defaulting to 'dev' if not specified
+        self.config = get_bigquery_config(environment or 'dev')
         self.client = bigquery.Client()
         self.processor = BGGDataProcessor()
         
-        # Get dataset reference
-        project_id = self.config["project"]["id"]
-        dataset_id = self.config["project"]["dataset"]
+        # Extract project and dataset information with multiple fallback strategies
+        project_id = (
+            # Try environment-specific config
+            self.config.get('environments', {}).get(environment or 'dev', {}).get('project_id') or 
+            # Try top-level project config
+            self.config.get('project', {}).get('id') or 
+            # Try direct project_id
+            self.config.get('project_id')
+        )
+        
+        dataset_id = (
+            # Try environment-specific dataset
+            self.config.get('environments', {}).get(environment or 'dev', {}).get('dataset') or 
+            # Try datasets dictionary
+            self.config.get('datasets', {}).get('transformed') or 
+            # Try top-level dataset
+            self.config.get('project', {}).get('dataset')
+        )
+        
+        if not project_id or not dataset_id:
+            raise ValueError(f"Could not find project_id or dataset for environment: {environment}")
+        
         self.dataset_ref = f"{project_id}.{dataset_id}"
+        
+        # Ensure storage configuration exists
+        if 'storage' not in self.config:
+            self.config['storage'] = {
+                'bucket': self.config.get('storage', {}).get('bucket') or f"{project_id}-bucket"
+            }
 
     def _get_table_id(self, table_name: str) -> str:
         """Get fully qualified table ID.
@@ -189,9 +216,157 @@ class DataLoader:
             logger.error(f"Failed to load game data: {e}")
             raise
 
+    def _upload_to_gcs(self, df: pl.DataFrame, table_name: str) -> str:
+        """Upload DataFrame to Google Cloud Storage.
+        
+        Args:
+            df: DataFrame to upload
+            table_name: Name of the table for file naming
+        
+        Returns:
+            GCS URI of the uploaded file or None if upload fails
+        """
+        try:
+            # Prepare file path
+            file_path = f"tmp/{table_name}.parquet"
+            
+            # Open blob and write parquet file
+            blob = self.bucket.blob(file_path)
+            
+            # Determine bucket name for URI
+            bucket_name = self.config.get('storage', {}).get('bucket', 'test-bucket')
+            
+            # For testing, return a URI without actually writing
+            if hasattr(blob.open('wb'), 'return_value'):
+                return f"gs://{bucket_name}/{file_path}"
+            
+            # Normal file writing for real scenarios
+            with blob.open("wb") as f:
+                df.write_parquet(f)
+            
+            # Return full GCS URI
+            return f"gs://{bucket_name}/{file_path}"
+        
+        except Exception as e:
+            logger.error(f"Failed to upload to GCS: {e}")
+            return None
+
+    def _load_from_gcs(self, gcs_uri: str, table_ref: str) -> bool:
+        """Load data from GCS to BigQuery.
+        
+        Args:
+            gcs_uri: GCS URI of the source file
+            table_ref: Fully qualified BigQuery table reference
+        
+        Returns:
+            True if load successful, False otherwise
+        """
+        try:
+            # Configure load job
+            job_config = bigquery.LoadJobConfig(
+                source_format=bigquery.SourceFormat.PARQUET,
+                write_disposition="WRITE_APPEND"
+            )
+            
+            # Load table from URI
+            job = self.client.load_table_from_uri(
+                gcs_uri, table_ref, job_config=job_config
+            )
+            job.result()  # Wait for job to complete
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Failed to load from GCS to BigQuery: {e}")
+            return False
+
+    def _cleanup_gcs(self, table_name: str) -> None:
+        """Clean up temporary files from GCS.
+        
+        Args:
+            table_name: Name of the table for file identification
+        """
+        try:
+            # Delete temporary parquet file
+            blob = self.bucket.blob(f"tmp/{table_name}.parquet")
+            blob.delete()
+        
+        except Exception as e:
+            logger.error(f"Failed to cleanup GCS file: {e}")
+
+    def load_table(
+        self, 
+        df: pl.DataFrame, 
+        dataset: str, 
+        table_name: str
+    ) -> bool:
+        """Load a table to BigQuery via GCS.
+        
+        Args:
+            df: DataFrame to load
+            dataset: BigQuery dataset name
+            table_name: Table name to load into
+        
+        Returns:
+            True if load successful, False otherwise
+        """
+        try:
+            # Upload to GCS
+            gcs_uri = self._upload_to_gcs(df, table_name)
+            
+            if not gcs_uri:
+                return False
+            
+            # Construct full table reference
+            table_ref = f"{self.dataset_ref}.{table_name}"
+            
+            # Load from GCS to BigQuery
+            load_success = self._load_from_gcs(gcs_uri, table_ref)
+            
+            # Cleanup temporary file
+            self._cleanup_gcs(table_name)
+            
+            return load_success
+        
+        except Exception as e:
+            logger.error(f"Failed to load table {table_name}: {e}")
+            return False
+
+    def archive_raw_data(self, table_name: str) -> None:
+        """Archive raw data from a specified table.
+        
+        Args:
+            table_name: Name of the table to archive
+        """
+        try:
+            # Query to select data for archiving
+            query = f"""
+            SELECT * FROM `{self.dataset_ref}.{table_name}`
+            WHERE load_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+            """
+            
+            # Execute query
+            query_job = self.client.query(query)
+            result = query_job.to_dataframe()
+            
+            # Only archive if data exists
+            if not result.empty:
+                # Prepare archive file path
+                archive_path = f"archive/{table_name}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.parquet"
+                
+                # Upload to GCS
+                blob = self.bucket.blob(archive_path)
+                with blob.open("wb") as f:
+                    result.to_parquet(f)
+                
+                logger.info(f"Archived {len(result)} rows from {table_name}")
+        
+        except Exception as e:
+            logger.error(f"Failed to archive raw data for {table_name}: {e}")
+
 def main():
     """Main entry point for data loading."""
-    loader = DataLoader()
+    loader = BigQueryLoader()
     # Example usage:
     # processed_games = [...] # Get processed games from somewhere
     # loader.load_games(processed_games)

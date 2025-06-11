@@ -3,7 +3,7 @@
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Optional, Union
 from urllib.parse import urljoin
 
@@ -28,16 +28,16 @@ class BGGAPIClient:
 
     def __init__(self) -> None:
         """Initialize the API client."""
-        self.last_request_time = datetime.min
+        self.last_request_time = datetime.min.replace(tzinfo=UTC)
         self.session = requests.Session()
 
     def _wait_for_rate_limit(self) -> None:
         """Wait to respect the rate limit."""
-        now = datetime.now()
+        now = datetime.now(UTC)
         elapsed = (now - self.last_request_time).total_seconds()
         if elapsed < self.THROTTLE_DELAY:
             time.sleep(self.THROTTLE_DELAY - elapsed)
-        self.last_request_time = datetime.now()
+        self.last_request_time = datetime.now(UTC)
 
     def _log_request(
         self,
@@ -127,11 +127,11 @@ class BGGAPIClient:
         retry_count = 0
         while retry_count <= self.MAX_RETRIES:
             self._wait_for_rate_limit()
-            start_time = datetime.utcnow()
+            start_time = datetime.now(UTC)
             
             try:
                 response = self.session.get(endpoint, params=params)
-                end_time = datetime.utcnow()
+                end_time = datetime.now(UTC)
                 
                 # Handle response
                 if response.status_code == 200:
@@ -194,7 +194,7 @@ class BGGAPIClient:
                     return None
 
             except requests.exceptions.RequestException as e:
-                end_time = datetime.utcnow()
+                end_time = datetime.now(UTC)
                 logger.error("Request failed for games %s: %s", ids_str, e)
                 self._log_request(
                     request_id=request_id,
