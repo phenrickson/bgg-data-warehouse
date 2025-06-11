@@ -158,7 +158,8 @@ class DataLoader:
             # Load bridge tables (delete+insert)
             bridge_tables = [
                 "game_categories", "game_mechanics", "game_families",
-                "game_designers", "game_artists", "game_publishers"
+                "game_designers", "game_artists", "game_publishers",
+                "game_implementations", "game_expansions"
             ]
             
             for table_name in bridge_tables:

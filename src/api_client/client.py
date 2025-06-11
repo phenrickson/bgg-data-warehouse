@@ -4,9 +4,10 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 from urllib.parse import urljoin
 
+import pandas as pd
 import requests
 import xmltodict
 from google.cloud import bigquery
@@ -41,7 +42,7 @@ class BGGAPIClient:
     def _log_request(
         self,
         request_id: str,
-        game_id: Optional[int],
+        game_ids: Optional[Union[int, List[int]]],
         start_time: datetime,
         end_time: datetime,
         status_code: int,
@@ -49,11 +50,11 @@ class BGGAPIClient:
         error_message: Optional[str],
         retry_count: int,
     ) -> None:
-        """Log request details (currently just logs to console).
+        """Log request details to BigQuery and console.
         
         Args:
             request_id: Unique identifier for the request
-            game_id: ID of the requested game (if applicable)
+            game_ids: ID or list of IDs of the requested games
             start_time: When the request was initiated
             end_time: When the response was received
             status_code: HTTP status code
@@ -63,18 +64,46 @@ class BGGAPIClient:
         """
         duration = (end_time - start_time).total_seconds()
         status = "SUCCESS" if success else "FAILED"
+        
+        # Log to console
         logger.info(
-            f"API Request {request_id} for game {game_id}: {status} "
+            f"API Request {request_id} for games {game_ids}: {status} "
             f"(status={status_code}, duration={duration:.2f}s, retries={retry_count})"
         )
         if error_message:
             logger.error(f"Error details: {error_message}")
+            
+        # Log to BigQuery
+        try:
+            config = get_bigquery_config()
+            client = bigquery.Client()
+            
+            # Prepare request log entry
+            table_id = f"{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}"
+            rows_to_insert = [{
+                "request_id": request_id,
+                "url": f"{self.BASE_URL}thing",
+                "method": "GET",
+                "game_ids": str(game_ids) if game_ids else None,
+                "status_code": status_code,
+                "response_time": duration,
+                "error": error_message,
+                "request_timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+            }]
+            
+            # Insert into BigQuery
+            errors = client.insert_rows_json(table_id, rows_to_insert)
+            if errors:
+                logger.error(f"Failed to log request to BigQuery: {errors}")
+                
+        except Exception as e:
+            logger.error(f"Failed to log request to BigQuery: {e}")
 
-    def get_thing(self, game_id: int, stats: bool = True) -> Optional[Dict]:
-        """Get details for a specific game.
+    def get_thing(self, game_ids: Union[int, List[int]], stats: bool = True) -> Optional[Dict]:
+        """Get details for one or more games.
         
         Args:
-            game_id: ID of the game to fetch
+            game_ids: Single game ID or list of game IDs to fetch
             stats: Whether to include statistics
             
         Returns:
@@ -82,8 +111,15 @@ class BGGAPIClient:
         """
         request_id = str(uuid.uuid4())
         endpoint = urljoin(self.BASE_URL, "thing")
+        # Convert single ID to list
+        if isinstance(game_ids, int):
+            game_ids = [game_ids]
+            
+        # Convert IDs to comma-separated string
+        ids_str = ",".join(str(id) for id in game_ids)
+        
         params = {
-            "id": game_id,
+            "id": ids_str,
             "stats": int(stats),
             "type": "boardgame",
         }
@@ -103,7 +139,7 @@ class BGGAPIClient:
                         data = xmltodict.parse(response.text)
                         self._log_request(
                             request_id=request_id,
-                            game_id=game_id,
+                            game_ids=game_ids,
                             start_time=start_time,
                             end_time=end_time,
                             status_code=response.status_code,
@@ -113,10 +149,10 @@ class BGGAPIClient:
                         )
                         return data
                     except Exception as e:
-                        logger.error("Failed to parse XML for game %d: %s", game_id, e)
+                        logger.error("Failed to parse XML for games %s: %s", ids_str, e)
                         self._log_request(
                             request_id=request_id,
-                            game_id=game_id,
+                            game_ids=game_ids,
                             start_time=start_time,
                             end_time=end_time,
                             status_code=response.status_code,
@@ -128,7 +164,7 @@ class BGGAPIClient:
 
                 # Handle rate limiting
                 elif response.status_code == 429:
-                    logger.warning("Rate limited for game %d, retrying...", game_id)
+                    logger.warning("Rate limited for games %s, retrying...", ids_str)
                     time.sleep(self.RETRY_DELAY * (retry_count + 1))
                     retry_count += 1
                     continue
@@ -136,14 +172,14 @@ class BGGAPIClient:
                 # Handle other errors
                 else:
                     logger.error(
-                        "Failed to fetch game %d: %s %s",
-                        game_id,
+                        "Failed to fetch games %s: %s %s",
+                        ids_str,
                         response.status_code,
                         response.text,
                     )
                     self._log_request(
                         request_id=request_id,
-                        game_id=game_id,
+                        game_ids=game_ids,
                         start_time=start_time,
                         end_time=end_time,
                         status_code=response.status_code,
@@ -159,10 +195,10 @@ class BGGAPIClient:
 
             except requests.exceptions.RequestException as e:
                 end_time = datetime.utcnow()
-                logger.error("Request failed for game %d: %s", game_id, e)
+                logger.error("Request failed for games %s: %s", ids_str, e)
                 self._log_request(
                     request_id=request_id,
-                    game_id=game_id,
+                    game_ids=game_ids,
                     start_time=start_time,
                     end_time=end_time,
                     status_code=0,
@@ -182,7 +218,7 @@ class BGGAPIClient:
         self, 
         minutes: int = 60
     ) -> Dict[str, Union[int, float]]:
-        """Get statistics about API requests (currently a stub).
+        """Get statistics about API requests from BigQuery.
         
         Args:
             minutes: Number of minutes to look back
@@ -190,10 +226,47 @@ class BGGAPIClient:
         Returns:
             Dictionary containing request statistics
         """
-        return {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "avg_response_time": 0,
-            "avg_retries": 0,
-        }
+        try:
+            config = get_bigquery_config()
+            client = bigquery.Client()
+            
+            # Query request log table
+            query = f"""
+            WITH recent_requests AS (
+                SELECT *
+                FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}`
+                WHERE request_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {minutes} MINUTE)
+            )
+            SELECT
+                COUNT(*) as total_requests,
+                COUNTIF(status_code = 200) as successful_requests,
+                COUNTIF(status_code != 200) as failed_requests,
+                AVG(response_time) as avg_response_time,
+                AVG(CAST(REGEXP_EXTRACT(error, r'retries=([0-9]+)') AS INT64)) as avg_retries
+            FROM recent_requests
+            """
+            
+            df = client.query(query).to_dataframe()
+            if len(df) == 0:
+                return {
+                    "total_requests": 0,
+                    "successful_requests": 0,
+                    "failed_requests": 0,
+                    "avg_response_time": 0,
+                    "avg_retries": 0,
+                }
+                
+            stats = df.iloc[0].to_dict()
+            # Convert NaN to 0
+            stats = {k: 0 if pd.isna(v) else v for k, v in stats.items()}
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Failed to get request stats: {e}")
+            return {
+                "total_requests": 0,
+                "successful_requests": 0,
+                "failed_requests": 0,
+                "avg_response_time": 0,
+                "avg_retries": 0,
+            }
