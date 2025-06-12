@@ -114,27 +114,19 @@ class BGGResponseFetcher:
             return []
 
     def store_response(self, game_ids: List[int], response_data: str) -> None:
-        """Store raw API response in BigQuery.
+        """Store raw API response in BigQuery using load jobs.
         
         Args:
             game_ids: List of game IDs in the response
             response_data: Raw API response data
         """
-        # Add microsecond offset to ensure unique timestamps within batch
         base_time = datetime.now(UTC)
         rows = []
-        for i, game_id in enumerate(game_ids):
-            # Add microsecond offset based on position in batch
-            # Ensure we don't exceed 999999 microseconds
-            new_microsecond = (base_time.microsecond + i) % 1000000
-            timestamp = base_time.replace(microsecond=new_microsecond)
-            if new_microsecond < base_time.microsecond:
-                # We wrapped around, increment the second
-                timestamp = timestamp + timedelta(seconds=1)
+        for game_id in game_ids:
             rows.append({
                 "game_id": game_id,
                 "response_data": response_data,
-                "fetch_timestamp": timestamp.isoformat(),
+                "fetch_timestamp": base_time.isoformat(),
                 "processed": False,
                 "process_timestamp": None,
                 "process_status": None,
@@ -144,12 +136,31 @@ class BGGResponseFetcher:
         table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}"
         
         try:
-            # Load to BigQuery
-            errors = self.bq_client.insert_rows_json(table_id, rows)
-            if errors:
-                logger.error(f"Failed to store responses: {errors}")
+            # Get table schema
+            table = self.bq_client.get_table(table_id)
+            
+            # Configure the load job
+            job_config = bigquery.LoadJobConfig(
+                source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+                schema=table.schema,
+                write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            )
+            
+            # Load data using load job
+            load_job = self.bq_client.load_table_from_json(
+                rows,
+                table_id,
+                job_config=job_config
+            )
+            
+            # Wait for job to complete
+            load_job.result()
+            
+            if load_job.errors:
+                logger.error(f"Failed to store responses: {load_job.errors}")
             else:
                 logger.info(f"Stored responses for {len(game_ids)} games")
+                
         except Exception as e:
             logger.error(f"Failed to store responses: {e}")
             raise

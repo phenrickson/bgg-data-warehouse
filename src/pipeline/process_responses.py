@@ -115,6 +115,27 @@ class BGGResponseProcessor:
             logger.error(f"Failed to convert DataFrame: {e}")
             return []
 
+    def get_unprocessed_count(self) -> int:
+        """Get count of remaining unprocessed responses.
+        
+        Returns:
+            Number of unprocessed responses remaining
+        """
+        query = f"""
+        SELECT COUNT(*) as count
+        FROM `{self.raw_responses_table}`
+        WHERE processed = FALSE
+        """
+        
+        try:
+            query_job = self.bq_client.query(query)
+            results = query_job.result()
+            row = next(results)
+            return row.count
+        except Exception as e:
+            logger.error(f"Failed to get unprocessed count: {e}")
+            return 0
+
     def get_unprocessed_responses(self) -> List[Dict]:
         """Retrieve unprocessed responses from BigQuery.
         
@@ -122,19 +143,20 @@ class BGGResponseProcessor:
             List of unprocessed game responses
         """
         query = f"""
-        WITH ranked_responses AS (
+        WITH responses AS (
             SELECT 
                 game_id,
                 response_data,
                 fetch_timestamp,
-                ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY fetch_timestamp DESC) as rn
+                TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), fetch_timestamp, MINUTE) >= 30 as is_old
             FROM `{self.raw_responses_table}`
             WHERE processed = FALSE
         )
         SELECT game_id, response_data, fetch_timestamp
-        FROM ranked_responses
-        WHERE rn = 1
-        ORDER BY game_id
+        FROM responses
+        ORDER BY 
+            is_old DESC,  -- Process older responses first
+            fetch_timestamp ASC  -- Then oldest to newest within each group
         LIMIT {self.batch_size}
         """
         
@@ -197,11 +219,43 @@ class BGGResponseProcessor:
                 else:
                     logger.warning(f"Failed to process game {response['game_id']}")
                     
+                    # Mark as failed
+                    update_query = f"""
+                    UPDATE `{self.raw_responses_table}`
+                    SET processed = TRUE,
+                        process_status = 'failed',
+                        process_timestamp = CURRENT_TIMESTAMP(),
+                        process_attempt = process_attempt + 1
+                    WHERE game_id = {response['game_id']}
+                    """
+                    try:
+                        query_job = self.bq_client.query(update_query)
+                        query_job.result()  # Wait for query to complete
+                        logger.info(f"Marked game {response['game_id']} as failed")
+                    except Exception as e:
+                        logger.error(f"Failed to update process status: {e}")
+                    
                     # In test environments, simulate retry
                     if self.environment in ['dev', 'test']:
                         time.sleep(1)  # Brief pause between retries
             except Exception as e:
                 logger.error(f"Error processing game {response['game_id']}: {e}")
+                
+                # Mark as error
+                update_query = f"""
+                UPDATE `{self.raw_responses_table}`
+                SET processed = TRUE,
+                    process_status = 'error',
+                    process_timestamp = CURRENT_TIMESTAMP(),
+                    process_attempt = process_attempt + 1
+                WHERE game_id = {response['game_id']}
+                """
+                try:
+                    query_job = self.bq_client.query(update_query)
+                    query_job.result()  # Wait for query to complete
+                    logger.info(f"Marked game {response['game_id']} as error")
+                except Exception as update_error:
+                    logger.error(f"Failed to update process status: {update_error}")
                 
                 # In test environments, simulate retry
                 if self.environment in ['dev', 'test']:
@@ -233,6 +287,45 @@ class BGGResponseProcessor:
             # Load processed games
             self.loader.load_games(processed_games)
             
+            # Mark responses as processed
+            game_ids = [str(game['game_id']) for game in processed_games]
+            game_ids_str = ','.join(game_ids)
+            logger.info(f"Attempting to mark games as processed: {game_ids_str}")
+            
+            update_query = f"""
+            UPDATE `{self.raw_responses_table}`
+            SET processed = TRUE,
+                process_timestamp = CURRENT_TIMESTAMP(),
+                process_status = 'success',
+                process_attempt = process_attempt + 1
+            WHERE game_id IN ({game_ids_str})
+            """
+            
+            try:
+                query_job = self.bq_client.query(update_query)
+                query_job.result()  # Wait for query to complete
+                logger.info(f"Successfully marked {len(game_ids)} responses as processed")
+                
+                # Verify the update
+                verify_query = f"""
+                SELECT COUNT(*) as count
+                FROM `{self.raw_responses_table}`
+                WHERE game_id IN ({game_ids_str})
+                  AND processed = TRUE
+                  AND process_status = 'success'
+                """
+                verify_job = self.bq_client.query(verify_query)
+                verify_result = next(verify_job.result())
+                logger.info(f"Verified {verify_result.count} responses were marked as processed")
+                
+                if verify_result.count != len(game_ids):
+                    logger.error(f"Update verification failed: expected {len(game_ids)} updates but found {verify_result.count}")
+                    return False
+                
+            except Exception as e:
+                logger.error(f"Failed to mark responses as processed: {e}")
+                return False
+            
             return True
         
         except Exception as e:
@@ -244,22 +337,31 @@ class BGGResponseProcessor:
             
             return False
 
-    def run(self, num_batches: int = 50) -> None:
-        """Run the full processing pipeline.
-        
-        Args:
-            num_batches: Number of response batches to pull before processing
-        """
+    def run(self) -> None:
+        """Run the full processing pipeline until no unprocessed responses remain."""
         logger.info("Starting BGG response processor")
         logger.info(f"Reading responses from: {self.raw_responses_table}")
         logger.info(f"Loading processed data to: {self.processed_games_table}")
         
         try:
-            for _ in range(num_batches):
-                if not self.process_batch():
-                    break
+            total_unprocessed = self.get_unprocessed_count()
+            batch_count = 0
             
-            logger.info("Processor completed - all responses processed")
+            logger.info(f"Found {total_unprocessed} unprocessed responses")
+            
+            while total_unprocessed > 0:
+                batch_count += 1
+                logger.info(f"Processing batch {batch_count} ({total_unprocessed} responses remaining)")
+                
+                if not self.process_batch():
+                    logger.warning("Batch processing failed, stopping pipeline")
+                    break
+                
+                # Update count for next iteration
+                total_unprocessed = self.get_unprocessed_count()
+            
+            logger.info(f"Processor completed - processed {batch_count} batches")
+            logger.info(f"Remaining unprocessed responses: {total_unprocessed}")
                     
         except Exception as e:
             logger.error(f"Processor failed: {e}")
@@ -267,9 +369,8 @@ class BGGResponseProcessor:
 
 def main() -> None:
     """Main entry point for the response processor."""
-    # Use smaller batches for better visibility
-    processor = BGGResponseProcessor(batch_size=20)
-    processor.run(num_batches=5)
+    processor = BGGResponseProcessor(batch_size=2000)
+    processor.run()
 
 if __name__ == "__main__":
     main()

@@ -24,8 +24,11 @@ clean:
 fetch-ids:
 	uv run -m src.id_fetcher.fetcher
 
-fetch-games:
-	uv run -m src.pipeline.fetch_data
+fetch-responses:
+	uv run -m src.pipeline.fetch_responses
+
+process-responses:
+	uv run -m src.pipeline.process_responses
 
 # Environment-specific tasks
 create-datasets:
