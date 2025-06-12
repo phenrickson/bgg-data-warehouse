@@ -28,17 +28,8 @@ fetch-games:
 	uv run -m src.pipeline.fetch_data
 
 # Environment-specific tasks
-create-datasets-prod:
-	set "ENVIRONMENT=prod" && uv run -m src.warehouse.setup_bigquery
-
-create-datasets-dev:
-	ENVIRONMENT=dev uv run -m src.warehouse.setup_bigquery
-
-create-datasets-test:
-	ENVIRONMENT=test uv run -m src.warehouse.setup_bigquery
-
-create-datasets: create-datasets-prod create-datasets-dev create-datasets-test
-	@echo "All datasets created"
+create-datasets:
+	uv run -m src.warehouse.setup_bigquery
 
 # Utility tasks
 examine-game:

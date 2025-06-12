@@ -1,10 +1,15 @@
 """BigQuery setup for the BGG data warehouse."""
 
 import logging
+import os
 from typing import Dict, List, Optional
 
+from dotenv import load_dotenv
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
+
+# Load environment variables
+load_dotenv()
 
 from src.config import get_bigquery_config
 

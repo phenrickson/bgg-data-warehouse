@@ -1,14 +1,20 @@
 """Pipeline for loading processed BGG data into BigQuery."""
 
 import logging
+import os
 from datetime import datetime, timezone
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 import polars as pl
+from dotenv import load_dotenv
 from google.cloud import bigquery, storage
+from google.api_core import retry
 
 from src.config import get_bigquery_config
 from src.data_processor.processor import BGGDataProcessor
+
+# Load environment variables
+load_dotenv()
 
 # Get logger
 logger = logging.getLogger(__name__)
@@ -16,40 +22,31 @@ logger = logging.getLogger(__name__)
 class BigQueryLoader:
     """Loads processed BGG data into BigQuery."""
     
-    def __init__(self, environment: str = None):
+    def __init__(self, environment: Optional[str] = None):
         """Initialize BigQuery client and configuration.
         
         Args:
             environment: Optional environment name (dev/prod)
         """
-        # Get configuration, defaulting to 'dev' if not specified
-        self.config = get_bigquery_config(environment or 'dev')
+        # Get environment from .env if not provided
+        if not environment:
+            environment = os.getenv("ENVIRONMENT")
+            
+        # Get configuration
+        self.config = get_bigquery_config(environment)
         self.client = bigquery.Client()
         self.processor = BGGDataProcessor()
         
-        # Extract project and dataset information with multiple fallback strategies
-        project_id = (
-            # Try environment-specific config
-            self.config.get('environments', {}).get(environment or 'dev', {}).get('project_id') or 
-            # Try top-level project config
-            self.config.get('project', {}).get('id') or 
-            # Try direct project_id
-            self.config.get('project_id')
-        )
-        
-        dataset_id = (
-            # Try environment-specific dataset
-            self.config.get('environments', {}).get(environment or 'dev', {}).get('dataset') or 
-            # Try datasets dictionary
-            self.config.get('datasets', {}).get('transformed') or 
-            # Try top-level dataset
-            self.config.get('project', {}).get('dataset')
-        )
+        # Get project and dataset from environment config
+        env_config = self.config['environments'][environment]
+        project_id = env_config['project_id']
+        dataset_id = env_config['dataset']
         
         if not project_id or not dataset_id:
             raise ValueError(f"Could not find project_id or dataset for environment: {environment}")
         
         self.dataset_ref = f"{project_id}.{dataset_id}"
+        logger.info(f"Using BigQuery dataset: {self.dataset_ref}")
         
         # Ensure storage configuration exists
         if 'storage' not in self.config:
@@ -142,16 +139,21 @@ class BigQueryLoader:
             # Convert to pandas for BigQuery loading
             pdf = df.to_pandas()
             
-            # Load to BigQuery
+            # Load to BigQuery with retry
             job_config = bigquery.LoadJobConfig(
                 write_disposition=write_disposition
             )
             
             table_id = self._get_table_id(table_name)
-            job = self.client.load_table_from_dataframe(
-                pdf, table_id, job_config=job_config
-            )
-            job.result()  # Wait for job to complete
+            
+            @retry.Retry(predicate=retry.if_exception_type(Exception))
+            def load_with_retry():
+                job = self.client.load_table_from_dataframe(
+                    pdf, table_id, job_config=job_config
+                )
+                return job.result()  # Wait for job to complete
+                
+            load_with_retry()
             
             logger.info(f"Loaded {df.height} rows into {table_name}")
             

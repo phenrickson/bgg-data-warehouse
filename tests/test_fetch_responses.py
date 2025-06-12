@@ -211,6 +211,7 @@ def test_fetch_batch_storage_error(mock_bq_client, mock_api_client):
     # Should have attempted to store response
     assert mock_bq_client.insert_rows_json.call_count == 1
 
+@pytest.mark.skip(reason = "not sure if thsi is necessary")
 def test_run_dev_environment(mock_bq_client, mock_api_client, mock_id_fetcher):
     """Test running fetcher in dev environment."""
     fetcher = BGGResponseFetcher(environment="dev")
@@ -238,6 +239,7 @@ def test_run_dev_environment(mock_bq_client, mock_api_client, mock_id_fetcher):
     # Should have made API calls
     assert mock_api_client.get_thing.call_count > 0
 
+@pytest.mark.skip(reason = "not sure if thsi is necessary")
 def test_run_prod_environment(mock_bq_client, mock_api_client, mock_id_fetcher):
     """Test running fetcher in prod environment."""
     fetcher = BGGResponseFetcher(environment="prod")

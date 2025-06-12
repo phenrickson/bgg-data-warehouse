@@ -3,7 +3,7 @@
 import datetime
 import logging
 from pathlib import Path
-from typing import List, Set
+from typing import List, Set, Dict, Optional
 from urllib.error import URLError
 from urllib.request import urlretrieve
 
@@ -21,9 +21,13 @@ class BGGIDFetcher:
 
     BGG_IDS_URL = "http://bgg.activityclub.org/bggdata/thingids.txt"
     
-    def __init__(self) -> None:
-        """Initialize the fetcher with BigQuery configuration."""
-        self.config = get_bigquery_config()
+    def __init__(self, config: Optional[Dict] = None) -> None:
+        """Initialize the fetcher with BigQuery configuration.
+        
+        Args:
+            config: Optional configuration dictionary
+        """
+        self.config = config or get_bigquery_config()
         self.client = bigquery.Client(project=self.config["project"]["id"])
         self.dataset_id = self.config["datasets"]["raw"]
         self.table_id = self.config["raw_tables"]["thing_ids"]["name"]
@@ -192,6 +196,57 @@ class BGGIDFetcher:
             self.upload_new_ids(new_games)
         else:
             logger.info("No new game IDs found")
+
+    def fetch_game_ids(self, config: Optional[Dict] = None) -> List[int]:
+        """
+        Fetch game IDs from the downloaded file.
+        
+        Args:
+            config: Optional configuration dictionary with parameters:
+                - max_games_to_fetch (int): Maximum number of games to return
+                - game_type (str): Type of game to filter (default: boardgame)
+        
+        Returns:
+            List of game IDs
+        """
+        # Merge config with default configuration
+        merged_config = {
+            'max_games_to_fetch': 50,
+            'game_type': 'boardgame'
+        }
+        if config:
+            merged_config.update(config)
+        
+        # Create a temporary directory for downloading
+        temp_dir = Path("temp")
+        temp_dir.mkdir(exist_ok=True)
+        
+        try:
+            # Download and parse IDs
+            ids_file = self.download_ids(temp_dir)
+            all_games = self.parse_ids(ids_file)
+            
+            # Filter by game type
+            filtered_games = [
+                game['game_id'] for game in all_games 
+                if game['type'] == merged_config['game_type']
+            ]
+            
+            # Limit number of games
+            filtered_games = filtered_games[:merged_config['max_games_to_fetch']]
+            
+            logger.info(f"Fetched {len(filtered_games)} {merged_config['game_type']} game IDs")
+            return filtered_games
+        
+        except Exception as e:
+            logger.error(f"Failed to fetch game IDs: {e}")
+            return []
+        finally:
+            # Cleanup temporary directory
+            if temp_dir.exists():
+                for file in temp_dir.glob("*"):
+                    file.unlink()
+                temp_dir.rmdir()
 
 def main() -> None:
     """Main function to update game IDs."""

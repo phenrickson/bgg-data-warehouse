@@ -310,7 +310,8 @@ class BGGDataProcessor:
         self, 
         game_id: int, 
         api_response: Dict[str, Any],
-        game_type: str
+        game_type: str,
+        load_timestamp: Optional[datetime] = None
     ) -> Optional[Dict[str, Any]]:
         """Process a game's API response data.
         
@@ -402,7 +403,7 @@ class BGGDataProcessor:
                 
                 # Metadata
                 "raw_data": str(api_response),
-                "load_timestamp": datetime.now(UTC),
+                "load_timestamp": load_timestamp or datetime.now(UTC),
             }
 
             return processed
@@ -662,7 +663,7 @@ class BGGDataProcessor:
 
             # Check for duplicates in primary key columns
             pk_columns = {
-                "games": ["game_id"],
+                "games": ["game_id", "load_timestamp"],  # Games table is time series
                 "categories": ["category_id"],
                 "mechanics": ["mechanic_id"],
                 "families": ["family_id"],
