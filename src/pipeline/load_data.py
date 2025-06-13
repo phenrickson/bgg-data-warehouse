@@ -123,13 +123,17 @@ class BigQueryLoader:
                 "categories", "mechanics", "families",
                 "designers", "artists", "publishers"
             ]
+            bridge_tables = [
+                "game_categories", "game_mechanics", "game_families",
+                "game_designers", "game_artists", "game_publishers",
+                "game_implementations", "game_expansions"
+            ]
             
             if table_name in time_series_tables:
                 # Append-only for time series data
                 write_disposition = "WRITE_APPEND"
             elif table_name in dimension_tables:
-                # Use MERGE for dimension tables
-                # Convert DataFrame to temporary table
+                # Use MERGE for dimension tables to preserve all unique entities
                 temp_table = f"{table_name}_temp"
                 temp_table_id = f"{self.dataset_ref}.{temp_table}"
                 
@@ -140,14 +144,22 @@ class BigQueryLoader:
                 temp_job.result()
                 
                 # Perform MERGE operation
-                id_column = f"{table_name[:-1]}_id" if table_name.endswith('s') else f"{table_name}_id"
+                id_column_map = {
+                    "categories": "category_id",
+                    "mechanics": "mechanic_id",
+                    "families": "family_id",
+                    "designers": "designer_id",
+                    "artists": "artist_id",
+                    "publishers": "publisher_id"
+                }
+                id_column = id_column_map[table_name]
                 merge_query = f"""
                 MERGE `{self.dataset_ref}.{table_name}` T
                 USING `{temp_table_id}` S
                 ON T.{id_column} = S.{id_column}
                 WHEN NOT MATCHED THEN
                     INSERT ({id_column}, name)
-                    VALUES ({id_column}, name)
+                    VALUES (S.{id_column}, S.name)
                 """
                 merge_job = self.client.query(merge_query)
                 merge_job.result()
@@ -156,8 +168,14 @@ class BigQueryLoader:
                 self.client.delete_table(temp_table_id, not_found_ok=True)
                 
                 return
+            elif table_name in bridge_tables:
+                # For bridge tables, delete existing relationships for these games
+                # and insert new ones to handle both additions and removals
+                if game_ids:
+                    self._delete_existing_game_records(table_name, game_ids)
+                write_disposition = "WRITE_APPEND"
             else:
-                # Delete + Insert for bridge and game-related tables
+                # Delete + Insert for other game-related tables
                 if game_ids:
                     self._delete_existing_game_records(table_name, game_ids)
                 write_disposition = "WRITE_APPEND"
