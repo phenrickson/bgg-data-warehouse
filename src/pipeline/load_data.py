@@ -128,8 +128,34 @@ class BigQueryLoader:
                 # Append-only for time series data
                 write_disposition = "WRITE_APPEND"
             elif table_name in dimension_tables:
-                # Full replace for dimension tables
-                write_disposition = "WRITE_TRUNCATE"
+                # Use MERGE for dimension tables
+                # Convert DataFrame to temporary table
+                temp_table = f"{table_name}_temp"
+                temp_table_id = f"{self.dataset_ref}.{temp_table}"
+                
+                # Load data to temp table
+                pdf = df.to_pandas()
+                temp_job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+                temp_job = self.client.load_table_from_dataframe(pdf, temp_table_id, job_config=temp_job_config)
+                temp_job.result()
+                
+                # Perform MERGE operation
+                id_column = f"{table_name[:-1]}_id" if table_name.endswith('s') else f"{table_name}_id"
+                merge_query = f"""
+                MERGE `{self.dataset_ref}.{table_name}` T
+                USING `{temp_table_id}` S
+                ON T.{id_column} = S.{id_column}
+                WHEN NOT MATCHED THEN
+                    INSERT ({id_column}, name)
+                    VALUES ({id_column}, name)
+                """
+                merge_job = self.client.query(merge_query)
+                merge_job.result()
+                
+                # Delete temporary table
+                self.client.delete_table(temp_table_id, not_found_ok=True)
+                
+                return
             else:
                 # Delete + Insert for bridge and game-related tables
                 if game_ids:
