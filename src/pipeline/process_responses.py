@@ -206,6 +206,7 @@ class BGGResponseProcessor:
         # Process each response
         for response in responses:
             try:
+                                
                 # Attempt to process game with game_type
                 processed_game = self.processor.process_game(
                     response['game_id'], 
@@ -369,7 +370,17 @@ class BGGResponseProcessor:
 
 def main() -> None:
     """Main entry point for the response processor."""
-    processor = BGGResponseProcessor(batch_size=2000)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Process BGG API responses')
+    parser.add_argument('--batch-size', 
+                       type=int, 
+                       default=100,
+                       help='Number of responses to process in each batch (default: 100)')
+    
+    args = parser.parse_args()
+    
+    processor = BGGResponseProcessor(batch_size=args.batch_size)
     processor.run()
 
 if __name__ == "__main__":

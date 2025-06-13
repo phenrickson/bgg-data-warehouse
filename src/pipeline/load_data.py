@@ -112,6 +112,11 @@ class BigQueryLoader:
             return
             
         try:
+            # Validate data before any modifications
+            if not self.processor.validate_data(df, table_name):
+                logger.error(f"Data validation failed for table {table_name}")
+                return
+                
             # Determine load type based on table
             time_series_tables = ["games", "rankings"]
             dimension_tables = [
@@ -130,11 +135,6 @@ class BigQueryLoader:
                 if game_ids:
                     self._delete_existing_game_records(table_name, game_ids)
                 write_disposition = "WRITE_APPEND"
-            
-            # Validate data before loading
-            if not self.processor.validate_data(df, table_name):
-                logger.error(f"Data validation failed for table {table_name}")
-                return
                 
             # Convert to pandas for BigQuery loading
             pdf = df.to_pandas()
