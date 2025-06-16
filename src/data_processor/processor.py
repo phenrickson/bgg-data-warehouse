@@ -310,7 +310,8 @@ class BGGDataProcessor:
         self, 
         game_id: int, 
         api_response: Dict[str, Any],
-        game_type: str
+        game_type: str,
+        load_timestamp: Optional[datetime] = None
     ) -> Optional[Dict[str, Any]]:
         """Process a game's API response data.
         
@@ -402,7 +403,7 @@ class BGGDataProcessor:
                 
                 # Metadata
                 "raw_data": str(api_response),
-                "load_timestamp": datetime.now(UTC),
+                "load_timestamp": load_timestamp or datetime.now(UTC),
             }
 
             return processed
@@ -495,6 +496,9 @@ class BGGDataProcessor:
             # Process linked entities and create bridge tables
             for entity_type in ["categories", "mechanics", "families", "expansions", 
                               "implementations", "designers", "artists", "publishers"]:
+                # Use sets to deduplicate relationships
+                relationships = set()
+                
                 for entity in game.get(entity_type, []):
                     # Add to entity set
                     collectors[entity_type].add((entity["id"], entity["name"]))
@@ -504,28 +508,27 @@ class BGGDataProcessor:
                         # Only create bridge record if this game implements the other game
                         # (not if this game is implemented by the other game)
                         if not entity.get("@inbound"):
-                            bridge_record = {
-                                "game_id": game_id,
-                                "implementation_id": entity["id"]
-                            }
-                            collectors[f"game_{entity_type}"].append(bridge_record)
+                            relationships.add((game_id, entity["id"]))
                     else:
-                        # For all other entity types, create bridge record normally
-                        bridge_record = {"game_id": game_id}
-                        
-                        # Map entity type to correct ID column name
-                        id_mapping = {
-                            "categories": "category_id",
-                            "mechanics": "mechanic_id",
-                            "families": "family_id",
-                            "expansions": "expansion_id",
-                            "designers": "designer_id",
-                            "artists": "artist_id",
-                            "publishers": "publisher_id"
-                        }
-                        
-                        bridge_record[id_mapping[entity_type]] = entity["id"]
-                        collectors[f"game_{entity_type}"].append(bridge_record)
+                        # For all other entity types, add to relationships set
+                        relationships.add((game_id, entity["id"]))
+                
+                # Convert relationships to bridge records
+                id_mapping = {
+                    "categories": "category_id",
+                    "mechanics": "mechanic_id",
+                    "families": "family_id",
+                    "expansions": "expansion_id",
+                    "implementations": "implementation_id",
+                    "designers": "designer_id",
+                    "artists": "artist_id",
+                    "publishers": "publisher_id"
+                }
+                
+                for game_id, entity_id in relationships:
+                    bridge_record = {"game_id": game_id}
+                    bridge_record[id_mapping[entity_type]] = entity_id
+                    collectors[f"game_{entity_type}"].append(bridge_record)
             
             # Player counts
             for count in game["suggested_players"]:
@@ -662,7 +665,7 @@ class BGGDataProcessor:
 
             # Check for duplicates in primary key columns
             pk_columns = {
-                "games": ["game_id"],
+                "games": ["game_id", "load_timestamp"],  # Games table is time series
                 "categories": ["category_id"],
                 "mechanics": ["mechanic_id"],
                 "families": ["family_id"],

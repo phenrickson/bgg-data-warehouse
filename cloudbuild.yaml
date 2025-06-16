@@ -1,0 +1,46 @@
+# Cloud Build configuration for BGG processor
+steps:
+  # Build the processor image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/bgg-processor', '.']
+
+  # Push the image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor']
+
+  # Deploy Cloud Run Job
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'create'
+      - 'bgg-processor'
+      - '--image=gcr.io/$PROJECT_ID/bgg-processor'
+      - '--tasks=5'  # Run 5 parallel tasks
+      - '--max-retries=3'
+      - '--task-timeout=1h'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--region=us-central1'
+      - '--service-account=bgg-processor@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=ENVIRONMENT=prod'
+
+  # Create Cloud Scheduler job
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'scheduler'
+      - 'jobs'
+      - 'create'
+      - 'http'
+      - 'process-bgg-data'
+      - '--schedule=*/10 * * * *'  # Every 10 minutes
+      - '--uri=https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/bgg-processor:run'
+      - '--http-method=POST'
+      - '--oauth-service-account-email=bgg-processor@$PROJECT_ID.iam.gserviceaccount.com'
+
+# Images to push to Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/bgg-processor'
+
+# Timeout for the entire build
+timeout: '1800s'  # 30 minutes

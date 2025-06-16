@@ -1,6 +1,6 @@
 """Tests for the BigQuery data loading module."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from unittest import mock
 
 import pandas as pd
@@ -34,14 +34,14 @@ def sample_dataframe():
     return pl.DataFrame({
         "game_id": [1, 2, 3],
         "name": ["Game 1", "Game 2", "Game 3"],
-        "load_timestamp": [datetime.utcnow()] * 3
+        "load_timestamp": [datetime.now(UTC)] * 3
     })
 
 def test_upload_to_gcs(loader, sample_dataframe):
     """Test uploading data to GCS."""
     mock_blob = mock.Mock()
     mock_file = mock.Mock()
-    mock_blob.open.return_value.__enter__.return_value = mock_file
+    mock_blob.open.return_value = mock_file
     loader.bucket.blob.return_value = mock_blob
     
     gcs_uri = loader._upload_to_gcs(sample_dataframe, "test_table")
@@ -112,7 +112,7 @@ def test_load_table(loader, sample_dataframe):
     # Mock successful GCS upload
     mock_blob = mock.Mock()
     mock_file = mock.Mock()
-    mock_blob.open.return_value.__enter__.return_value = mock_file
+    mock_blob.open.return_value = mock_file
     loader.bucket.blob.return_value = mock_blob
     
     # Mock successful BigQuery load
@@ -150,7 +150,7 @@ def test_load_table_bigquery_error(loader, sample_dataframe):
     # Mock successful GCS upload
     mock_blob = mock.Mock()
     mock_file = mock.Mock()
-    mock_blob.open.return_value.__enter__.return_value = mock_file
+    mock_blob.open.return_value = mock_file
     loader.bucket.blob.return_value = mock_blob
     
     # Mock BigQuery load failure
@@ -171,14 +171,14 @@ def test_archive_raw_data(loader):
     mock_query_result = mock.Mock()
     mock_query_result.to_dataframe.return_value = pd.DataFrame({
         "game_id": [1, 2, 3],
-        "load_timestamp": [datetime.utcnow()] * 3
+        "load_timestamp": [datetime.now(UTC)] * 3
     })
     loader.client.query.return_value = mock_query_result
     
     # Mock GCS upload
     mock_blob = mock.Mock()
     mock_file = mock.Mock()
-    mock_blob.open.return_value.__enter__.return_value = mock_file
+    mock_blob.open.return_value = mock_file
     loader.bucket.blob.return_value = mock_blob
     
     loader.archive_raw_data("games")
