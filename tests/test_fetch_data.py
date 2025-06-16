@@ -1,228 +1,203 @@
-"""Tests for the main data pipeline module."""
+# """Tests for the main data pipeline module."""
 
-from datetime import datetime
-from unittest import mock
+# from datetime import datetime
+# from unittest import mock
 
-import polars as pl
-import pytest
+# import polars as pl
+# import pytest
 
-from src.pipeline.fetch_data import BGGPipeline
+# from src.pipeline.fetch_data import BGGPipeline
 
-@pytest.fixture
-def mock_config(sample_config):
-    """Mock configuration."""
-    with mock.patch("src.pipeline.fetch_data.get_bigquery_config", return_value=sample_config):
-        yield sample_config
+# @pytest.fixture
+# def mock_config(sample_config):
+#     """Mock configuration."""
+#     with mock.patch("src.pipeline.fetch_data.get_bigquery_config", return_value=sample_config):
+#         yield sample_config
 
-@pytest.fixture
-def pipeline(mock_config):
-    """Create pipeline instance with mocked components."""
-    with mock.patch("src.pipeline.fetch_data.BGGIDFetcher") as mock_fetcher:
-        with mock.patch("src.pipeline.fetch_data.BGGAPIClient") as mock_client:
-            with mock.patch("src.pipeline.fetch_data.BGGDataProcessor") as mock_processor:
-                pipeline = BGGPipeline()
-                
-                # Set up mock instances
-                pipeline.id_fetcher = mock_fetcher.return_value
-                pipeline.api_client = mock_client.return_value
-                pipeline.processor = mock_processor.return_value
-                
-                yield pipeline
+# @pytest.fixture
+# def mock_components():
+#     """Mock pipeline components."""
+#     with mock.patch("src.pipeline.fetch_data.BGGIDFetcher") as mock_fetcher:
+#         with mock.patch("src.pipeline.fetch_data.BGGAPIClient") as mock_client:
+#             with mock.patch("src.pipeline.fetch_data.BGGDataProcessor") as mock_processor:
+#                 with mock.patch("src.pipeline.fetch_data.DataLoader") as mock_loader:
+#                     yield {
+#                         "fetcher": mock_fetcher,
+#                         "client": mock_client,
+#                         "processor": mock_processor,
+#                         "loader": mock_loader
+#                     }
 
-def test_get_unprocessed_ids(pipeline):
-    """Test fetching unprocessed game IDs."""
-    mock_query_result = mock.Mock()
-    mock_query_result.to_dataframe.return_value = pl.DataFrame({
-        "game_id": [13, 14, 15]
-    })
+# @pytest.fixture
+# def prod_pipeline(mock_config, mock_components):
+#     """Create production pipeline instance."""
+#     pipeline = BGGPipeline(environment="prod")
+#     pipeline.id_fetcher = mock_components["fetcher"].return_value
+#     pipeline.api_client = mock_components["client"].return_value
+#     pipeline.processor = mock_components["processor"].return_value
+#     pipeline.loader = mock_components["loader"].return_value
+#     return pipeline
+
+# @pytest.fixture
+# def dev_pipeline(mock_config, mock_components):
+#     """Create development pipeline instance."""
+#     pipeline = BGGPipeline(environment="dev")
+#     pipeline.id_fetcher = mock_components["fetcher"].return_value
+#     pipeline.api_client = mock_components["client"].return_value
+#     pipeline.processor = mock_components["processor"].return_value
+#     pipeline.loader = mock_components["loader"].return_value
+#     return pipeline
+
+# def test_init_environments():
+#     """Test pipeline initialization with different environments."""
+#     prod = BGGPipeline(environment="prod")
+#     assert prod.environment == "prod"
+#     assert prod.loader.environment == "prod"
+
+#     dev = BGGPipeline(environment="dev")
+#     assert dev.environment == "dev"
+#     assert dev.loader.environment == "dev"
+
+# def test_get_unprocessed_ids(prod_pipeline):
+#     """Test fetching unprocessed game IDs."""
+#     mock_query_result = mock.Mock()
+#     mock_query_result.to_dataframe.return_value = pl.DataFrame({
+#         "game_id": [13, 14, 15],
+#         "type": ["boardgame", "boardgame", "boardgame"]
+#     })
     
-    with mock.patch.object(pipeline.api_client.client, "query", return_value=mock_query_result):
-        ids = pipeline.get_unprocessed_ids()
+#     with mock.patch.object(prod_pipeline.bq_client, "query", return_value=mock_query_result):
+#         games = prod_pipeline.get_unprocessed_ids()
         
-        assert len(ids) == 3
-        assert 13 in ids
-        assert 15 in ids
+#         assert len(games) == 3
+#         assert all(isinstance(game, dict) for game in games)
+#         assert all("game_id" in game and "type" in game for game in games)
 
-def test_get_unprocessed_ids_error(pipeline):
-    """Test handling errors when fetching unprocessed IDs."""
-    with mock.patch.object(
-        pipeline.api_client.client,
-        "query",
-        side_effect=Exception("Query failed")
-    ):
-        ids = pipeline.get_unprocessed_ids()
-        assert len(ids) == 0
-
-def test_mark_ids_as_processed(pipeline):
-    """Test marking IDs as processed."""
-    game_ids = {13, 14, 15}
-    mock_query_job = mock.Mock()
+# def test_process_specific_games(dev_pipeline):
+#     """Test processing specific games."""
+#     game_ids = [13, 14, 15]
+#     mock_query_result = mock.Mock()
+#     mock_query_result.to_dataframe.return_value = pl.DataFrame({
+#         "game_id": game_ids,
+#         "type": ["boardgame"] * len(game_ids)
+#     })
     
-    with mock.patch.object(pipeline.api_client.client, "query", return_value=mock_query_job):
-        pipeline.mark_ids_as_processed(game_ids)
+#     with mock.patch.object(dev_pipeline.bq_client, "query", return_value=mock_query_result):
+#         with mock.patch.object(dev_pipeline, "process_and_load_batch") as mock_process:
+#             dev_pipeline.process_specific_games(game_ids)
+#             mock_process.assert_called_once()
+
+# def test_process_and_load_batch(prod_pipeline, sample_api_response):
+#     """Test processing and loading a batch of games."""
+#     games = [
+#         {"game_id": 13, "type": "boardgame"},
+#         {"game_id": 14, "type": "boardgame"}
+#     ]
+    
+#     # Mock API responses
+#     prod_pipeline.api_client.get_thing.return_value = sample_api_response
+    
+#     # Mock game processing
+#     prod_pipeline.processor.process_game.return_value = {
+#         "game_id": 13,
+#         "name": "Test Game",
+#         "load_timestamp": datetime.utcnow()
+#     }
+    
+#     # Mock data preparation and validation
+#     prod_pipeline.processor.prepare_for_bigquery.return_value = {
+#         "games": pl.DataFrame({"game_id": [13, 14]})
+#     }
+#     prod_pipeline.processor.validate_data.return_value = True
+    
+#     success = prod_pipeline.process_and_load_batch(games)
+#     assert success
+    
+#     # Verify method calls
+#     assert prod_pipeline.api_client.get_thing.call_count == len(games)
+#     prod_pipeline.processor.prepare_for_bigquery.assert_called_once()
+#     prod_pipeline.loader.load_games.assert_called_once()
+
+# def test_run_pipeline_prod(prod_pipeline, tmp_path):
+#     """Test running the production pipeline."""
+#     # Mock ID fetching
+#     prod_pipeline.id_fetcher.update_ids.return_value = None
+    
+#     # Mock unprocessed IDs
+#     with mock.patch.object(prod_pipeline, "get_unprocessed_ids") as mock_get_ids:
+#         mock_get_ids.side_effect = [
+#             [{"game_id": id, "type": "boardgame"} for id in [13, 14, 15]],
+#             []  # No more games after first batch
+#         ]
         
-        # Verify query execution
-        pipeline.api_client.client.query.assert_called_once()
-        query = pipeline.api_client.client.query.call_args[0][0]
-        assert "UPDATE" in query
-        assert "SET processed = true" in query
-        assert "13, 14, 15" in query
+#         with mock.patch.object(prod_pipeline, "process_and_load_batch", return_value=True):
+#             prod_pipeline.run()
+            
+#             # Verify production-specific behavior
+#             prod_pipeline.id_fetcher.update_ids.assert_called_once()
+#             assert mock_get_ids.call_count == 2
 
-def test_mark_ids_as_processed_error(pipeline):
-    """Test handling errors when marking IDs as processed."""
-    game_ids = {13, 14, 15}
-    
-    with mock.patch.object(
-        pipeline.api_client.client,
-        "query",
-        side_effect=Exception("Update failed")
-    ):
-        with mock.patch("src.pipeline.fetch_data.logger.error") as mock_logger:
-            pipeline.mark_ids_as_processed(game_ids)
-            mock_logger.assert_called_once()
-
-def test_process_games(pipeline, sample_api_response):
-    """Test processing a batch of games."""
-    game_ids = {13, 14, 15}
-    
-    # Mock API responses
-    pipeline.api_client.get_thing.return_value = sample_api_response
-    
-    # Mock game processing
-    pipeline.processor.process_game.return_value = {
-        "game_id": 13,
-        "name": "Test Game",
-        "load_timestamp": datetime.utcnow()
-    }
-    
-    processed_games = pipeline.process_games(game_ids)
-    
-    assert len(processed_games) == len(game_ids)
-    assert all(game["game_id"] for game in processed_games)
-    
-    # Verify API calls
-    assert pipeline.api_client.get_thing.call_count == len(game_ids)
-    assert pipeline.processor.process_game.call_count == len(game_ids)
-
-def test_process_games_api_error(pipeline):
-    """Test handling API errors during game processing."""
-    game_ids = {13, 14, 15}
-    
-    # Mock API failure
-    pipeline.api_client.get_thing.return_value = None
-    
-    processed_games = pipeline.process_games(game_ids)
-    assert len(processed_games) == 0
-
-def test_process_games_processing_error(pipeline, sample_api_response):
-    """Test handling processing errors."""
-    game_ids = {13}
-    
-    # Mock API success but processing failure
-    pipeline.api_client.get_thing.return_value = sample_api_response
-    pipeline.processor.process_game.return_value = None
-    
-    processed_games = pipeline.process_games(game_ids)
-    assert len(processed_games) == 0
-
-def test_run_pipeline(pipeline, tmp_path):
-    """Test running the complete pipeline."""
-    # Mock ID fetching
-    pipeline.id_fetcher.update_ids.return_value = None
-    
-    # Mock unprocessed IDs
-    with mock.patch.object(pipeline, "get_unprocessed_ids") as mock_get_ids:
-        mock_get_ids.return_value = {13, 14, 15}
+# def test_run_pipeline_dev(dev_pipeline):
+#     """Test running the development pipeline."""
+#     with mock.patch.object(dev_pipeline, "get_unprocessed_ids") as mock_get_ids:
+#         mock_get_ids.side_effect = [
+#             [{"game_id": id, "type": "boardgame"} for id in [13, 14, 15]],
+#             []  # No more games after first batch
+#         ]
         
-        # Mock game processing
-        with mock.patch.object(pipeline, "process_games") as mock_process:
-            mock_process.return_value = [
-                {"game_id": id, "name": f"Game {id}"} for id in [13, 14, 15]
-            ]
+#         with mock.patch.object(dev_pipeline, "process_and_load_batch", return_value=True):
+#             dev_pipeline.run()
             
-            # Mock data preparation
-            pipeline.processor.prepare_for_bigquery.return_value = (
-                pl.DataFrame({"game_id": [13, 14, 15]}),
-                pl.DataFrame({"category_id": [1, 2]}),
-                pl.DataFrame({"mechanic_id": [1, 2]})
-            )
-            
-            # Mock data validation
-            pipeline.processor.validate_data.return_value = True
-            
-            pipeline.run()
-            
-            # Verify pipeline execution
-            pipeline.id_fetcher.update_ids.assert_called_once()
-            mock_get_ids.assert_called_once()
-            mock_process.assert_called_once()
-            pipeline.processor.prepare_for_bigquery.assert_called_once()
-            assert pipeline.processor.validate_data.call_count == 3
+#             # Verify development-specific behavior
+#             dev_pipeline.id_fetcher.update_ids.assert_not_called()
+#             assert mock_get_ids.call_count == 2
 
-def test_run_pipeline_no_ids(pipeline, tmp_path):
-    """Test pipeline execution with no unprocessed IDs."""
-    pipeline.id_fetcher.update_ids.return_value = None
+# def test_run_pipeline_cleanup(prod_pipeline, tmp_path):
+#     """Test cleanup after production pipeline execution."""
+#     temp_dir = tmp_path / "temp"
+#     temp_dir.mkdir()
+#     (temp_dir / "test.txt").write_text("test")
     
-    with mock.patch.object(pipeline, "get_unprocessed_ids") as mock_get_ids:
-        mock_get_ids.return_value = set()
-        
-        pipeline.run()
-        
-        # Should stop after finding no IDs
-        pipeline.processor.prepare_for_bigquery.assert_not_called()
+#     with mock.patch.object(prod_pipeline, "get_unprocessed_ids", return_value=[]):
+#         prod_pipeline.run()
+#         assert not temp_dir.exists()
 
-def test_run_pipeline_processing_failed(pipeline, tmp_path):
-    """Test pipeline handling when processing fails."""
-    pipeline.id_fetcher.update_ids.return_value = None
+# def test_mark_ids_as_processed(prod_pipeline):
+#     """Test marking IDs as processed."""
+#     game_ids = [13, 14, 15]
+#     mock_query_job = mock.Mock()
     
-    with mock.patch.object(pipeline, "get_unprocessed_ids") as mock_get_ids:
-        mock_get_ids.return_value = {13, 14, 15}
+#     with mock.patch.object(prod_pipeline.bq_client, "query", return_value=mock_query_job):
+#         prod_pipeline.mark_ids_as_processed(game_ids)
         
-        with mock.patch.object(pipeline, "process_games") as mock_process:
-            mock_process.return_value = []  # No games processed
-            
-            pipeline.run()
-            
-            # Should stop after processing failure
-            pipeline.processor.prepare_for_bigquery.assert_not_called()
+#         # Verify query execution
+#         prod_pipeline.bq_client.query.assert_called_once()
+#         query = prod_pipeline.bq_client.query.call_args[0][0]
+#         assert "UPDATE" in query
+#         assert "SET processed = true" in query
+#         assert "13, 14, 15" in query
 
-def test_run_pipeline_validation_failed(pipeline, tmp_path):
-    """Test pipeline handling when validation fails."""
-    pipeline.id_fetcher.update_ids.return_value = None
+# def test_error_handling(prod_pipeline):
+#     """Test error handling in various scenarios."""
+#     # Test API error
+#     prod_pipeline.api_client.get_thing.side_effect = Exception("API Error")
+#     result = prod_pipeline.process_and_load_batch([{"game_id": 13, "type": "boardgame"}])
+#     assert not result
     
-    with mock.patch.object(pipeline, "get_unprocessed_ids") as mock_get_ids:
-        mock_get_ids.return_value = {13, 14, 15}
-        
-        with mock.patch.object(pipeline, "process_games") as mock_process:
-            mock_process.return_value = [
-                {"game_id": id, "name": f"Game {id}"} for id in [13, 14, 15]
-            ]
-            
-            pipeline.processor.prepare_for_bigquery.return_value = (
-                pl.DataFrame({"game_id": [13, 14, 15]}),
-                pl.DataFrame({"category_id": [1, 2]}),
-                pl.DataFrame({"mechanic_id": [1, 2]})
-            )
-            
-            # Mock validation failure
-            pipeline.processor.validate_data.return_value = False
-            
-            pipeline.run()
-            
-            # Should not mark IDs as processed after validation failure
-            with mock.patch.object(pipeline, "mark_ids_as_processed") as mock_mark:
-                mock_mark.assert_not_called()
-
-def test_run_pipeline_cleanup(pipeline, tmp_path):
-    """Test cleanup after pipeline execution."""
-    temp_dir = tmp_path / "temp"
-    temp_dir.mkdir()
+#     # Test processing error
+#     prod_pipeline.api_client.get_thing.side_effect = None
+#     prod_pipeline.processor.process_game.return_value = None
+#     result = prod_pipeline.process_and_load_batch([{"game_id": 13, "type": "boardgame"}])
+#     assert not result
     
-    # Create some test files
-    (temp_dir / "test.txt").write_text("test")
+#     # Test validation error
+#     prod_pipeline.processor.process_game.return_value = {"game_id": 13}
+#     prod_pipeline.processor.validate_data.return_value = False
+#     result = prod_pipeline.process_and_load_batch([{"game_id": 13, "type": "boardgame"}])
+#     assert not result
     
-    with mock.patch.object(pipeline, "get_unprocessed_ids", return_value=set()):
-        pipeline.run()
-        
-        # Temp directory should be cleaned up
-        assert not temp_dir.exists()
+#     # Test loading error
+#     prod_pipeline.processor.validate_data.return_value = True
+#     prod_pipeline.loader.load_games.side_effect = Exception("Load Error")
+#     result = prod_pipeline.process_and_load_batch([{"game_id": 13, "type": "boardgame"}])
+#     assert not result

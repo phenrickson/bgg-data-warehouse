@@ -1,29 +1,37 @@
-"""Module for monitoring data quality in the BGG data warehouse."""
+"""Module for monitoring data quality in the BGG Data Warehouse."""
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, UTC
+from typing import Dict, Any, Optional, List, Union
 
-import polars as pl
 from google.cloud import bigquery
+import polars as pl
 
 from ..config import get_bigquery_config
+from ..utils.logging_config import setup_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# Set up logging
 logger = logging.getLogger(__name__)
+setup_logging()
 
 class DataQualityMonitor:
-    """Monitors data quality in the BGG data warehouse."""
-
-    def __init__(self) -> None:
-        """Initialize the monitor with configuration."""
-        self.config = get_bigquery_config()
-        self.client = bigquery.Client(project=self.config["project"]["id"])
-        self.dataset_id = self.config["project"]["dataset"]
+    """Monitors data quality for the BGG Data Warehouse."""
+    
+    def __init__(self, config: Optional[Dict] = None) -> None:
+        """Initialize the data quality monitor.
+        
+        Args:
+            config: Optional configuration dictionary
+        """
+        self.config = config or get_bigquery_config()
+        self.client = bigquery.Client()
+        
+        # Configure monitoring dataset
+        self.monitoring_dataset = f"{self.config['project']['id']}.bgg_monitoring_dev"
+        
+        # Configure tables from config
+        self.raw_responses_table = f"{self.config['project']['id']}.bgg_raw_dev.raw_responses"
+        self.games_table = f"{self.config['project']['id']}.bgg_data_dev.games"
 
     def _log_check_result(
         self,
@@ -34,265 +42,165 @@ class DataQualityMonitor:
         failed_records: int,
         details: str
     ) -> None:
-        """Log a quality check result.
+        """Log check results to monitoring table.
         
         Args:
             check_name: Name of the quality check
             table_name: Name of the table checked
             passed: Whether the check passed
             records_checked: Number of records checked
-            failed_records: Number of records that failed
+            failed_records: Number of records that failed the check
             details: Additional details about the check
         """
-        logger.info(
-            "Quality check '%s' on table '%s': %s (%d/%d records passed) - %s",
-            check_name,
-            table_name,
-            "PASSED" if passed else "FAILED",
-            records_checked - failed_records,
-            records_checked,
-            details
-        )
+        row = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "check_name": check_name,
+            "table_name": table_name,
+            "check_status": "PASSED" if passed else "FAILED",
+            "records_checked": int(records_checked) if records_checked is not None else 0,
+            "failed_records": int(failed_records) if failed_records is not None else 0,
+            "details": details
+        }
+        
+        table_id = f"{self.monitoring_dataset}.quality_check_results"
+        errors = self.client.insert_rows_json(table_id, [row])
+        
+        if errors:
+            logger.error(f"Error logging check result: {errors}")
 
-    def check_referential_integrity(self) -> bool:
-        """Check referential integrity between games and related tables.
+    def check_completeness(
+        self,
+        table_name: str,
+        required_columns: List[str],
+        threshold: float = 0.99
+    ) -> bool:
+        """Check for completeness of required columns.
         
+        Args:
+            table_name: Name of the table to check
+            required_columns: List of columns that should not be null
+            threshold: Minimum acceptable completeness ratio (0-1)
+            
         Returns:
-            True if check passes, False otherwise
+            True if completeness check passes, False otherwise
         """
-        bridge_tables = [
-            ("game_categories", "category_id", "categories"),
-            ("game_mechanics", "mechanic_id", "mechanics"),
-            ("game_families", "family_id", "families"),
-            ("game_designers", "designer_id", "designers"),
-            ("game_artists", "artist_id", "artists"),
-            ("game_publishers", "publisher_id", "publishers")
-        ]
-        
-        all_passed = True
-        for bridge_table, fk_col, ref_table in bridge_tables:
-            query = f"""
-            WITH integrity_check AS (
-                SELECT 
-                    COUNT(*) as total_refs,
-                    COUNTIF(ref.{fk_col} IS NULL) as broken_refs
-                FROM `{self.config['project']['id']}.{self.dataset_id}.{bridge_table}` bridge
-                LEFT JOIN `{self.config['project']['id']}.{self.dataset_id}.{ref_table}` ref
-                ON bridge.{fk_col} = ref.{fk_col}
-            )
-            SELECT *
-            FROM integrity_check
-            """
-            
-            try:
-                df = self.client.query(query).to_dataframe()
-                total_refs = int(df["total_refs"].iloc[0])
-                broken_refs = int(df["broken_refs"].iloc[0])
-                
-                passed = broken_refs == 0
-                all_passed = all_passed and passed
-                
-                details = f"Found {broken_refs} broken references to {ref_table}"
-                
-                self._log_check_result(
-                    check_name="referential_integrity",
-                    table_name=bridge_table,
-                    passed=passed,
-                    records_checked=total_refs,
-                    failed_records=broken_refs,
-                    details=details
-                )
-                
-            except Exception as e:
-                logger.error("Referential integrity check failed for %s: %s", bridge_table, e)
-                all_passed = False
-        
-        return all_passed
-
-    def check_data_freshness(self) -> bool:
-        """Check if data is being regularly updated.
-        
-        Returns:
-            True if check passes, False otherwise
-        """
-        query = """
-        SELECT
-            COUNT(*) as total_games,
-            TIMESTAMP_DIFF(
-                CURRENT_TIMESTAMP(),
-                MAX(load_timestamp),
-                HOUR
-            ) as hours_since_update
-        FROM `{}.{}.games`
-        """.format(self.config['project']['id'], self.dataset_id)
-        
-        try:
-            df = self.client.query(query).to_dataframe()
-            total_games = int(df["total_games"].iloc[0])
-            hours_since_update = int(df["hours_since_update"].iloc[0])
-            
-            passed = hours_since_update <= 24  # Consider data stale after 24 hours
-            details = f"Last update was {hours_since_update} hours ago"
-            
-            self._log_check_result(
-                check_name="freshness",
-                table_name="games",
-                passed=passed,
-                records_checked=total_games,
-                failed_records=0,
-                details=details
-            )
-            
-            return passed
-            
-        except Exception as e:
-            logger.error("Freshness check failed: %s", e)
-            return False
-
-    def check_data_completeness(self) -> bool:
-        """Check for completeness of game data.
-        
-        Returns:
-            True if check passes, False otherwise
-        """
-        checks = [
-            ("primary_name", "games with missing names"),
-            ("year_published", "games with missing year"),
-            ("min_players", "games with missing player count"),
-            ("description", "games with missing description")
-        ]
-        
-        all_passed = True
-        for column, description in checks:
-            query = f"""
-            SELECT
-                COUNT(*) as total_games,
-                COUNTIF({column} IS NULL) as null_count
-            FROM `{self.config['project']['id']}.{self.dataset_id}.games`
-            """
-            
-            try:
-                df = self.client.query(query).to_dataframe()
-                total_games = int(df["total_games"].iloc[0])
-                null_count = int(df["null_count"].iloc[0])
-                
-                passed = null_count == 0
-                all_passed = all_passed and passed
-                
-                details = f"Found {null_count} {description}"
-                
-                self._log_check_result(
-                    check_name=f"completeness_{column}",
-                    table_name="games",
-                    passed=passed,
-                    records_checked=total_games,
-                    failed_records=null_count,
-                    details=details
-                )
-                
-            except Exception as e:
-                logger.error("Completeness check failed for %s: %s", column, e)
-                all_passed = False
-        
-        return all_passed
-
-    def check_data_consistency(self) -> bool:
-        """Check for data consistency across tables.
-        
-        Returns:
-            True if check passes, False otherwise
-        """
-        query = """
-        WITH consistency_check AS (
-            SELECT
-                COUNT(DISTINCT g.game_id) as total_games,
-                COUNT(DISTINCT an.game_id) as games_with_alt_names,
-                COUNT(DISTINCT pc.game_id) as games_with_player_counts,
-                COUNT(DISTINCT ld.game_id) as games_with_language_dep,
-                COUNT(DISTINCT sa.game_id) as games_with_age_suggestions,
-                COUNT(DISTINCT r.game_id) as games_with_rankings
-            FROM `{}.{}.games` g
-            LEFT JOIN `{}.{}.alternate_names` an ON g.game_id = an.game_id
-            LEFT JOIN `{}.{}.player_counts` pc ON g.game_id = pc.game_id
-            LEFT JOIN `{}.{}.language_dependence` ld ON g.game_id = ld.game_id
-            LEFT JOIN `{}.{}.suggested_ages` sa ON g.game_id = sa.game_id
-            LEFT JOIN `{}.{}.rankings` r ON g.game_id = r.game_id
-        )
-        SELECT *
-        FROM consistency_check
-        """.format(*(self.config['project']['id'], self.dataset_id) * 6)
-        
-        try:
-            df = self.client.query(query).to_dataframe()
-            total_games = int(df["total_games"].iloc[0])
-            
-            # Check each related table
-            checks = {
-                "alternate_names": df["games_with_alt_names"].iloc[0],
-                "player_counts": df["games_with_player_counts"].iloc[0],
-                "language_dependence": df["games_with_language_dep"].iloc[0],
-                "suggested_ages": df["games_with_age_suggestions"].iloc[0],
-                "rankings": df["games_with_rankings"].iloc[0]
-            }
-            
-            all_passed = True
-            for table_name, count in checks.items():
-                # Consider it passed if at least 90% of games have related data
-                passed = (count / total_games) >= 0.9 if total_games > 0 else True
-                all_passed = all_passed and passed
-                
-                details = f"{count}/{total_games} games have {table_name} data"
-                
-                self._log_check_result(
-                    check_name=f"consistency_{table_name}",
-                    table_name="games",
-                    passed=passed,
-                    records_checked=total_games,
-                    failed_records=total_games - int(count),
-                    details=details
-                )
-            
-            return all_passed
-            
-        except Exception as e:
-            logger.error("Consistency check failed: %s", e)
-            return False
-
-    def get_data_summary(self) -> Dict[str, Any]:
-        """Get a summary of the data in the warehouse.
-        
-        Returns:
-            Dictionary containing summary statistics
-        """
-        project = self.config['project']['id']
-        dataset = self.dataset_id
+        columns_str = ", ".join(required_columns)
         query = f"""
         SELECT
-            -- Basic counts
-            (SELECT COUNT(*) FROM `{project}.{dataset}.games`) as total_games,
-            (SELECT COUNT(DISTINCT game_id) FROM `{project}.{dataset}.games`) as unique_games,
-            (SELECT COUNT(*) FROM `{project}.{dataset}.categories`) as total_categories,
-            (SELECT COUNT(*) FROM `{project}.{dataset}.mechanics`) as total_mechanics,
-            (SELECT COUNT(*) FROM `{project}.{dataset}.families`) as total_families,
-            (SELECT COUNT(*) FROM `{project}.{dataset}.designers`) as total_designers,
-            (SELECT COUNT(*) FROM `{project}.{dataset}.artists`) as total_artists,
-            (SELECT COUNT(*) FROM `{project}.{dataset}.publishers`) as total_publishers,
-            
-            -- Game statistics
-            (SELECT AVG(average_rating) FROM `{project}.{dataset}.games`) as avg_rating,
-            (SELECT AVG(owned_count) FROM `{project}.{dataset}.games`) as avg_owned,
-            (SELECT AVG(year_published) FROM `{project}.{dataset}.games` WHERE year_published IS NOT NULL) as avg_year,
-            
-            -- Latest update
-            (SELECT MAX(load_timestamp) FROM `{project}.{dataset}.games`) as last_update
+            COUNT(*) as total_records,
+            COUNTIF({" IS NULL OR ".join(required_columns)} IS NULL) as null_records
+        FROM `{table_name}`
         """
         
-        try:
-            df = self.client.query(query).to_dataframe()
-            return df.iloc[0].to_dict()
-        except Exception as e:
-            logger.error("Failed to get data summary: %s", e)
-            return {}
+        query_job = self.client.query(query)
+        df = pl.from_pandas(query_job.to_dataframe())
+        
+        total_records = df["total_records"][0]
+        null_records = df["null_records"][0]
+        completeness_ratio = 1 - (null_records / total_records) if total_records > 0 else 0
+        
+        passed = completeness_ratio >= threshold
+        
+        self._log_check_result(
+            check_name="completeness",
+            table_name=table_name,
+            passed=passed,
+            records_checked=total_records,
+            failed_records=null_records,
+            details=f"Completeness ratio: {completeness_ratio:.2%} (threshold: {threshold:.2%})"
+        )
+        
+        return passed
+
+    def check_freshness(
+        self,
+        table_name: str,
+        hours: int = 24
+    ) -> bool:
+        """Check data freshness based on last update time.
+        
+        Args:
+            table_name: Name of the table to check
+            hours: Maximum acceptable hours since last update
+            
+        Returns:
+            True if freshness check passes, False otherwise
+        """
+        # Use appropriate timestamp field based on table
+        timestamp_field = "load_timestamp" if "games" in table_name else "fetch_timestamp"
+        query = f"""
+        SELECT
+            TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX({timestamp_field}), HOUR) as hours_since_update,
+            COUNT(*) as total_records
+        FROM `{table_name}`
+        """
+        
+        query_job = self.client.query(query)
+        df = pl.from_pandas(query_job.to_dataframe())
+        
+        hours_since_update = df["hours_since_update"][0]
+        total_records = df["total_records"][0]
+        
+        passed = hours_since_update <= hours
+        
+        self._log_check_result(
+            check_name="freshness",
+            table_name=table_name,
+            passed=passed,
+            records_checked=total_records,
+            failed_records=0,
+            details=f"Hours since last update: {hours_since_update} (threshold: {hours})"
+        )
+        
+        return passed
+
+    def check_validity(
+        self,
+        table_name: str,
+        conditions: Optional[List[str]] = None
+    ) -> bool:
+        """Check data validity based on business rules.
+        
+        Args:
+            table_name: Name of the table to check
+            conditions: Optional list of SQL conditions for valid records
+            
+        Returns:
+            True if validity check passes, False otherwise
+        """
+        if not conditions:
+            conditions = [
+                "year_published BETWEEN 1800 AND EXTRACT(YEAR FROM CURRENT_DATE())",
+                "min_players <= max_players",
+                "average_rating BETWEEN 1 AND 10"
+            ]
+        
+        conditions_str = " AND ".join(conditions)
+        query = f"""
+        SELECT
+            COUNT(*) as total_records,
+            COUNTIF(NOT ({conditions_str})) as invalid_records
+        FROM `{table_name}`
+        """
+        
+        query_job = self.client.query(query)
+        df = pl.from_pandas(query_job.to_dataframe())
+        
+        total_records = df["total_records"][0]
+        invalid_records = df["invalid_records"][0]
+        
+        passed = invalid_records == 0
+        
+        self._log_check_result(
+            check_name="validity",
+            table_name=table_name,
+            passed=passed,
+            records_checked=total_records,
+            failed_records=invalid_records,
+            details=f"Found {invalid_records} invalid records"
+        )
+        
+        return passed
 
     def run_all_checks(self) -> Dict[str, bool]:
         """Run all quality checks.
@@ -300,48 +208,42 @@ class DataQualityMonitor:
         Returns:
             Dictionary mapping check names to their results
         """
-        results = {
-            "referential_integrity": self.check_referential_integrity(),
-            "data_freshness": self.check_data_freshness(),
-            "data_completeness": self.check_data_completeness(),
-            "data_consistency": self.check_data_consistency()
-        }
+        results = {}
         
-        # Log overall results
-        passed = sum(1 for result in results.values() if result)
-        total = len(results)
-        logger.info(
-            "Quality checks completed: %d/%d checks passed (%.2f%%)",
-            passed,
-            total,
-            (passed/total)*100 if total > 0 else 0
+        # Check completeness
+        results["games_completeness"] = self.check_completeness(
+            self.games_table,
+            ["game_id", "primary_name", "year_published"]
         )
         
-        # Get and log data summary
-        summary = self.get_data_summary()
-        if summary:
-            logger.info("\nData Warehouse Summary:")
-            logger.info("=====================")
-            logger.info(f"Total Game Records: {summary['total_games']}")
-            logger.info(f"Unique Games: {summary['unique_games']}")
-            logger.info(f"Duplicate Records: {summary['total_games'] - summary['unique_games']}")
-            logger.info(f"Categories: {summary['total_categories']}")
-            logger.info(f"Mechanics: {summary['total_mechanics']}")
-            logger.info(f"Families: {summary['total_families']}")
-            logger.info(f"Designers: {summary['total_designers']}")
-            logger.info(f"Artists: {summary['total_artists']}")
-            logger.info(f"Publishers: {summary['total_publishers']}")
-            logger.info(f"Average Rating: {summary['avg_rating']:.2f}")
-            logger.info(f"Average Owned: {summary['avg_owned']:.0f}")
-            logger.info(f"Average Year: {summary['avg_year']:.0f}")
-            logger.info(f"Last Update: {summary['last_update']}")
+        results["responses_completeness"] = self.check_completeness(
+            self.raw_responses_table,
+            ["game_id", "response_data", "fetch_timestamp"]
+        )
+        
+        # Check freshness
+        results["games_freshness"] = self.check_freshness(self.games_table)
+        results["responses_freshness"] = self.check_freshness(self.raw_responses_table)
+        
+        # Check validity
+        results["games_validity"] = self.check_validity(self.games_table)
         
         return results
 
 def main() -> None:
-    """Main function to run quality checks."""
+    """Main entry point for data quality monitoring."""
     monitor = DataQualityMonitor()
-    monitor.run_all_checks()
+    results = monitor.run_all_checks()
+    
+    # Log overall results
+    passed_checks = sum(1 for result in results.values() if result)
+    total_checks = len(results)
+    
+    logger.info(f"Data Quality Check Results: {passed_checks}/{total_checks} checks passed")
+    
+    for check_name, passed in results.items():
+        status = "PASSED" if passed else "FAILED"
+        logger.info(f"{check_name}: {status}")
 
 if __name__ == "__main__":
     main()

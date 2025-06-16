@@ -24,8 +24,18 @@ clean:
 fetch-ids:
 	uv run -m src.id_fetcher.fetcher
 
-fetch-games:
-	uv run -m src.pipeline.fetch_data
+fetch-responses:
+	uv run -m src.pipeline.fetch_responses
+
+# Default batch size if not specified
+BATCH_SIZE ?= 100
+
+process-responses:
+	uv run -m src.pipeline.process_responses --batch-size $(BATCH_SIZE)
+
+# Environment-specific tasks
+create-datasets:
+	uv run -m src.warehouse.setup_bigquery
 
 # Utility tasks
 examine-game:
@@ -38,33 +48,37 @@ examine-game:
 check-duplicates:
 	uv run -m src.scripts.check_duplicates
 
-# Load data tasks
+# Load data tasks (default to dev environment)
+ENV ?= dev
+
 load-unprocessed:
-	uv run -m src.scripts.load_games
+	ENVIRONMENT=$(ENV) uv run -m src.scripts.load_games
 
 load-games:
 	@if [ -z "$(GAMES)" ]; then \
-		echo "Usage: make load-games GAMES='1234 5678 9012'"; \
+		echo "Usage: make load-games GAMES='1234 5678 9012' [ENV=prod|dev|test]"; \
 		exit 1; \
 	fi
-	uv run -m src.scripts.load_games $(GAMES)
+	ENVIRONMENT=$(ENV) uv run -m src.scripts.load_games $(GAMES)
 
 load: load-unprocessed
-	@echo "Loaded all unprocessed games"
+	@echo "Loaded all unprocessed games to $(ENV) environment"
 
 update:
-	uv run -m src.pipeline.update_data
+	ENVIRONMENT=$(ENV) uv run -m src.pipeline.update_data
 
 quality:
-	uv run -m src.quality_monitor.monitor
-
-# BigQuery setup tasks
-create-datasets:
-	uv run -m src.warehouse.setup_bigquery
+	ENVIRONMENT=$(ENV) uv run -m src.quality_monitor.monitor
 
 # Development tasks
-dev-setup: install create-datasets
+dev-setup: install create-datasets-dev
 	@echo "Development environment setup complete"
+
+test-setup: install create-datasets-test
+	@echo "Test environment setup complete"
+
+prod-setup: install create-datasets-prod
+	@echo "Production environment setup complete"
 
 # Visualization
 dashboard:
@@ -73,19 +87,34 @@ dashboard:
 .DEFAULT_GOAL := help
 help:
 	@echo "Available commands:"
-	@echo "  install         Install project dependencies"
-	@echo "  test           Run tests"
-	@echo "  lint           Run code quality checks"
-	@echo "  clean          Clean temporary files"
-	@echo "  fetch-ids      Fetch game IDs from BGG"
-	@echo "  fetch-games    Fetch game data from BGG API"
-	@echo "  examine-game   Examine a specific game (Usage: make examine-game GAME=1234)"
+	@echo "  install           Install project dependencies"
+	@echo "  test             Run tests"
+	@echo "  lint             Run code quality checks"
+	@echo "  clean            Clean temporary files"
+	@echo ""
+	@echo "Environment Setup:"
+	@echo "  dev-setup        Setup development environment"
+	@echo "  test-setup       Setup test environment"
+	@echo "  prod-setup       Setup production environment"
+	@echo "  create-datasets  Create datasets in all environments"
+	@echo ""
+	@echo "Data Pipeline Tasks:"
+	@echo "  fetch-ids        Fetch game IDs from BGG (prod only)"
+	@echo "  fetch-games      Fetch game data from BGG API (prod only)"
+	@echo "  process-responses Process BGG API responses (Usage: make process-responses [BATCH_SIZE=100])"
+	@echo "  load            Load all unprocessed games (ENV=prod|dev|test, default: dev)"
+	@echo "  load-unprocessed Load all unprocessed games (ENV=prod|dev|test, default: dev)"
+	@echo "  load-games      Load specific games (Usage: make load-games GAMES='1234 5678' [ENV=prod|dev|test])"
+	@echo "  update          Update data (ENV=prod|dev|test, default: dev)"
+	@echo "  quality         Run data quality checks (ENV=prod|dev|test, default: dev)"
+	@echo ""
+	@echo "Utility Tasks:"
+	@echo "  examine-game     Examine a specific game (Usage: make examine-game GAME=1234)"
 	@echo "  check-duplicates Check for duplicate game entries"
-	@echo "  load           Load all unprocessed games to BigQuery"
-	@echo "  load-unprocessed Load all unprocessed games to BigQuery"
-	@echo "  load-games     Load specific games (Usage: make load-games GAMES='1234 5678')"
-	@echo "  update         Update data in BigQuery"
-	@echo "  quality        Run data quality checks"
-	@echo "  create-datasets Setup BigQuery datasets"
-	@echo "  dev-setup      Complete development environment setup"
-	@echo "  dashboard      Run the visualization dashboard"
+	@echo "  dashboard        Run the visualization dashboard"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make load ENV=dev                    # Load unprocessed games to dev environment"
+	@echo "  make load-games GAMES='1234' ENV=test # Load specific game to test environment"
+	@echo "  make quality ENV=prod                # Run quality checks on production data"
+	@echo "  make process-responses BATCH_SIZE=50 # Process responses with batch size of 50"
