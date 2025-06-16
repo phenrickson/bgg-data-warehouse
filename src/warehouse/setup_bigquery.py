@@ -1,10 +1,15 @@
 """BigQuery setup for the BGG data warehouse."""
 
 import logging
+import os
 from typing import Dict, List, Optional
 
+from dotenv import load_dotenv
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
+
+# Load environment variables
+load_dotenv()
 
 from src.config import get_bigquery_config
 
@@ -56,6 +61,15 @@ class BigQuerySetup:
                 bigquery.SchemaField("response_time", "FLOAT64"),
                 bigquery.SchemaField("error", "STRING"),
                 bigquery.SchemaField("request_timestamp", "TIMESTAMP", mode="REQUIRED")
+            ],
+            "raw_responses": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("response_data", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("fetch_timestamp", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("processed", "BOOLEAN", mode="REQUIRED"),
+                bigquery.SchemaField("process_timestamp", "TIMESTAMP"),
+                bigquery.SchemaField("process_status", "STRING"),
+                bigquery.SchemaField("process_attempt", "INTEGER", mode="REQUIRED")
             ]
         }
         return schemas.get(table_name, [])

@@ -24,21 +24,18 @@ clean:
 fetch-ids:
 	uv run -m src.id_fetcher.fetcher
 
-fetch-games:
-	uv run -m src.pipeline.fetch_data
+fetch-responses:
+	uv run -m src.pipeline.fetch_responses
+
+# Default batch size if not specified
+BATCH_SIZE ?= 100
+
+process-responses:
+	uv run -m src.pipeline.process_responses --batch-size $(BATCH_SIZE)
 
 # Environment-specific tasks
-create-datasets-prod:
-	set "ENVIRONMENT=prod" && uv run -m src.warehouse.setup_bigquery
-
-create-datasets-dev:
-	ENVIRONMENT=dev uv run -m src.warehouse.setup_bigquery
-
-create-datasets-test:
-	ENVIRONMENT=test uv run -m src.warehouse.setup_bigquery
-
-create-datasets: create-datasets-prod create-datasets-dev create-datasets-test
-	@echo "All datasets created"
+create-datasets:
+	uv run -m src.warehouse.setup_bigquery
 
 # Utility tasks
 examine-game:
@@ -104,6 +101,7 @@ help:
 	@echo "Data Pipeline Tasks:"
 	@echo "  fetch-ids        Fetch game IDs from BGG (prod only)"
 	@echo "  fetch-games      Fetch game data from BGG API (prod only)"
+	@echo "  process-responses Process BGG API responses (Usage: make process-responses [BATCH_SIZE=100])"
 	@echo "  load            Load all unprocessed games (ENV=prod|dev|test, default: dev)"
 	@echo "  load-unprocessed Load all unprocessed games (ENV=prod|dev|test, default: dev)"
 	@echo "  load-games      Load specific games (Usage: make load-games GAMES='1234 5678' [ENV=prod|dev|test])"
@@ -119,3 +117,4 @@ help:
 	@echo "  make load ENV=dev                    # Load unprocessed games to dev environment"
 	@echo "  make load-games GAMES='1234' ENV=test # Load specific game to test environment"
 	@echo "  make quality ENV=prod                # Run quality checks on production data"
+	@echo "  make process-responses BATCH_SIZE=50 # Process responses with batch size of 50"
