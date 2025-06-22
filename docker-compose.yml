@@ -22,7 +22,7 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
-    command: src.pipeline.fetch_data
+    command: uv run python -m src.pipeline.fetch_data
 
   quality-monitor:
     build:
@@ -36,7 +36,7 @@ services:
     volumes:
       - ./credentials:/app/credentials
     restart: unless-stopped
-    command: src.quality_monitor.monitor
+    command: uv run python -m src.quality_monitor.monitor
 
   # Scheduled data updates
   updater:
@@ -52,7 +52,7 @@ services:
       - ./data:/app/data
       - ./credentials:/app/credentials
     restart: unless-stopped
-    command: src.pipeline.load_data
+    command: uv run python -m src.pipeline.load_data
 
   # Visualization dashboard
   dashboard:
@@ -69,7 +69,7 @@ services:
     volumes:
       - ./credentials:/app/credentials
     restart: unless-stopped
-    command: streamlit run src/visualization/dashboard.py
+    command: uv run streamlit run src/visualization/dashboard.py
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
