@@ -120,18 +120,42 @@ class BGGResponseFetcher:
             game_ids: List of game IDs in the response
             response_data: Raw API response data
         """
+        # Parse the response data to extract individual game responses
+        import ast
+        
         base_time = datetime.now(UTC)
         rows = []
+        
+        # Parse the response data
+        parsed_response = ast.literal_eval(response_data)
+        
+        # Extract items from the response
+        items = parsed_response.get('items', {}).get('item', [])
+        
+        # Ensure items is a list
+        if not isinstance(items, list):
+            items = [items]
+        
+        # Create a mapping of game IDs to their specific response
+        game_responses = {}
+        for item in items:
+            game_id = int(item.get('@id', 0))
+            if game_id in game_ids:
+                # Store the specific item as a response for this game
+                game_responses[game_id] = str({'items': {'item': item}})
+        
+        # Create rows for each game with its specific response
         for game_id in game_ids:
-            rows.append({
-                "game_id": game_id,
-                "response_data": response_data,
-                "fetch_timestamp": base_time.isoformat(),
-                "processed": False,
-                "process_timestamp": None,
-                "process_status": None,
-                "process_attempt": 0
-            })
+            if game_id in game_responses:
+                rows.append({
+                    "game_id": game_id,
+                    "response_data": game_responses[game_id],
+                    "fetch_timestamp": base_time.isoformat(),
+                    "processed": False,
+                    "process_timestamp": None,
+                    "process_status": None,
+                    "process_attempt": 0
+                })
         
         table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}"
         
@@ -159,7 +183,7 @@ class BGGResponseFetcher:
             if load_job.errors:
                 logger.error(f"Failed to store responses: {load_job.errors}")
             else:
-                logger.info(f"Stored responses for {len(game_ids)} games")
+                logger.info(f"Stored responses for {len(rows)} games")
                 
         except Exception as e:
             logger.error(f"Failed to store responses: {e}")
