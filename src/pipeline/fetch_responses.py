@@ -113,25 +113,99 @@ class BGGResponseFetcher:
             logger.error(f"Failed to fetch unprocessed IDs: {e}")
             return []
 
-    def store_response(self, game_ids: List[int], response_data: str) -> None:
+    def store_response(self, game_ids: List[int], response_data: str, no_response_ids: Optional[List[int]] = None) -> None:
         """Store raw API response in BigQuery using load jobs.
         
         Args:
             game_ids: List of game IDs in the response
             response_data: Raw API response data
+            no_response_ids: List of game IDs with no response
         """
+        # Parse the response data to extract individual game responses
+        import ast
+        
         base_time = datetime.now(UTC)
         rows = []
-        for game_id in game_ids:
-            rows.append({
-                "game_id": game_id,
-                "response_data": response_data,
-                "fetch_timestamp": base_time.isoformat(),
-                "processed": False,
-                "process_timestamp": None,
-                "process_status": None,
-                "process_attempt": 0
-            })
+        
+        # Logging input parameters for debugging
+        logger.info(f"store_response called with: game_ids={game_ids}, no_response_ids={no_response_ids}")
+        
+        # Handle game IDs with no response
+        if no_response_ids:
+            logger.info(f"Processing {len(no_response_ids)} no-response game IDs")
+            for game_id in no_response_ids:
+                row = {
+                    "game_id": game_id,
+                    "response_data": "",  # Use empty string instead of None
+                    "fetch_timestamp": base_time.isoformat(),
+                    "processed": True,
+                    "process_timestamp": base_time.isoformat(),
+                    "process_status": "no_response",
+                    "process_attempt": 1
+                }
+                rows.append(row)
+                logger.debug(f"No-response row for game_id {game_id}: {row}")
+        
+        # If response data is provided, process it
+        if response_data:
+            logger.info(f"Processing response data for {len(game_ids)} game IDs")
+            
+            try:
+                # Parse the response data
+                parsed_response = ast.literal_eval(response_data)
+                
+                # Extract items from the response
+                items = parsed_response.get('items', {}).get('item', [])
+                
+                # Ensure items is a list
+                if not isinstance(items, list):
+                    items = [items] if items else []
+                
+                logger.info(f"Found {len(items)} items in the response")
+                
+                # Create a mapping of game IDs to their specific response
+                game_responses = {}
+                for item in items:
+                    game_id = int(item.get('@id', 0))
+                    if game_id in game_ids:
+                        # Store the specific item as a response for this game
+                        game_responses[game_id] = str({'items': {'item': item}})
+                        logger.debug(f"Processed response for game_id {game_id}")
+                
+                # Create rows for each game with its specific response
+                for game_id in game_ids:
+                    if game_id in game_responses:
+                        row = {
+                            "game_id": game_id,
+                            "response_data": game_responses[game_id],
+                            "fetch_timestamp": base_time.isoformat(),
+                            "processed": False,
+                            "process_timestamp": None,
+                            "process_status": None,
+                            "process_attempt": 0
+                        }
+                        rows.append(row)
+                        logger.debug(f"Created row for game_id {game_id}: {row}")
+            
+            except Exception as parse_error:
+                logger.error(f"Failed to parse response data: {parse_error}")
+                logger.error(f"Raw response data: {response_data}")
+                # If parsing fails, mark all game IDs as processed with an error status
+                for game_id in game_ids:
+                    row = {
+                        "game_id": game_id,
+                        "response_data": "",  # Use empty string instead of None
+                        "fetch_timestamp": base_time.isoformat(),
+                        "processed": True,
+                        "process_timestamp": base_time.isoformat(),
+                        "process_status": "parse_error",
+                        "process_attempt": 1
+                    }
+                    rows.append(row)
+                    logger.debug(f"Parse error row for game_id {game_id}: {row}")
+        
+        # Log total number of rows to be inserted
+        logger.info(f"Total rows to insert: {len(rows)}")
         
         table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}"
         
@@ -139,11 +213,18 @@ class BGGResponseFetcher:
             # Get table schema
             table = self.bq_client.get_table(table_id)
             
+            # Validate schema to ensure response_data can be empty
+            response_data_field = next((field for field in table.schema if field.name == 'response_data'), None)
+            if response_data_field and not response_data_field.is_nullable:
+                logger.warning("response_data field is not nullable. This may cause insertion errors.")
+            
             # Configure the load job
             job_config = bigquery.LoadJobConfig(
                 source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
                 schema=table.schema,
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+                # Add max bad records to prevent job failure
+                max_bad_records=len(rows)  # Allow all rows to be considered bad if needed
             )
             
             # Load data using load job
@@ -154,15 +235,29 @@ class BGGResponseFetcher:
             )
             
             # Wait for job to complete
-            load_job.result()
+            load_job_result = load_job.result()
             
+            # Check for specific errors
             if load_job.errors:
-                logger.error(f"Failed to store responses: {load_job.errors}")
-            else:
-                logger.info(f"Stored responses for {len(game_ids)} games")
+                logger.error(f"Detailed load job errors: {load_job.errors}")
+                
+                # Log individual row details for debugging
+                for row in rows:
+                    logger.debug(f"Problematic row details: {row}")
+            
+            # Log job statistics
+            logger.info(f"Load job input rows: {load_job_result.input_file_bytes}")
+            logger.info(f"Load job output rows: {load_job_result.output_rows}")
+            
+            logger.info(f"Successfully processed responses for {len(rows)} games")
                 
         except Exception as e:
             logger.error(f"Failed to store responses: {e}")
+            
+            # Log detailed row information for debugging
+            for row in rows:
+                logger.error(f"Problematic row: {row}")
+            
             raise
 
     def fetch_batch(self, game_ids: Optional[List[int]] = None) -> bool:
@@ -202,11 +297,47 @@ class BGGResponseFetcher:
                 try:
                     response = self.api_client.get_thing(chunk_ids)
                     
+                    # Detailed logging and robust response handling
                     if response:
-                        # Store raw response
-                        self.store_response(chunk_ids, str(response))
+                        # Log the raw response for debugging
+                        logger.debug(f"Raw response: {response}")
+                        
+                        # Attempt to parse and validate the response
+                        try:
+                            import ast
+                            parsed_response = ast.literal_eval(str(response))
+                            
+                            # Check if items exist in the response
+                            items = parsed_response.get('items', {}).get('item', [])
+                            
+                            # Ensure items is a list
+                            if not isinstance(items, list):
+                                items = [items] if items else []
+                            
+                            # Extract game IDs from the response
+                            response_game_ids = [int(item.get('@id', 0)) for item in items if int(item.get('@id', 0)) in chunk_ids]
+                            
+                            # Log the found game IDs
+                            logger.info(f"Found game IDs in response: {response_game_ids}")
+                            
+                            # Store the response, handling both found and not found game IDs
+                            if response_game_ids:
+                                self.store_response(response_game_ids, str(response))
+                            
+                            # Mark game IDs not found in the response
+                            not_found_ids = [game_id for game_id in chunk_ids if game_id not in response_game_ids]
+                            if not_found_ids:
+                                logger.warning(f"No data found for games: {not_found_ids}")
+                                self.store_response([], None, not_found_ids)
+                            
+                        except Exception as parse_error:
+                            logger.error(f"Failed to parse response for {chunk_ids}: {parse_error}")
+                            # Mark all chunk IDs as processed due to parsing error
+                            self.store_response([], None, chunk_ids)
                     else:
                         logger.warning(f"No data returned for games {chunk_ids}")
+                        # Mark all chunk IDs as processed
+                        self.store_response([], None, chunk_ids)
                         
                 except Exception as e:
                     logger.error(f"Failed to fetch chunk {chunk_ids}: {e}")

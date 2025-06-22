@@ -110,7 +110,6 @@ class BigQuerySetup:
                 bigquery.SchemaField("num_comments", "INTEGER"),
                 bigquery.SchemaField("num_weights", "INTEGER"),
                 bigquery.SchemaField("average_weight", "FLOAT64"),
-                bigquery.SchemaField("raw_data", "STRING"),
                 bigquery.SchemaField("load_timestamp", "TIMESTAMP", mode="REQUIRED")
             ],
             "alternate_names": [

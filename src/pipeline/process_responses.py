@@ -167,6 +167,26 @@ class BGGResponseProcessor:
             # Convert DataFrame to list of dictionaries and parse response_data
             responses = []
             for _, row in df.iterrows():
+                # Skip empty or whitespace-only response_data
+                if not row["response_data"] or row["response_data"].isspace():
+                    logger.warning(f"Skipping game {row['game_id']} with empty response data")
+                    
+                    # Mark as processed with no_response status
+                    update_query = f"""
+                    UPDATE `{self.raw_responses_table}`
+                    SET processed = TRUE,
+                        process_status = 'no_response',
+                        process_timestamp = CURRENT_TIMESTAMP(),
+                        process_attempt = process_attempt + 1
+                    WHERE game_id = {row['game_id']}
+                    """
+                    try:
+                        query_job = self.bq_client.query(update_query)
+                        query_job.result()  # Wait for query to complete
+                    except Exception as update_error:
+                        logger.error(f"Failed to update status for game {row['game_id']}: {update_error}")
+                    continue
+
                 try:
                     # Parse response_data from string back to dict
                     import ast
@@ -178,6 +198,22 @@ class BGGResponseProcessor:
                     })
                 except Exception as e:
                     logger.error(f"Failed to parse response data for game {row['game_id']}: {e}")
+                    
+                    # Mark as processed with parse error status
+                    update_query = f"""
+                    UPDATE `{self.raw_responses_table}`
+                    SET processed = TRUE,
+                        process_status = 'parse_error',
+                        process_timestamp = CURRENT_TIMESTAMP(),
+                        process_attempt = process_attempt + 1
+                    WHERE game_id = {row['game_id']}
+                    """
+                    try:
+                        query_job = self.bq_client.query(update_query)
+                        query_job.result()  # Wait for query to complete
+                    except Exception as update_error:
+                        logger.error(f"Failed to update status for game {row['game_id']}: {update_error}")
+            
             return responses
         
         except Exception as e:

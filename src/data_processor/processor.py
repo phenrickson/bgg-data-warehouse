@@ -401,9 +401,8 @@ class BGGDataProcessor:
                 # Rankings
                 "rankings": ranks.ranks,
                 
-                # Metadata
-                "raw_data": str(api_response),
-                "load_timestamp": load_timestamp or datetime.now(UTC),
+            # Metadata
+            "load_timestamp": load_timestamp or datetime.now(UTC),
             }
 
             return processed
@@ -481,7 +480,6 @@ class BGGDataProcessor:
                 "num_comments": game["num_comments"],
                 "num_weights": game["num_weights"],
                 "average_weight": game["average_weight"],
-                "raw_data": game["raw_data"],
                 "load_timestamp": game["load_timestamp"]
             })
             

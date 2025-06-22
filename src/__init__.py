@@ -1,0 +1,1 @@
+"""BGG Data Warehouse package."""

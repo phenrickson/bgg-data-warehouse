@@ -21,7 +21,12 @@ class BGGDashboard:
     def __init__(self) -> None:
         """Initialize the dashboard."""
         self.config = get_bigquery_config()
-        self.client = bigquery.Client(project=self.config["project"]["id"])
+        logger.info(f"Config: {self.config}")
+        env_config = self.config["environments"]["dev"]  # Using dev environment
+        self.project_id = env_config["project_id"]
+        self.dataset = env_config["dataset"]  # Using the dev dataset
+        logger.info(f"Project ID: {self.project_id}, Dataset: {self.dataset}")
+        self.client = bigquery.Client(project=self.project_id)
 
     def get_top_games(self, limit: int = 10) -> pd.DataFrame:
         """Get top rated games.
@@ -38,23 +43,32 @@ class BGGDashboard:
         if limit < 1:
             raise ValueError("Limit must be at least 1")
         query = f"""
-        SELECT
-            name,
-            year_published,
-            average as rating,
-            num_ratings,
-            weight
-        FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.games`
-        WHERE num_ratings >= 100
-        ORDER BY rating DESC
+        SELECT *
+        FROM `{self.project_id}.{self.dataset}.games`
+        LIMIT 1
+        """
+        
+        # First, get the schema
+        schema_query = self.client.query(query)
+        schema_df = schema_query.to_dataframe()
+        logger.info(f"Table columns: {list(schema_df.columns)}")
+        
+        # Now the actual query
+        query = f"""
+        SELECT *
+        FROM `{self.project_id}.{self.dataset}.games`
+        ORDER BY average DESC
         LIMIT {limit}
         """
         
         return self.client.query(query).to_dataframe()
 
-    def get_games_by_year(self) -> pd.DataFrame:
+    def get_games_by_year(self, min_ratings: int = 0) -> pd.DataFrame:
         """Get game counts and ratings by year.
         
+        Args:
+            min_ratings: Minimum number of ratings to include
+            
         Returns:
             DataFrame of game statistics by year
         """
@@ -63,11 +77,39 @@ class BGGDashboard:
             year_published,
             COUNT(*) as game_count,
             AVG(average) as avg_rating,
-            AVG(weight) as avg_weight
-        FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.games`
+            AVG(weight) as avg_weight,
+            AVG(num_ratings) as avg_num_ratings
+        FROM `{self.project_id}.{self.dataset}.games`
         WHERE year_published IS NOT NULL
+        AND num_ratings >= {min_ratings}
         GROUP BY year_published
         ORDER BY year_published
+        """
+        
+        return self.client.query(query).to_dataframe()
+
+    def get_weight_vs_rating(self, min_ratings: int = 0, min_year: int = 1900) -> pd.DataFrame:
+        """Get weight vs rating data.
+        
+        Args:
+            min_ratings: Minimum number of ratings to include
+            min_year: Minimum year published
+            
+        Returns:
+            DataFrame of weight vs rating data
+        """
+        query = f"""
+        SELECT 
+            name,
+            year_published,
+            weight as average_weight,
+            average as average_rating,
+            num_ratings
+        FROM `{self.project_id}.{self.dataset}.games`
+        WHERE year_published >= {min_year}
+        AND num_ratings >= {min_ratings}
+        AND weight IS NOT NULL
+        AND average IS NOT NULL
         """
         
         return self.client.query(query).to_dataframe()
@@ -92,7 +134,7 @@ class BGGDashboard:
                 mechanic,
                 COUNT(*) as game_count,
                 AVG(average) as avg_rating
-            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.games`
+        FROM `{self.project_id}.{self.dataset}.games`
             CROSS JOIN UNNEST(mechanics) as mechanic
             GROUP BY mechanic
             HAVING game_count >= 10
@@ -119,7 +161,7 @@ class BGGDashboard:
             records_checked,
             failed_records,
             check_timestamp
-        FROM `{self.config["project"]["id"]}.{self.config["datasets"]["monitoring"]}.data_quality`
+        FROM `{self.project_id}.{self.config["datasets"]["monitoring"]}.data_quality`
         WHERE check_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
         ORDER BY check_timestamp DESC
         """
@@ -135,9 +177,43 @@ def main() -> None:
     )
 
     st.title("BoardGameGeek Data Warehouse Dashboard")
+    st.markdown("""
+    Explore and analyze BoardGameGeek data through interactive visualizations.
+    Use the sidebar filters to customize the analysis.
+    """)
     
     try:
         dashboard = BGGDashboard()
+        
+        # Sidebar filters
+        st.sidebar.header("Filters")
+        min_year = st.sidebar.slider("Minimum Year Published", 1900, 2024, 1900)
+        min_ratings = st.sidebar.slider("Minimum Number of Ratings", 0, 10000, 100)
+        
+        # Weight vs Rating Analysis
+        st.header("Game Weight vs Rating Analysis")
+        weight_rating_data = dashboard.get_weight_vs_rating(min_ratings=min_ratings, min_year=min_year)
+        
+        fig = px.scatter(
+            weight_rating_data,
+            x="average_weight",
+            y="average_rating",
+            hover_data=["name", "year_published", "num_ratings"],
+            title="Game Complexity (Weight) vs Rating",
+            labels={
+                "average_weight": "Game Weight (Complexity)",
+                "average_rating": "Average Rating"
+            },
+            trendline="ols",
+            color="num_ratings",
+            size="num_ratings",
+            size_max=30
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Correlation Analysis
+        correlation = weight_rating_data["average_weight"].corr(weight_rating_data["average_rating"])
+        st.metric("Correlation between Weight and Rating", f"{correlation:.3f}")
         
         # Top Games
         st.header("Top Rated Games")
@@ -155,7 +231,7 @@ def main() -> None:
         
         # Games by Year
         st.header("Games by Year")
-        yearly_stats = dashboard.get_games_by_year()
+        yearly_stats = dashboard.get_games_by_year(min_ratings=min_ratings)
         
         col1, col2 = st.columns(2)
         
@@ -164,7 +240,24 @@ def main() -> None:
                 yearly_stats,
                 x="year_published",
                 y="game_count",
-                title="Number of Games Published"
+                title="Number of Games Published by Year",
+                labels={
+                    "year_published": "Year",
+                    "game_count": "Number of Games"
+                }
+            )
+            fig.add_scatter(
+                x=yearly_stats["year_published"],
+                y=yearly_stats["avg_num_ratings"],
+                name="Avg Ratings per Game",
+                yaxis="y2"
+            )
+            fig.update_layout(
+                yaxis2=dict(
+                    title="Average Number of Ratings",
+                    overlaying="y",
+                    side="right"
+                )
             )
             st.plotly_chart(fig, use_container_width=True)
         
