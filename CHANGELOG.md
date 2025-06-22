@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project documentation
 
 ### Changed
-- None
+- Improved response fetching and processing pipeline
+- Enhanced error handling for API response parsing
+- Added robust tracking for game IDs with no response or parsing errors
 
 ### Deprecated
 - None
@@ -28,10 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - None
 
 ### Fixed
-- None
+- Resolved issues with handling game IDs that no longer exist or return no response
+- Improved logging and status tracking for API response processing
+- Added graceful handling of empty or problematic API responses
 
 ### Security
-- None
+- Enhanced data integrity checks in response processing pipeline
+- Improved error logging to prevent potential data leakage
 
 ## [0.1.0] - 2025-06-09
 
