@@ -1,0 +1,40 @@
+name: BGG Data Warehouse Pipeline
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Run at the start of every hour
+  workflow_dispatch:      # Allow manual triggers for testing
+
+jobs:
+  update-warehouse:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy and Run
+        run: |
+          gcloud builds submit --config cloudbuild.yaml
+          gcloud run jobs execute bgg-processor \
+            --region us-central1 \
+            --wait

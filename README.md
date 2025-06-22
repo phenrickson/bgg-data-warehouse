@@ -6,23 +6,35 @@ A sophisticated data pipeline for collecting, processing, and analyzing BoardGam
 
 The BGG Data Pipeline is strategically designed to efficiently collect, process, and analyze board game data from BoardGameGeek, with a robust architecture that ensures data integrity and performance.
 
+### Recent Improvements
+
+- **Enhanced Response Handling**
+  - Intelligent processing of game IDs with no response
+  - Graceful handling of empty or problematic API responses
+  - Detailed logging and status tracking for API interactions
+  - Improved error handling and data integrity checks
+
 ### Components
 
 #### Response Fetcher (`src/pipeline/fetch_responses.py`)
 - Continuously fetches game data from the BGG API
 - Stores raw XML responses in BigQuery's `raw_responses` table
+- Advanced error handling for various API response scenarios
 - Handles API rate limiting and retries
 - Runs as a local process
 - Fetches games in chunks (default 20 games per API call)
 - Tracks processing status and timestamps
+- Automatically marks game IDs with no response or parsing errors
 
 #### Response Processor (`src/pipeline/process_responses.py`)
 - Processes raw responses into normalized tables
+- Robust handling of incomplete or problematic game data
 - Runs as a Cloud Run Job
 - Supports multiple parallel tasks (default 5 concurrent processing jobs)
 - Handles processing errors without disrupting overall data fetching
 - Automatically retries failed processing attempts
 - Scheduled to run every 10 minutes
+- Enhanced logging and status tracking
 
 ### Data Flow Diagram
 
@@ -44,6 +56,7 @@ graph TD
 - Comprehensive data validation
 - BigQuery data warehouse integration
 - Robust error handling and retry mechanisms
+- Advanced tracking of API response processing
 - Data quality monitoring
 - Raw data archival to Cloud Storage
 
@@ -149,11 +162,13 @@ ORDER BY process_timestamp DESC;
 1. API Errors:
    - Fetcher retries with exponential backoff
    - Failed requests logged in `request_log` table
+   - Automatic marking of game IDs with no response
 
 2. Processing Errors:
    - Each response can be retried up to 3 times
    - Errors stored in `process_status` field
    - Failed items do not block other processing
+   - Detailed logging of processing challenges
 
 ## Development
 
