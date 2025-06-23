@@ -8,35 +8,39 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor']
 
-  # Deploy Cloud Run Job
+  # Deploy Fetch Responses Cloud Run Job
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'jobs'
-      - 'create'
-      - 'bgg-processor'
+      - 'update'
+      - 'bgg-fetch-responses'
       - '--image=gcr.io/$PROJECT_ID/bgg-processor'
-      - '--tasks=5'  # Run 5 parallel tasks
+      - '--tasks=3'  # Fewer tasks for fetching
       - '--max-retries=3'
       - '--task-timeout=1h'
       - '--memory=2Gi'
       - '--cpu=1'
       - '--region=us-central1'
-      - '--service-account=bgg-processor@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=prod'
+      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=ENVIRONMENT=dev,PIPELINE_STAGE=fetch_responses'
 
-  # Create Cloud Scheduler job
+  # Deploy Process Responses Cloud Run Job
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
-      - 'scheduler'
+      - 'run'
       - 'jobs'
-      - 'create'
-      - 'http'
-      - 'process-bgg-data'
-      - '--schedule=*/10 * * * *'  # Every 10 minutes
-      - '--uri=https://us-central1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/bgg-processor:run'
-      - '--http-method=POST'
-      - '--oauth-service-account-email=bgg-processor@$PROJECT_ID.iam.gserviceaccount.com'
+      - 'update'
+      - 'bgg-process-responses'
+      - '--image=gcr.io/$PROJECT_ID/bgg-processor'
+      - '--tasks=5'  # More tasks for processing
+      - '--max-retries=3'
+      - '--task-timeout=1h'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--region=us-central1'
+      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=ENVIRONMENT=dev,PIPELINE_STAGE=process_responses'
 
 # Images to push to Container Registry
 images:

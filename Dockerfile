@@ -21,11 +21,11 @@ RUN pip install uv
 COPY . .
 
 # Install project dependencies
-RUN uv pip install -e .
+RUN uv sync
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Default to running the processor
-# Can be overridden with --command flag in Cloud Run Jobs
-CMD ["uv", "run", "python", "-m", "src.pipeline.process_responses"]
+# Default pipeline stage to run
+# Can be set via PIPELINE_STAGE environment variable
+CMD uv run python -m "src.pipeline.${PIPELINE_STAGE:-process_responses}"
