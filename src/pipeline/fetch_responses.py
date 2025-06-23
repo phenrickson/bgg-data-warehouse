@@ -388,9 +388,15 @@ class BGGResponseFetcher:
 
 def main() -> None:
     """Main entry point for the fetcher."""
+    import os
+    
+    environment = os.getenv('ENVIRONMENT', 'dev')
+    logger.info(f"Starting fetcher in {environment} environment")
+    
     fetcher = BGGResponseFetcher(
         batch_size=1000,
         chunk_size=20,
+        environment=environment,
     )
     fetcher.run()
 

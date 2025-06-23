@@ -15,14 +15,14 @@ jobs:
 
       - name: Setup Environment
         run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
           cat << EOF > .env
           GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT }}
           GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
           EOF
-
-          mkdir -p credentials
-          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
 
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
@@ -35,6 +35,6 @@ jobs:
       - name: Deploy and Run
         run: |
           gcloud builds submit --config cloudbuild.yaml
-          gcloud run jobs execute bgg-processor \
+          gcloud run jobs execute bgg-fetch-responses \
             --region us-central1 \
             --wait

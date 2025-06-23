@@ -61,6 +61,8 @@ temp/
 *.json
 credentials/
 service-account-key.json
+.env.local
+.act.secrets
 
 # Project specific
 thingids.txt
@@ -68,3 +70,4 @@ thingids.txt
 # System
 .DS_Store
 Thumbs.db
+
