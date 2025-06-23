@@ -1,12 +1,12 @@
-name: Run BGG Data Warehouse Jobs
+name: Deploy BGG Data Warehouse
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # Run at the start of every hour
-  workflow_dispatch:      # Allow manual triggers for testing
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggers for testing
 
 jobs:
-  update-warehouse:
+  deploy:
     runs-on: ubuntu-latest
     
     steps:
@@ -32,14 +32,7 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Run Jobs
+      - name: Deploy
         run: |
-          # Run fetch-responses job and wait for completion
-          gcloud run jobs execute bgg-fetch-responses \
-            --region us-central1 \
-            --wait
-          
-          # Run process-responses job and wait for completion
-          gcloud run jobs execute bgg-process-responses \
-            --region us-central1 \
-            --wait
+          # Build and update job configurations
+          gcloud builds submit --config cloudbuild.yaml
