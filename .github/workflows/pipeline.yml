@@ -2,7 +2,7 @@ name: Run BGG Data Warehouse Jobs
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Run at the start of every hour
+    - cron: '0 */3 * * *'  # Run every 3 hours
   workflow_dispatch:      # Allow manual triggers for testing
 
 jobs:

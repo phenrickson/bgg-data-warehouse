@@ -1,7 +1,7 @@
-.PHONY: install test lint clean fetch load update quality create-datasets
+.PHONY: requirements test lint clean fetch load update quality create-datasets
 
-install:
-	uv pip install -e .
+requirements:
+	uv sync
 
 test:
 	uv run -m pytest
@@ -71,13 +71,13 @@ quality:
 	ENVIRONMENT=$(ENV) uv run -m src.quality_monitor.monitor
 
 # Development tasks
-dev-setup: install create-datasets-dev
+dev-setup: requirements create-datasets-dev
 	@echo "Development environment setup complete"
 
-test-setup: install create-datasets-test
+test-setup: requirements create-datasets-test
 	@echo "Test environment setup complete"
 
-prod-setup: install create-datasets-prod
+prod-setup: requirements create-datasets-prod
 	@echo "Production environment setup complete"
 
 # Visualization
@@ -87,7 +87,7 @@ dashboard:
 .DEFAULT_GOAL := help
 help:
 	@echo "Available commands:"
-	@echo "  install           Install project dependencies"
+	@echo "  requirements           requirements project dependencies"
 	@echo "  test             Run tests"
 	@echo "  lint             Run code quality checks"
 	@echo "  clean            Clean temporary files"
