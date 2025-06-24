@@ -65,8 +65,9 @@ def format_project_dataset(query: str) -> str:
     dataset = config["project"]["dataset"]
     return query.replace("${project_id}", project_id).replace("${dataset}", dataset)
 
+@st.cache_data(ttl=3600)  # Cache data for 1 hour
 def run_query(query: str) -> pd.DataFrame:
-    """Run a BigQuery query and return results as DataFrame."""
+    """Run a BigQuery query and return results as DataFrame with caching."""
     formatted_query = format_project_dataset(query)
     return client.query(formatted_query).to_dataframe()
 
@@ -79,25 +80,33 @@ def main():
     current_time = datetime.now(timezone.utc)
     st.write(f"Last updated: {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
     
+    # Load all metrics data at once
+    with st.spinner("Loading dashboard data..."):
+        # Get all the data we need upfront
+        total_games = run_query(queries.TOTAL_GAMES_QUERY)
+        games_with_bayes = run_query(queries.GAMES_WITH_BAYESAVERAGE_QUERY)
+        processing_status = run_query(queries.PROCESSING_STATUS)
+        unprocessed = run_query(queries.UNPROCESSED_RESPONSES_QUERY)
+        
+        # Get all entity counts with a single query
+        entity_counts = run_query(queries.ALL_ENTITY_COUNTS_QUERY)
+    
     # Top metrics row
     col1, col2, col3, col4, col5 = st.columns(5)
         
     with col1:
-        total_games = run_query(queries.TOTAL_GAMES_QUERY)
         components.create_metric_card(
             "Total Games",
             total_games.iloc[0]["total_games"]
         )
     
     with col2:
-        games_with_bayes = run_query(queries.GAMES_WITH_BAYESAVERAGE_QUERY)
         components.create_metric_card(
             "Ranked Games",
             games_with_bayes.iloc[0]["games_with_bayesaverage"]
         )
     
     with col3:
-        processing_status = run_query(queries.PROCESSING_STATUS)
         components.create_metric_card(
             "Responses Last 7 Days",
             processing_status.iloc[0]["total_responses"]
@@ -110,7 +119,6 @@ def main():
         )
         
     with col5:
-        unprocessed = run_query(queries.UNPROCESSED_RESPONSES_QUERY)
         components.create_metric_card(
             "Unprocessed Responses",
             unprocessed.iloc[0]["unprocessed_count"]
@@ -121,45 +129,39 @@ def main():
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
-        categories = run_query(queries.DISTINCT_CATEGORIES_QUERY)
         components.create_metric_card(
             "Categories",
-            categories.iloc[0]["category_count"]
+            entity_counts.iloc[0]["category_count"]
         )
     
     with col2:
-        mechanics = run_query(queries.DISTINCT_MECHANICS_QUERY)
         components.create_metric_card(
             "Mechanics",
-            mechanics.iloc[0]["mechanic_count"]
+            entity_counts.iloc[0]["mechanic_count"]
         )
     
     with col3:
-        families = run_query(queries.DISTINCT_FAMILIES_QUERY)
         components.create_metric_card(
             "Families",
-            families.iloc[0]["family_count"]
+            entity_counts.iloc[0]["family_count"]
         )
     
     with col4:
-        designers = run_query(queries.DISTINCT_DESIGNERS_QUERY)
         components.create_metric_card(
             "Designers",
-            designers.iloc[0]["designer_count"]
+            entity_counts.iloc[0]["designer_count"]
         )
     
     with col5:
-        artists = run_query(queries.DISTINCT_ARTISTS_QUERY)
         components.create_metric_card(
             "Artists",
-            artists.iloc[0]["artist_count"]
+            entity_counts.iloc[0]["artist_count"]
         )
     
     with col6:
-        publishers = run_query(queries.DISTINCT_PUBLISHERS_QUERY)
         components.create_metric_card(
             "Publishers",
-            publishers.iloc[0]["publisher_count"]
+            entity_counts.iloc[0]["publisher_count"]
         )
     
     # Time series charts

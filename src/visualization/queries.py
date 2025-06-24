@@ -19,35 +19,16 @@ FROM `${project_id}.bgg_raw_dev.raw_responses`
 WHERE processed = FALSE;
 """
 
-# Distinct entity counts
-DISTINCT_CATEGORIES_QUERY = """
-SELECT COUNT(DISTINCT category_id) as category_count
-FROM `${project_id}.${dataset}.categories`;
-"""
-
-DISTINCT_MECHANICS_QUERY = """
-SELECT COUNT(DISTINCT mechanic_id) as mechanic_count
-FROM `${project_id}.${dataset}.mechanics`;
-"""
-
-DISTINCT_FAMILIES_QUERY = """
-SELECT COUNT(DISTINCT family_id) as family_count
-FROM `${project_id}.${dataset}.families`;
-"""
-
-DISTINCT_DESIGNERS_QUERY = """
-SELECT COUNT(DISTINCT designer_id) as designer_count
-FROM `${project_id}.${dataset}.designers`;
-"""
-
-DISTINCT_ARTISTS_QUERY = """
-SELECT COUNT(DISTINCT artist_id) as artist_count
-FROM `${project_id}.${dataset}.artists`;
-"""
-
-DISTINCT_PUBLISHERS_QUERY = """
-SELECT COUNT(DISTINCT publisher_id) as publisher_count
-FROM `${project_id}.${dataset}.publishers`;
+# Combined entity counts query
+ALL_ENTITY_COUNTS_QUERY = """
+SELECT
+  (SELECT COUNT(DISTINCT category_id) FROM `${project_id}.${dataset}.categories`) as category_count,
+  (SELECT COUNT(DISTINCT mechanic_id) FROM `${project_id}.${dataset}.mechanics`) as mechanic_count,
+  (SELECT COUNT(DISTINCT family_id) FROM `${project_id}.${dataset}.families`) as family_count,
+  (SELECT COUNT(DISTINCT designer_id) FROM `${project_id}.${dataset}.designers`) as designer_count,
+  (SELECT COUNT(DISTINCT artist_id) FROM `${project_id}.${dataset}.artists`) as artist_count,
+  (SELECT COUNT(DISTINCT publisher_id) FROM `${project_id}.${dataset}.publishers`) as publisher_count
+FROM (SELECT 1) -- Dummy table to make the query valid
 """
 
 RECENT_FETCH_ACTIVITY = """
