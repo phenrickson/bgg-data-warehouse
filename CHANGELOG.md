@@ -5,23 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2025-06-24
 
 ### Added
-- Initial project setup
-- BGG API client with rate limiting and request tracking
-- Data processor for transforming API responses
-- BigQuery integration for data storage
-- Data quality monitoring system
-- Docker containerization
-- CI/CD pipeline with GitHub Actions
-- Comprehensive test suite
-- Project documentation
+- UV package manager integration replacing pip
+- Automated hourly pipeline runs via Cloud Run jobs
+- Streamlined deployment process with Cloud Build
+- Enhanced environment configuration handling
+- Comprehensive GitHub Actions workflows:
+  - Deployment workflow for automated Cloud Build updates
+  - Pipeline workflow for scheduled job execution
+- Cloud Run job execution improvements:
+  - bgg-fetch-responses job for data collection
+  - bgg-process-responses job for data transformation
 
 ### Changed
+- Migrated to UV for package management and virtual environments
 - Improved response fetching and processing pipeline
 - Enhanced error handling for API response parsing
 - Added robust tracking for game IDs with no response or parsing errors
+- Optimized Cloud Run job configurations
+- Streamlined deployment process
+
+### Deprecated
+- None
+
+### Removed
+- Pip-based package management
+- Manual job execution processes
+
+### Fixed
+- Resolved issues with handling game IDs that no longer exist or return no response
+- Improved logging and status tracking for API response processing
+- Added graceful handling of empty or problematic API responses
+- Enhanced Cloud Run job error handling
+
+### Security
+- Enhanced data integrity checks in response processing pipeline
+- Improved error logging to prevent potential data leakage
+- Secured GitHub Actions secret handling
+- Enhanced Cloud Run job security configurations
+
+## [Unreleased]
+
+### Added
+- None
+
+### Changed
+- Pipeline now runs every 3 hours instead of hourly for better resource utilization
+- ID fetcher now runs in both prod and dev environments (previously prod-only)
 
 ### Deprecated
 - None
@@ -30,13 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - None
 
 ### Fixed
-- Resolved issues with handling game IDs that no longer exist or return no response
-- Improved logging and status tracking for API response processing
-- Added graceful handling of empty or problematic API responses
+- None
 
 ### Security
-- Enhanced data integrity checks in response processing pipeline
-- Improved error logging to prevent potential data leakage
+- None
 
 ## [0.1.0] - 2025-06-09
 
@@ -46,5 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core functionality for BGG data pipeline
 - Documentation and setup instructions
 
-[Unreleased]: https://github.com/yourusername/bgg-data-warehouse/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yourusername/bgg-data-warehouse/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yourusername/bgg-data-warehouse/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/yourusername/bgg-data-warehouse/releases/tag/v0.1.0

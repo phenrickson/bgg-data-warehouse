@@ -361,8 +361,8 @@ class BGGResponseFetcher:
         logger.info("Starting BGG response fetcher")
         
         try:
-            # Only fetch new IDs in production
-            if self.environment == "prod":
+            # Fetch new IDs in all environments except test
+            if self.environment != "test":
                 temp_dir = Path("temp")
                 self.id_fetcher.update_ids(temp_dir)
                 try:
@@ -377,7 +377,7 @@ class BGGResponseFetcher:
                             file.unlink()
                         temp_dir.rmdir()
             else:
-                # In dev/test, just fetch responses
+                # In test environment, just fetch responses
                 while self.fetch_batch():  # Remove game_ids for test environment
                     pass
                 logger.info("Fetcher completed - all responses fetched")
