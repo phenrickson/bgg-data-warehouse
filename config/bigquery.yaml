@@ -27,6 +27,17 @@ raw_tables:
     name: thing_ids
     description: "Game IDs from BGG with processing status"
     clustering_fields: [game_id]
+  fetch_in_progress:
+    name: fetch_in_progress
+    description: "Tracks game IDs currently being fetched to prevent duplicates"
+    clustering_fields: [game_id]
+    schema:
+      - name: game_id
+        type: INTEGER
+        mode: REQUIRED
+      - name: fetch_start_timestamp
+        type: TIMESTAMP
+        mode: REQUIRED
   request_log:
     name: request_log
     description: "API request tracking log"
