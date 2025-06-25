@@ -49,11 +49,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- None
+- New fetch_in_progress table for tracking and locking game fetches
+- Parallel fetching support with distributed locking mechanism
+- Automated cleanup of stale in-progress entries after 30 minutes
 
 ### Changed
 - Pipeline now runs every 3 hours instead of hourly for better resource utilization
 - ID fetcher now runs in both prod and dev environments (previously prod-only)
+- Enhanced response processing with better error handling
+- Improved logging for fetch operations and error cases
 
 ### Deprecated
 - None
@@ -62,10 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - None
 
 ### Fixed
-- None
+- Prevented duplicate game fetches in parallel execution
+- Added robust handling of API response parsing errors
+- Improved cleanup of orphaned in-progress entries
 
 ### Security
-- None
+- Added safeguards against race conditions in parallel fetching
 
 ## [0.1.0] - 2025-06-09
 
