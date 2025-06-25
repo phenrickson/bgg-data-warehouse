@@ -61,54 +61,86 @@ class BGGResponseFetcher:
             ]
 
         try:
-            # If specific game IDs are provided, use them
+            # Clean up old in-progress entries first
+            cleanup_query = f"""
+            DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+            WHERE fetch_start_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
+            """
+            self.bq_client.query(cleanup_query).result()
+            
+            # Build the base query depending on whether specific game_ids were provided
             if game_ids:
-                query = f"""
+                base_query = f"""
                 WITH input_ids AS (
                     SELECT game_id
                     FROM UNNEST({game_ids}) AS game_id
                 ),
-                raw_responses AS (
-                    SELECT game_id
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
+                candidates AS (
+                    SELECT i.game_id, 'boardgame' as type
+                    FROM input_ids i
+                    WHERE NOT EXISTS (
+                        SELECT 1 
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
+                        WHERE i.game_id = r.game_id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
+                        WHERE i.game_id = f.game_id
+                    )
+                    LIMIT {self.batch_size}
                 )
-                SELECT game_id, 'boardgame' as type
-                FROM input_ids
-                WHERE NOT EXISTS (
-                    SELECT 1 
-                    FROM raw_responses
-                    WHERE input_ids.game_id = raw_responses.game_id
-                )
-                LIMIT {self.batch_size}
                 """
             else:
-                # Default query for unfetched IDs
-                query = f"""
-                WITH thing_ids AS (
-                    SELECT game_id, type
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
-                ),
-                raw_responses AS (
-                    SELECT game_id
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
+                base_query = f"""
+                WITH candidates AS (
+                    SELECT t.game_id, t.type
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}` t
+                    WHERE NOT EXISTS (
+                        SELECT 1 
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
+                        WHERE t.game_id = r.game_id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
+                        WHERE t.game_id = f.game_id
+                    )
+                    AND t.type = 'boardgame'
+                    ORDER BY t.game_id
+                    LIMIT {self.batch_size}
                 )
-                SELECT game_id, type
-                FROM thing_ids
-                WHERE NOT EXISTS (
-                    SELECT 1 
-                    FROM raw_responses
-                    WHERE thing_ids.game_id = raw_responses.game_id
-                )
-                AND type = 'boardgame'
-                ORDER BY game_id
-                LIMIT {self.batch_size}
                 """
+
+            # First get candidate games
+            candidates_query = base_query + """
+            SELECT game_id, type 
+            FROM candidates;
+            """
+            candidates_df = self.bq_client.query(candidates_query).to_dataframe()
             
-            df = self.bq_client.query(query).to_dataframe()
-            logger.info(f"Found {len(df)} unfetched games")
+            if not candidates_df.empty:
+                # Then mark them as in progress
+                game_ids_str = ", ".join(str(id) for id in candidates_df['game_id'])
+                mark_query = f"""
+                INSERT INTO `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+                    (game_id, fetch_start_timestamp)
+                SELECT c.game_id, CURRENT_TIMESTAMP()
+                FROM (
+                    {base_query}
+                    SELECT game_id, type 
+                    FROM candidates
+                ) c
+                WHERE c.game_id IN ({game_ids_str})
+                """
+                self.bq_client.query(mark_query).result()
+            
+            logger.info(f"Found {len(candidates_df)} unfetched games")
             
             # Convert pandas DataFrame to list of dicts
-            return [{"game_id": row["game_id"], "type": row.get("type", "boardgame")} for _, row in df.iterrows()]
+            return [{"game_id": row["game_id"], "type": row.get("type", "boardgame")} 
+                   for _, row in candidates_df.iterrows()]
+            
         except Exception as e:
             logger.error(f"Failed to fetch unprocessed IDs: {e}")
             return []
@@ -250,6 +282,18 @@ class BGGResponseFetcher:
             logger.info(f"Load job output rows: {load_job_result.output_rows}")
             
             logger.info(f"Successfully processed responses for {len(rows)} games")
+            
+            # Clean up fetch_in_progress entries for these games
+            try:
+                game_ids_str = ",".join(str(row["game_id"]) for row in rows)
+                cleanup_query = f"""
+                DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+                WHERE game_id IN ({game_ids_str})
+                """
+                self.bq_client.query(cleanup_query).result()
+                logger.info(f"Cleaned up fetch_in_progress entries for {len(rows)} games")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to clean up fetch_in_progress entries: {cleanup_error}")
                 
         except Exception as e:
             logger.error(f"Failed to store responses: {e}")

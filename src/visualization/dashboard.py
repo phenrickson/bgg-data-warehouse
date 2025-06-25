@@ -1,321 +1,216 @@
-"""Streamlit dashboard for visualizing BGG data."""
+"""BGG Data Warehouse Monitoring Dashboard."""
 
-import logging
-from typing import Dict, List, Optional, Tuple
+import os
+import sys
+from datetime import datetime, timezone
+import streamlit as st
+
+# Page config must be the first Streamlit command
+st.set_page_config(
+    page_title="BGG Data Warehouse Monitor",
+    page_icon="🎲",
+    layout="wide"
+)
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import streamlit as st
+import yaml
 from google.cloud import bigquery
+from dotenv import load_dotenv
 
-from ..config import get_bigquery_config
+# add to project path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables from .env file
+load_dotenv()
 
-class BGGDashboard:
-    """Dashboard for visualizing BGG data."""
+# Set Google Application Credentials
+if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials/service-account-key.json"
 
-    def __init__(self) -> None:
-        """Initialize the dashboard."""
-        self.config = get_bigquery_config()
-        logger.info(f"Config: {self.config}")
-        env_config = self.config["environments"]["dev"]  # Using dev environment
-        self.project_id = env_config["project_id"]
-        self.dataset = env_config["dataset"]  # Using the dev dataset
-        logger.info(f"Project ID: {self.project_id}, Dataset: {self.dataset}")
-        self.client = bigquery.Client(project=self.project_id)
+# Import local modules directly
+import src.visualization.queries as queries
+import src.visualization.components as components
 
-    def get_top_games(self, limit: int = 10) -> pd.DataFrame:
-        """Get top rated games.
-        
-        Args:
-            limit: Number of games to return
-            
-        Returns:
-            DataFrame of top games
-            
-        Raises:
-            ValueError: If limit is less than 1
-        """
-        if limit < 1:
-            raise ValueError("Limit must be at least 1")
-        query = f"""
-        SELECT *
-        FROM `{self.project_id}.{self.dataset}.games`
-        LIMIT 1
-        """
-        
-        # First, get the schema
-        schema_query = self.client.query(query)
-        schema_df = schema_query.to_dataframe()
-        logger.info(f"Table columns: {list(schema_df.columns)}")
-        
-        # Now the actual query
-        query = f"""
-        SELECT *
-        FROM `{self.project_id}.{self.dataset}.games`
-        ORDER BY average DESC
-        LIMIT {limit}
-        """
-        
-        return self.client.query(query).to_dataframe()
-
-    def get_games_by_year(self, min_ratings: int = 0) -> pd.DataFrame:
-        """Get game counts and ratings by year.
-        
-        Args:
-            min_ratings: Minimum number of ratings to include
-            
-        Returns:
-            DataFrame of game statistics by year
-        """
-        query = f"""
-        SELECT
-            year_published,
-            COUNT(*) as game_count,
-            AVG(average) as avg_rating,
-            AVG(weight) as avg_weight,
-            AVG(num_ratings) as avg_num_ratings
-        FROM `{self.project_id}.{self.dataset}.games`
-        WHERE year_published IS NOT NULL
-        AND num_ratings >= {min_ratings}
-        GROUP BY year_published
-        ORDER BY year_published
-        """
-        
-        return self.client.query(query).to_dataframe()
-
-    def get_weight_vs_rating(self, min_ratings: int = 0, min_year: int = 1900) -> pd.DataFrame:
-        """Get weight vs rating data.
-        
-        Args:
-            min_ratings: Minimum number of ratings to include
-            min_year: Minimum year published
-            
-        Returns:
-            DataFrame of weight vs rating data
-        """
-        query = f"""
-        SELECT 
-            name,
-            year_published,
-            weight as average_weight,
-            average as average_rating,
-            num_ratings
-        FROM `{self.project_id}.{self.dataset}.games`
-        WHERE year_published >= {min_year}
-        AND num_ratings >= {min_ratings}
-        AND weight IS NOT NULL
-        AND average IS NOT NULL
-        """
-        
-        return self.client.query(query).to_dataframe()
-
-    def get_popular_mechanics(self, limit: int = 10) -> pd.DataFrame:
-        """Get most popular game mechanics.
-        
-        Args:
-            limit: Number of mechanics to return
-            
-        Returns:
-            DataFrame of popular mechanics
-            
-        Raises:
-            ValueError: If limit is less than 1
-        """
-        if limit < 1:
-            raise ValueError("Limit must be at least 1")
-        query = f"""
-        WITH mechanic_counts AS (
-            SELECT
-                mechanic,
-                COUNT(*) as game_count,
-                AVG(average) as avg_rating
-        FROM `{self.project_id}.{self.dataset}.games`
-            CROSS JOIN UNNEST(mechanics) as mechanic
-            GROUP BY mechanic
-            HAVING game_count >= 10
-        )
-        SELECT *
-        FROM mechanic_counts
-        ORDER BY game_count DESC
-        LIMIT {limit}
-        """
-        
-        return self.client.query(query).to_dataframe()
-
-    def get_data_quality_metrics(self) -> pd.DataFrame:
-        """Get recent data quality metrics.
-        
-        Returns:
-            DataFrame of quality metrics
-        """
-        query = f"""
-        SELECT
-            check_name,
-            table_name,
-            check_status,
-            records_checked,
-            failed_records,
-            check_timestamp
-        FROM `{self.project_id}.{self.config["datasets"]["monitoring"]}.data_quality`
-        WHERE check_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-        ORDER BY check_timestamp DESC
-        """
-        
-        return self.client.query(query).to_dataframe()
-
-def main() -> None:
-    """Run the Streamlit dashboard."""
-    st.set_page_config(
-        page_title="BGG Data Warehouse Dashboard",
-        page_icon="🎲",
-        layout="wide"
-    )
-
-    st.title("BoardGameGeek Data Warehouse Dashboard")
-    st.markdown("""
-    Explore and analyze BoardGameGeek data through interactive visualizations.
-    Use the sidebar filters to customize the analysis.
-    """)
+# Load BigQuery config directly
+def get_bigquery_config():
+    """Get BigQuery configuration directly."""
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "bigquery.yaml")
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
     
-    try:
-        dashboard = BGGDashboard()
-        
-        # Sidebar filters
-        st.sidebar.header("Filters")
-        min_year = st.sidebar.slider("Minimum Year Published", 1900, 2024, 1900)
-        min_ratings = st.sidebar.slider("Minimum Number of Ratings", 0, 10000, 100)
-        
-        # Weight vs Rating Analysis
-        st.header("Game Weight vs Rating Analysis")
-        weight_rating_data = dashboard.get_weight_vs_rating(min_ratings=min_ratings, min_year=min_year)
-        
-        fig = px.scatter(
-            weight_rating_data,
-            x="average_weight",
-            y="average_rating",
-            hover_data=["name", "year_published", "num_ratings"],
-            title="Game Complexity (Weight) vs Rating",
-            labels={
-                "average_weight": "Game Weight (Complexity)",
-                "average_rating": "Average Rating"
-            },
-            trendline="ols",
-            color="num_ratings",
-            size="num_ratings",
-            size_max=30
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Correlation Analysis
-        correlation = weight_rating_data["average_weight"].corr(weight_rating_data["average_rating"])
-        st.metric("Correlation between Weight and Rating", f"{correlation:.3f}")
-        
-        # Top Games
-        st.header("Top Rated Games")
-        top_n = st.slider("Number of games to show", 5, 50, 10)
-        top_games = dashboard.get_top_games(limit=top_n)
-        
-        fig = px.bar(
-            top_games,
-            x="name",
-            y="rating",
-            hover_data=["year_published", "num_ratings", "weight"],
-            title="Top Rated Games"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Games by Year
-        st.header("Games by Year")
-        yearly_stats = dashboard.get_games_by_year(min_ratings=min_ratings)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fig = px.line(
-                yearly_stats,
-                x="year_published",
-                y="game_count",
-                title="Number of Games Published by Year",
-                labels={
-                    "year_published": "Year",
-                    "game_count": "Number of Games"
-                }
-            )
-            fig.add_scatter(
-                x=yearly_stats["year_published"],
-                y=yearly_stats["avg_num_ratings"],
-                name="Avg Ratings per Game",
-                yaxis="y2"
-            )
-            fig.update_layout(
-                yaxis2=dict(
-                    title="Average Number of Ratings",
-                    overlaying="y",
-                    side="right"
-                )
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            fig = px.line(
-                yearly_stats,
-                x="year_published",
-                y=["avg_rating", "avg_weight"],
-                title="Average Rating and Weight by Year"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Popular Mechanics
-        st.header("Popular Game Mechanics")
-        mechanics = dashboard.get_popular_mechanics()
-        
-        fig = px.scatter(
-            mechanics,
-            x="game_count",
-            y="avg_rating",
-            text="mechanic",
-            title="Game Mechanics by Popularity and Rating",
-            labels={
-                "game_count": "Number of Games",
-                "avg_rating": "Average Rating"
-            }
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Data Quality
-        st.header("Data Quality Metrics")
-        quality_metrics = dashboard.get_data_quality_metrics()
-        
-        # Summary metrics
-        total_checks = len(quality_metrics)
-        passed_checks = len(quality_metrics[quality_metrics["check_status"] == "PASSED"])
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Checks", total_checks)
-        col2.metric("Passed Checks", passed_checks)
-        col3.metric("Success Rate", f"{(passed_checks/total_checks)*100:.1f}%")
-        
-        # Detailed metrics table
-        st.dataframe(
-            quality_metrics[[
-                "check_name",
-                "table_name",
-                "check_status",
-                "records_checked",
-                "failed_records",
-                "check_timestamp"
-            ]],
-            hide_index=True
-        )
+    # Get environment from .env
+    env = os.getenv("ENVIRONMENT", "dev")
+    
+    # Build config with environment-specific values
+    env_config = config["environments"][env]
+    return {
+        "project": {
+            "id": env_config["project_id"],
+            "dataset": env_config["dataset"],
+            "location": env_config["location"]
+        },
+        "datasets": config.get("datasets", {})
+    }
 
-    except Exception as e:
-        st.error(f"Error loading dashboard: {e}")
-        logger.error("Dashboard error: %s", e)
+# Page config is now at the top of the file
+
+# Initialize BigQuery client
+client = bigquery.Client()
+
+def format_project_dataset(query: str) -> str:
+    """Format query with project and dataset."""
+    # Get BigQuery configuration from config module
+    config = get_bigquery_config()
+    project_id = config["project"]["id"]
+    dataset = config["project"]["dataset"]
+    return query.replace("${project_id}", project_id).replace("${dataset}", dataset)
+
+@st.cache_data(ttl=3600)  # Cache data for 1 hour
+def run_query(query: str) -> pd.DataFrame:
+    """Run a BigQuery query and return results as DataFrame with caching."""
+    formatted_query = format_project_dataset(query)
+    return client.query(formatted_query).to_dataframe()
+
+def main():
+    """Main dashboard function."""
+    st.title("🎲 BGG Data Warehouse Monitoring")
+    st.write("Real-time monitoring of the BGG data pipeline")
+    
+    # Current timestamp
+    current_time = datetime.now(timezone.utc)
+    st.write(f"Last updated: {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    
+    # Load all metrics data at once
+    with st.spinner("Loading dashboard data..."):
+        # Get all the data we need upfront
+        total_games = run_query(queries.TOTAL_GAMES_QUERY)
+        games_with_bayes = run_query(queries.GAMES_WITH_BAYESAVERAGE_QUERY)
+        processing_status = run_query(queries.PROCESSING_STATUS)
+        unprocessed = run_query(queries.UNPROCESSED_RESPONSES_QUERY)
+        
+        # Get all entity counts with a single query
+        entity_counts = run_query(queries.ALL_ENTITY_COUNTS_QUERY)
+    
+    # Top metrics row
+    col1, col2, col3, col4, col5 = st.columns(5)
+        
+    with col1:
+        components.create_metric_card(
+            "Total Games",
+            total_games.iloc[0]["total_games"]
+        )
+    
+    with col2:
+        components.create_metric_card(
+            "Ranked Games",
+            games_with_bayes.iloc[0]["games_with_bayesaverage"]
+        )
+    
+    with col3:
+        components.create_metric_card(
+            "Responses Last 7 Days",
+            processing_status.iloc[0]["total_responses"]
+        )
+    
+    with col4:
+        components.create_metric_card(
+            "Processing Success Rate",
+            f"{processing_status.iloc[0]['success_rate']}%"
+        )
+        
+    with col5:
+        components.create_metric_card(
+            "Unprocessed Responses",
+            unprocessed.iloc[0]["unprocessed_count"]
+        )
+    
+    # Entity counts row
+    st.subheader("Game Metadata Counts")
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    
+    with col1:
+        components.create_metric_card(
+            "Categories",
+            entity_counts.iloc[0]["category_count"]
+        )
+    
+    with col2:
+        components.create_metric_card(
+            "Mechanics",
+            entity_counts.iloc[0]["mechanic_count"]
+        )
+    
+    with col3:
+        components.create_metric_card(
+            "Families",
+            entity_counts.iloc[0]["family_count"]
+        )
+    
+    with col4:
+        components.create_metric_card(
+            "Designers",
+            entity_counts.iloc[0]["designer_count"]
+        )
+    
+    with col5:
+        components.create_metric_card(
+            "Artists",
+            entity_counts.iloc[0]["artist_count"]
+        )
+    
+    with col6:
+        components.create_metric_card(
+            "Publishers",
+            entity_counts.iloc[0]["publisher_count"]
+        )
+    
+    # Time series charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Fetch Activity")
+        fetch_data = run_query(queries.RECENT_FETCH_ACTIVITY)
+        components.create_time_series(
+            fetch_data,
+            "date",
+            "responses_fetched",
+            "Daily Fetch Counts"
+        )
+    
+    with col2:
+        st.subheader("Processing Activity")
+        processing_data = run_query(queries.DAILY_PROCESSING_COUNTS)
+        components.create_time_series(
+            processing_data,
+            "date",
+            "processed_count",
+            "Daily Processing Counts",
+            color="#2ca02c"
+        )
+    
+    # Latest games
+    st.subheader("Latest Games Added")
+    latest_games = run_query(queries.LATEST_GAMES)
+    components.create_latest_games_table(latest_games)
+    
+    # Error trends
+    st.subheader("Error Trends")
+    error_trends = run_query(queries.PROCESSING_ERROR_TRENDS)
+    components.create_time_series(
+        error_trends,
+        "date",
+        "error_count",
+        "Daily Error Counts",
+        color="#d62728"
+    )
+    
+    # Recent errors
+    st.subheader("Recent Processing Errors")
+    recent_errors = run_query(queries.RECENT_ERRORS)
+    if not recent_errors.empty:
+        components.create_error_table(recent_errors)
+    else:
+        st.info("No recent processing errors! 🎉")
 
 if __name__ == "__main__":
     main()
