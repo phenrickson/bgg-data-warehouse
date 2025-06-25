@@ -310,6 +310,52 @@ Your pull request will trigger:
 4. Manual review process
 5. Automated deployment to production (when merged)
 
+## Dashboard
+
+The BGG Data Warehouse includes a Streamlit dashboard for monitoring the data pipeline and exploring the collected data.
+
+### Features
+
+- Real-time monitoring of data pipeline status
+- Overview of key metrics (total games, ranked games, etc.)
+- Game metadata statistics (categories, mechanics, designers, etc.)
+- Time series visualizations of fetch and processing activities
+- Error monitoring and tracking
+
+### Accessing the Dashboard
+
+The dashboard is automatically deployed to Google Cloud Run when changes are made to the visualization code. You can access it at:
+
+```
+https://bgg-dashboard-[hash].run.app
+```
+
+Where `[hash]` is a unique identifier assigned by Google Cloud Run. The exact URL will be output at the end of the GitHub Actions workflow run.
+
+### Local Development
+
+To run the dashboard locally:
+
+```bash
+# Install dependencies
+uv pip install -e .
+
+# Run the dashboard
+streamlit run src/visualization/dashboard.py
+```
+
+This will start the dashboard on http://localhost:8501
+
+### Deployment
+
+The dashboard is automatically deployed via GitHub Actions when changes are pushed to the `main` branch that affect files in the `src/visualization/` directory. You can also manually trigger the deployment from the GitHub Actions tab.
+
+The deployment workflow:
+1. Builds a Docker image for the dashboard
+2. Pushes the image to Google Container Registry
+3. Deploys the image to Google Cloud Run
+4. Outputs the URL where the dashboard can be accessed
+
 ## License
 
 MIT License - see LICENSE file for details.

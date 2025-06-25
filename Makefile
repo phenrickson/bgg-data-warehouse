@@ -82,7 +82,7 @@ prod-setup: requirements create-datasets-prod
 
 # Visualization
 dashboard:
-	uv streamlit run src/visualization/dashboard.py
+	uv run streamlit run src/visualization/dashboard.py
 
 .DEFAULT_GOAL := help
 help:

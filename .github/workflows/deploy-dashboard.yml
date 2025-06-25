@@ -1,0 +1,71 @@
+name: Deploy BGG Dashboard
+
+on:
+  push:
+    branches:
+        - main
+        - develop
+    paths:
+      - 'src/visualization/**'
+  workflow_dispatch:  # Allow manual triggers for testing
+
+jobs:
+  deploy-dashboard:
+    name: deploy-dashboard
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # We'll use the existing bgg-processor image for the dashboard
+
+      - name: Deploy Dashboard to Cloud Run
+        run: |
+          # Check if we're running in Act
+          if [ -n "$ACT" ]; then
+            echo "Running in Act, skipping deployment to Cloud Run"
+          else
+            # Get the project ID from the environment
+            PROJECT_ID=$(gcloud config get-value project)
+            
+            gcloud run deploy bgg-dashboard \
+              --image gcr.io/${PROJECT_ID}/bgg-processor \
+              --platform managed \
+              --region us-central1 \
+              --allow-unauthenticated \
+              --memory 1Gi \
+              --cpu 1 \
+              --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
+              --set-env-vars="ENVIRONMENT=${{ vars.ENVIRONMENT }},PIPELINE_STAGE=dashboard" \
+              --command="streamlit" \
+              --args="run,src/visualization/dashboard.py,--server.port=\$PORT,--server.address=0.0.0.0"
+          fi
+
+      - name: Output Dashboard URL
+        run: |
+          # Check if we're running in Act
+          if [ -n "$ACT" ]; then
+            echo "Running in Act, skipping output of Dashboard URL"
+          else
+            echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard --platform managed --region us-central1 --format='value(status.url)')"
+          fi
