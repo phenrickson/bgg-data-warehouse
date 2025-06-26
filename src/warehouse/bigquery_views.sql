@@ -15,7 +15,7 @@ latest_game_data AS (
     ON g.game_id = lt.game_id 
     AND g.load_timestamp = lt.latest_game_timestamp
 )
-SELECT 
+SELECT DISTINCT
     game_id,
     type,
     primary_name AS name,

@@ -16,7 +16,7 @@ steps:
       - 'update'
       - 'bgg-fetch-responses'
       - '--image=gcr.io/$PROJECT_ID/bgg-processor'
-      - '--tasks=3'  # Fewer tasks for fetching
+      - '--tasks=1'  # Fewer tasks for fetching
       - '--max-retries=3'
       - '--task-timeout=1h'
       - '--memory=2Gi'
@@ -33,7 +33,7 @@ steps:
       - 'update'
       - 'bgg-process-responses'
       - '--image=gcr.io/$PROJECT_ID/bgg-processor'
-      - '--tasks=5'  # More tasks for processing
+      - '--tasks=1'  # More tasks for processing
       - '--max-retries=3'
       - '--task-timeout=1h'
       - '--memory=2Gi'
