@@ -85,12 +85,7 @@ jobs:
             --port=8080 \
             --timeout=300s \
             --min-instances=0 \
-            --max-instances=1 \
-            --http-health-check-path=/health \
-            --http-health-check-port=8081 \
-            --health-check-timeout=120s \
-            --health-check-interval=10s \
-            --health-check-retries=3
+            --max-instances=1
 
       - name: Output Dashboard URL
         run: |
