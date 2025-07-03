@@ -75,7 +75,7 @@ SELECT
     g.load_timestamp
 FROM `${project_id}.${dataset}.games_active` g
 ORDER BY g.load_timestamp DESC
-LIMIT 10;
+LIMIT 100;
 """
 
 DAILY_PROCESSING_COUNTS = """
