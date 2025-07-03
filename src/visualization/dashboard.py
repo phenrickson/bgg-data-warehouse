@@ -5,6 +5,18 @@ import sys
 from datetime import datetime, timezone
 import streamlit as st
 
+# Ensure we're using the correct port from environment
+port = int(os.environ.get("PORT", 8080))
+print(f"Starting Streamlit on port {port}")
+
+# Start health check server for Cloud Run
+try:
+    from src.visualization.health_check import start_health_check_server
+    health_server = start_health_check_server()
+    print("Health check server started")
+except Exception as e:
+    print(f"Warning: Could not start health check server: {e}")
+
 # Page config must be the first Streamlit command
 st.set_page_config(
     page_title="BGG Data Warehouse Monitor",
