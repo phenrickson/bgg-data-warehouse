@@ -30,14 +30,15 @@ RUN . .venv/bin/activate && \
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8501
+ENV PORT=8080
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 ENV STREAMLIT_THEME_BASE=dark
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Expose port for Streamlit
-EXPOSE 8501
+# Expose port for Streamlit (match Cloud Run's expected port)
+EXPOSE 8080
 
 # Run Streamlit dashboard using the virtual environment's Python
-CMD ["/app/.venv/bin/streamlit", "run", "src/visualization/dashboard.py", "--server.port=$PORT", "--server.address=0.0.0.0"]
+# Using shell form to ensure environment variables are properly expanded
+CMD /app/.venv/bin/streamlit run src/visualization/dashboard.py --server.port=$PORT --server.address=0.0.0.0
