@@ -48,4 +48,4 @@ exec /app/.venv/bin/streamlit run src/visualization/dashboard.py --server.port=$
 ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run the startup script
-CMD ["/app/start.sh"]
+CMD ["sh", "/app/start.sh"]
