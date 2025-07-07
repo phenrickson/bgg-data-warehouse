@@ -26,6 +26,7 @@ st.set_page_config(
 
 import pandas as pd
 import yaml
+from google.auth import default
 from google.cloud import bigquery
 from dotenv import load_dotenv
 
@@ -34,10 +35,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 # Load environment variables from .env file
 load_dotenv()
-
-# Set Google Application Credentials
-if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials/service-account-key.json"
 
 # Import local modules directly
 import src.visualization.queries as queries
@@ -67,7 +64,14 @@ def get_bigquery_config():
 # Page config is now at the top of the file
 
 # Initialize BigQuery client
-client = bigquery.Client()
+# Get credentials using google.auth.default()
+credentials, _ = default()
+
+# explicitly set project -id
+project_id = os.getenv("GCP_PROJECT_ID")
+
+# Create BigQuery client with explicit credentials and project
+client = bigquery.Client(credentials=credentials, project=project_id)
 
 def format_project_dataset(query: str) -> str:
     """Format query with project and dataset."""
