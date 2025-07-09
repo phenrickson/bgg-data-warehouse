@@ -82,7 +82,7 @@ jobs:
             --cpu 1 \
             --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
             --set-env-vars="ENVIRONMENT=${ENVIRONMENT},GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json" \
-            --port=8080 \
+            --port=8501 \
             --timeout=300s \
             --min-instances=0 \
             --max-instances=1
