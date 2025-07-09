@@ -30,7 +30,7 @@ RUN . .venv/bin/activate && \
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8080
+ENV PORT=8501
 ENV HEALTH_PORT=8081
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
@@ -38,11 +38,11 @@ ENV STREAMLIT_THEME_BASE=dark
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Expose ports for Streamlit and health check
-EXPOSE 8080 8081
+EXPOSE 8501 8081
 
 # Create a startup script to handle port configuration
 RUN echo '#!/bin/bash\n\
-PORT="${PORT:-8080}"\n\
+PORT="${PORT:-8501}"\n\
 echo "Starting Streamlit on port $PORT"\n\
 exec /app/.venv/bin/streamlit run src/visualization/dashboard.py --server.port=$PORT --server.address=0.0.0.0\n\
 ' > /app/start.sh && chmod +x /app/start.sh
