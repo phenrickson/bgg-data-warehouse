@@ -36,7 +36,7 @@ jobs:
           echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
 
           cat << EOF > .env
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
           GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
           EOF
@@ -65,12 +65,12 @@ jobs:
           context: .
           file: ./Dockerfile.dashboard
           push: true
-          tags: gcr.io/${{ secrets.GCP_PROJECT_ID }}/bgg-dashboard:latest
+          tags: gcr.io/${{ vars.GCP_PROJECT_ID }}/bgg-dashboard:latest
 
       - name: Deploy Dashboard to Cloud Run
         run: |
           # Get the project ID from the environment
-          PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
           
           gcloud run deploy bgg-dashboard \
