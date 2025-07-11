@@ -9,21 +9,6 @@ import streamlit as st
 port = int(os.environ.get("PORT", 8080))
 print(f"Starting Streamlit on port {port}")
 
-# Start health check server for Cloud Run
-try:
-    from src.visualization.health_check import start_health_check_server
-    health_server = start_health_check_server()
-    print("Health check server started")
-except Exception as e:
-    print(f"Warning: Could not start health check server: {e}")
-
-# Page config must be the first Streamlit command
-st.set_page_config(
-    page_title="BGG Data Warehouse Monitor",
-    page_icon="🎲",
-    layout="wide"
-)
-
 import pandas as pd
 import yaml
 from google.auth import default
@@ -33,12 +18,27 @@ from dotenv import load_dotenv
 # add to project path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+# Page config must be the first Streamlit command
+st.set_page_config(
+    page_title="BGG Data Warehouse Monitor",
+    page_icon="🎲",
+    layout="wide"
+)
+
 # Load environment variables from .env file
 load_dotenv()
 
 # Import local modules directly
 import src.visualization.queries as queries
 import src.visualization.components as components
+
+# Start health check server for Cloud Run
+try:
+    from src.visualization.health_check import start_health_check_server
+    health_server = start_health_check_server()
+    print("Health check server started")
+except Exception as e:
+    print(f"Warning: Could not start health check server: {e}")
 
 # Load BigQuery config directly
 def get_bigquery_config():
