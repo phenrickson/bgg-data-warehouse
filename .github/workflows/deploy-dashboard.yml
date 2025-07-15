@@ -36,7 +36,7 @@ jobs:
           echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
 
           cat << EOF > .env
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
           GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
           EOF
@@ -65,12 +65,12 @@ jobs:
           context: .
           file: ./Dockerfile.dashboard
           push: true
-          tags: gcr.io/${{ secrets.GCP_PROJECT_ID }}/bgg-dashboard:latest
+          tags: gcr.io/${{ vars.GCP_PROJECT_ID }}/bgg-dashboard:latest
 
       - name: Deploy Dashboard to Cloud Run
         run: |
           # Get the project ID from the environment
-          PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
           
           gcloud run deploy bgg-dashboard \
@@ -81,11 +81,13 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
-            --set-env-vars="ENVIRONMENT=${ENVIRONMENT},GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json" \
-            --port=8080 \
+            --set-env-vars="ENVIRONMENT=${ENVIRONMENT},GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json,STREAMLIT_SERVER_PORT=8501" \
+            --port=8501 \
             --timeout=300s \
             --min-instances=0 \
-            --max-instances=1
+            --max-instances=1 \
+            --command="/bin/bash" \
+            --args="/app/start.sh"
 
       - name: Output Dashboard URL
         run: |
