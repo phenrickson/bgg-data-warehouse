@@ -44,6 +44,7 @@ EXPOSE 8501 8081
 RUN echo '#!/bin/bash\n\
 PORT=8501\n\
 echo "Starting Streamlit on port $PORT"\n\
+/app/.venv/bin/python src/visualization/health_check.py &\n\
 exec /app/.venv/bin/streamlit run src/visualization/dashboard.py --server.port=$PORT --server.address=0.0.0.0\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
