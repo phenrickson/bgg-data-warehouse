@@ -6,8 +6,11 @@ from datetime import datetime, timezone
 import streamlit as st
 
 # Ensure we're using the correct port from environment
-port = int(os.environ.get("PORT", 8080))
+# Get port from STREAMLIT_SERVER_PORT if available, otherwise from PORT, or default to 8501
+port = int(os.environ.get("STREAMLIT_SERVER_PORT", os.environ.get("PORT", 8501)))
 print(f"Starting Streamlit on port {port}")
+# Set STREAMLIT_SERVER_PORT environment variable to ensure Streamlit uses this port
+os.environ["STREAMLIT_SERVER_PORT"] = str(port)
 
 import pandas as pd
 import yaml

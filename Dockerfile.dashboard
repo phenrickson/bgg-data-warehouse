@@ -32,6 +32,7 @@ RUN . .venv/bin/activate && \
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8501
 ENV HEALTH_PORT=8081
+ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 ENV STREAMLIT_THEME_BASE=dark
@@ -45,12 +46,15 @@ RUN echo '#!/bin/bash\n\
 # Ensure PORT is a valid integer, default to 8501 if not\n\
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then\n\
     echo "Warning: PORT environment variable is not a valid integer: \"$PORT\". Using default port 8501."\n\
-    PORT=8501\n\
+    export PORT=8501\n\
 fi\n\
 \n\
-echo "Starting Streamlit on port $PORT"\n\
+# Set STREAMLIT_SERVER_PORT to the same value as PORT\n\
+export STREAMLIT_SERVER_PORT=$PORT\n\
+\n\
+echo "Starting Streamlit on port $STREAMLIT_SERVER_PORT"\n\
 /app/.venv/bin/python src/visualization/health_check.py &\n\
-exec /app/.venv/bin/streamlit run src/visualization/dashboard.py --server.port=$PORT --server.address=0.0.0.0\n\
+exec /app/.venv/bin/streamlit run src/visualization/dashboard.py\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run the startup script
