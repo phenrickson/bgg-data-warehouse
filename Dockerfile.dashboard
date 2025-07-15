@@ -42,7 +42,12 @@ EXPOSE 8501 8081
 
 # Create a startup script to handle port configuration
 RUN echo '#!/bin/bash\n\
-PORT=8501\n\
+# Ensure PORT is a valid integer, default to 8501 if not\n\
+if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then\n\
+    echo "Warning: PORT environment variable is not a valid integer: \"$PORT\". Using default port 8501."\n\
+    PORT=8501\n\
+fi\n\
+\n\
 echo "Starting Streamlit on port $PORT"\n\
 /app/.venv/bin/python src/visualization/health_check.py &\n\
 exec /app/.venv/bin/streamlit run src/visualization/dashboard.py --server.port=$PORT --server.address=0.0.0.0\n\
