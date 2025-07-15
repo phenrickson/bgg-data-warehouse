@@ -55,6 +55,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "db-dtypes" },
+    { name = "google-auth" },
     { name = "google-cloud-bigquery" },
     { name = "google-cloud-bigquery-storage" },
     { name = "google-cloud-storage" },
@@ -84,6 +85,7 @@ dev = [
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.1.0" },
     { name = "db-dtypes", specifier = ">=1.2.0" },
+    { name = "google-auth", specifier = ">=2.40.3" },
     { name = "google-cloud-bigquery", specifier = ">=3.14.0" },
     { name = "google-cloud-bigquery-storage", specifier = ">=2.32.0" },
     { name = "google-cloud-storage", specifier = ">=2.14.0" },

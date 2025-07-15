@@ -13,10 +13,22 @@ jobs:
   deploy-dashboard:
     name: deploy-dashboard
     runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install UV
+        run: pip install uv
 
       - name: Setup Environment
         run: |
@@ -24,9 +36,9 @@ jobs:
           echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
 
           cat << EOF > .env
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT }}
-          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
+          GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
           EOF
 
       - name: Google Cloud Auth
@@ -37,35 +49,46 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      # We'll use the existing bgg-processor image for the dashboard
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Configure Docker
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Configure Docker auth for GCR
+        run: |
+          gcloud auth configure-docker gcr.io
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.dashboard
+          push: true
+          tags: gcr.io/${{ vars.GCP_PROJECT_ID }}/bgg-dashboard:latest
 
       - name: Deploy Dashboard to Cloud Run
         run: |
-          # Check if we're running in Act
-          if [ -n "$ACT" ]; then
-            echo "Running in Act, skipping deployment to Cloud Run"
-          else
-            # Get the project ID from the environment
-            PROJECT_ID=$(gcloud config get-value project)
-            
-            gcloud run deploy bgg-dashboard \
-              --image gcr.io/${PROJECT_ID}/bgg-processor \
-              --platform managed \
-              --region us-central1 \
-              --allow-unauthenticated \
-              --memory 1Gi \
-              --cpu 1 \
-              --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
-              --set-env-vars="ENVIRONMENT=${{ vars.ENVIRONMENT }},PIPELINE_STAGE=dashboard" \
-              --command="streamlit" \
-              --args="run,src/visualization/dashboard.py,--server.port=\$PORT,--server.address=0.0.0.0"
-          fi
+          # Get the project ID from the environment
+          PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
+          
+          gcloud run deploy bgg-dashboard \
+            --image gcr.io/${PROJECT_ID}/bgg-dashboard:latest \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --memory 1Gi \
+            --cpu 1 \
+            --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
+            --set-env-vars="ENVIRONMENT=${ENVIRONMENT},GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json,STREAMLIT_SERVER_PORT=8501" \
+            --port=8501 \
+            --timeout=300s \
+            --min-instances=0 \
+            --max-instances=1 \
+            --command="/bin/bash" \
+            --args="/app/start.sh"
 
       - name: Output Dashboard URL
         run: |
-          # Check if we're running in Act
-          if [ -n "$ACT" ]; then
-            echo "Running in Act, skipping output of Dashboard URL"
-          else
-            echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard --platform managed --region us-central1 --format='value(status.url)')"
-          fi
+          echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard --platform managed --region us-central1 --format='value(status.url)')"

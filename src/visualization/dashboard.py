@@ -5,6 +5,21 @@ import sys
 from datetime import datetime, timezone
 import streamlit as st
 
+# Use a hardcoded port value to avoid any issues with environment variables
+port = 8501
+print(f"Starting Streamlit on port {port}")
+# Set STREAMLIT_SERVER_PORT environment variable to ensure Streamlit uses this port
+os.environ["STREAMLIT_SERVER_PORT"] = str(port)
+
+import pandas as pd
+import yaml
+from google.auth import default
+from google.cloud import bigquery
+from dotenv import load_dotenv
+
+# add to project path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 # Page config must be the first Streamlit command
 st.set_page_config(
     page_title="BGG Data Warehouse Monitor",
@@ -12,24 +27,20 @@ st.set_page_config(
     layout="wide"
 )
 
-import pandas as pd
-import yaml
-from google.cloud import bigquery
-from dotenv import load_dotenv
-
-# add to project path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
 # Load environment variables from .env file
 load_dotenv()
-
-# Set Google Application Credentials
-if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials/service-account-key.json"
 
 # Import local modules directly
 import src.visualization.queries as queries
 import src.visualization.components as components
+
+# Start health check server for Cloud Run
+try:
+    from src.visualization.health_check import start_health_check_server
+    health_server = start_health_check_server()
+    print("Health check server started")
+except Exception as e:
+    print(f"Warning: Could not start health check server: {e}")
 
 # Load BigQuery config directly
 def get_bigquery_config():
@@ -55,7 +66,14 @@ def get_bigquery_config():
 # Page config is now at the top of the file
 
 # Initialize BigQuery client
-client = bigquery.Client()
+# Get credentials using google.auth.default()
+credentials, _ = default()
+
+# explicitly set project -id
+project_id = os.getenv("GCP_PROJECT_ID")
+
+# Create BigQuery client with explicit credentials and project
+client = bigquery.Client(credentials=credentials, project=project_id)
 
 def format_project_dataset(query: str) -> str:
     """Format query with project and dataset."""
