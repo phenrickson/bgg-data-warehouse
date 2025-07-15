@@ -41,18 +41,12 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Expose ports for Streamlit and health check
 EXPOSE 8501 8081
 
-# Create a startup script to handle port configuration
+# Create a startup script with hardcoded port values
 RUN echo '#!/bin/bash\n\
-# Ensure PORT is a valid integer, default to 8501 if not\n\
-if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then\n\
-    echo "Warning: PORT environment variable is not a valid integer: \"$PORT\". Using default port 8501."\n\
-    export PORT=8501\n\
-fi\n\
+# Use hardcoded port values to avoid any variable substitution issues\n\
+export STREAMLIT_SERVER_PORT=8501\n\
 \n\
-# Set STREAMLIT_SERVER_PORT to the same value as PORT\n\
-export STREAMLIT_SERVER_PORT=$PORT\n\
-\n\
-echo "Starting Streamlit on port $STREAMLIT_SERVER_PORT"\n\
+echo "Starting Streamlit on port 8501"\n\
 /app/.venv/bin/python src/visualization/health_check.py &\n\
 exec /app/.venv/bin/streamlit run src/visualization/dashboard.py\n\
 ' > /app/start.sh && chmod +x /app/start.sh
