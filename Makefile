@@ -81,8 +81,11 @@ prod-setup: requirements create-datasets-prod
 	@echo "Production environment setup complete"
 
 # Visualization
-dashboard:
-	uv run streamlit run src/visualization/dashboard.py
+monitor:
+	uv run streamlit run src/visualization/dashboard.py --server.port 8501
+
+search:
+	uv run streamlit run src/visualization/game_search_dashboard.py --server.port 8502
 
 .DEFAULT_GOAL := help
 help:
