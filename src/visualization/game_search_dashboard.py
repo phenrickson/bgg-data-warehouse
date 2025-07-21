@@ -152,6 +152,8 @@ def search_games(
     min_best_percentage=50,  # Minimum percentage for a player count to be considered best
     min_rating=6.0,  # Default to a reasonable minimum rating
     max_rating=10.0,
+    min_complexity_weight=0.0,  # Minimum complexity weight
+    max_complexity_weight=5.0,  # Maximum complexity weight
     limit=50000,  # Increased limit for initial load
 ):
     """Advanced game search with comprehensive filtering."""
@@ -197,6 +199,8 @@ def search_games(
             {f'AND g.year_published <= {max_year}' if max_year else ''}
             {f'AND g.bayes_average >= {min_rating}' if min_rating else ''}
             {f'AND g.bayes_average <= {max_rating}' if max_rating else ''}
+            {f'AND g.average_weight >= {min_complexity_weight}' if min_complexity_weight is not None else ''}
+            {f'AND g.average_weight <= {max_complexity_weight}' if max_complexity_weight is not None else ''}
     )
     SELECT 
         fg.game_id,
@@ -226,7 +230,7 @@ def main():
     st.title("🎲 BGG Game Search")
 
     # Sidebar for filters
-    st.sidebar.header("🔍 Game Search Filters")
+    st.sidebar.header("🔍 Game Filters")
 
     # Year Published Filter
     year_range = st.sidebar.slider(
@@ -235,7 +239,12 @@ def main():
 
     # Rating Filter
     rating_range = st.sidebar.slider(
-        "Geek Rating", min_value=0.0, max_value=10.0, value=(0.0, 10.0), step=0.1
+        "Geek Rating", min_value=6.0, max_value=10.0, value=(0.0, 10.0), step=0.1
+    )
+
+    # Complexity Weight Filter
+    complexity_weight_range = st.sidebar.slider(
+        "Complexity Weight", min_value=0.0, max_value=5.0, value=(0.0, 5.0), step=0.25
     )
 
     # Publishers Filter
@@ -295,6 +304,8 @@ def main():
             mechanics=selected_mechanic_ids,
             min_rating=rating_range[0],
             max_rating=rating_range[1],
+            min_complexity_weight=complexity_weight_range[0],
+            max_complexity_weight=complexity_weight_range[1],
             min_recommended_player_count=recommended_player_count_range[0],
             max_recommended_player_count=recommended_player_count_range[1],
             min_best_player_count=best_player_count_range[0],
@@ -317,7 +328,7 @@ def main():
         with col2:
             st.metric("Avg Complexity", f"{avg_complexity:.2f}")
         with col3:
-            st.metric("Avg Bayes Rating", f"{avg_rating:.2f}")
+            st.metric("Avg Rating", f"{avg_rating:.2f}")
         with col4:
             st.metric("Avg Users Rated", f"{avg_users_rated:,.0f}")
         with col5:
@@ -328,7 +339,7 @@ def main():
             lambda x: f"https://boardgamegeek.com/boardgame/{x}"
         )
 
-        # Simple table with requested columns
+        # Paged table with requested columns
         st.dataframe(
             results,
             column_config={
@@ -337,14 +348,15 @@ def main():
                 "bgg_url": st.column_config.LinkColumn("BGG Link", display_text="View on BGG"),
                 "year_published": "Year Published",
                 "average_rating": "Average Rating",
-                "bayes_average": "Bayes Average",
+                "bayes_average": "Geek Rating",
                 "average_weight": "Average Weight",
                 "users_rated": "Users Rated",
                 "recommended_player_counts": "Recommended Players",
                 "best_player_counts": "Best Players",
             },
-            height=800,  # Make the table taller
+            use_container_width=True,  # Use full width of container
             hide_index=True,
+            height=800,  # Optional: set a fixed height, or remove for auto-sizing
         )
     else:
         st.warning("No games found matching your criteria.")
