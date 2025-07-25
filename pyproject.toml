@@ -23,6 +23,8 @@ dependencies = [
     "pandas-gbq>=0.29.1",
     "google-cloud-bigquery-storage>=2.32.0",
     "google-auth>=2.40.3",
+    "dash>=2.15.0",
+    "dash-bootstrap-components>=1.5.0",
 ]
 
 [project.optional-dependencies]
