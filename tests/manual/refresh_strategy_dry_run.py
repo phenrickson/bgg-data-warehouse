@@ -7,14 +7,32 @@ to the database.
 
 import logging
 import os
+import sys
+import traceback
 from datetime import datetime
 import pandas as pd
 from google.cloud import bigquery
+from dotenv import load_dotenv
 
 from src.config import get_bigquery_config, get_refresh_config
 
+# Load environment variables
+load_dotenv()
+
+# Explicitly set the credentials path
+credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+if credentials_path:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,  # Set to DEBUG for more detailed logging
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # Output to console
+        logging.FileHandler("refresh_strategy_debug.log"),  # Output to file
+    ],
+)
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +49,10 @@ def get_refresh_candidates(client, config, limit=100):
 
     # Get refresh configuration
     refresh_config = get_refresh_config()
+
+    # Log detailed configuration
+    logger.debug(f"Refresh Configuration: {refresh_config}")
+    logger.debug(f"Limit: {limit}")
 
     # Query to identify refresh candidates based on the exponential decay formula
     query = f"""
@@ -59,9 +81,9 @@ def get_refresh_candidates(client, config, limit=100):
         CASE 
           WHEN year_published > current_year THEN {refresh_config["upcoming_interval_days"]}  -- Upcoming games
           WHEN year_published = current_year THEN {refresh_config["base_interval_days"]}  -- Current year
-          ELSE LEAST({refresh_config["max_interval_days"]}, 
+      ELSE LEAST({refresh_config["max_interval_days"]}, 
                     {refresh_config["base_interval_days"]} * 
-                    POW({refresh_config["decay_factor"]}, current_year - year_published))  -- Exponential decay
+                    POW({refresh_config["decay_factor"]}, LEAST(50, current_year - year_published)))  -- Exponential decay with year cap
         END as refresh_interval_days
       FROM game_years
     ),
@@ -105,10 +127,44 @@ def get_refresh_candidates(client, config, limit=100):
     """
 
     try:
-        df = client.query(query).to_dataframe()
+        logger.debug("Executing refresh candidates query")
+        logger.debug(f"Full query: {query}")
+
+        # Capture detailed query execution information
+        job_config = bigquery.QueryJobConfig()
+        query_job = client.query(query, job_config=job_config)
+
+        # Log query job details
+        logger.debug(f"Query Job ID: {query_job.job_id}")
+        logger.debug(f"Query Job State: {query_job.state}")
+
+        # Fetch results
+        df = query_job.to_dataframe()
+
+        logger.info(f"Query successful. Found {len(df)} refresh candidates")
+
+        # Detailed logging of extreme cases
+        if not df.empty:
+            max_year_diff = df["current_year"] - df["year_published"]
+            logger.info(f"Max year difference: {max_year_diff.max()}")
+            logger.info(f"Min year difference: {max_year_diff.min()}")
+
+            # Log extreme cases for debugging
+            extreme_cases = df[max_year_diff > 50]
+            if not extreme_cases.empty:
+                logger.warning("Extreme year differences found:")
+                logger.warning(
+                    extreme_cases[["game_id", "primary_name", "year_published", "current_year"]]
+                )
+
         return df
     except Exception as e:
         logger.error(f"Failed to query refresh candidates: {e}")
+        logger.error(f"Refresh configuration: {refresh_config}")
+
+        # Detailed error logging
+        logger.error(traceback.format_exc())
+
         return pd.DataFrame()
 
 
