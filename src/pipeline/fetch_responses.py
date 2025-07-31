@@ -189,7 +189,8 @@ class BGGResponseFetcher:
               WHEN year_published > current_year THEN {self.refresh_config['upcoming_interval_days']}  -- Upcoming games
               WHEN year_published = current_year THEN {self.refresh_config['base_interval_days']}  -- Current year
               ELSE LEAST({self.refresh_config['max_interval_days']}, 
-                         {self.refresh_config['base_interval_days']} * POW({self.refresh_config['decay_factor']}, current_year - year_published))  -- Exponential decay
+                         {self.refresh_config['base_interval_days']} * LEAST(POW({self.refresh_config['decay_factor']}, LEAST(current_year - year_published, 10)), 
+                               {self.refresh_config['max_interval_days']}))  -- Controlled exponential decay
             END as refresh_interval_days
           FROM game_years
         ),

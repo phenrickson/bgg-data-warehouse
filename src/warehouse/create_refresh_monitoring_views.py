@@ -2,15 +2,20 @@
 
 import logging
 import os
+import argparse
+from dotenv import load_dotenv
 from google.cloud import bigquery
-from src.config import get_bigquery_config
+from src.config import get_bigquery_config, get_refresh_config
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def create_refresh_monitoring_views(environment: str = None):
+def create_refresh_monitoring_views(environment: str = None, decay_factor: float = 2.0):
     """Create BigQuery views for monitoring the refresh strategy."""
 
     config = get_bigquery_config(environment)
@@ -19,6 +24,7 @@ def create_refresh_monitoring_views(environment: str = None):
     project_id = config["project"]["id"]
     main_dataset = config["project"]["dataset"]
     raw_dataset = config["datasets"]["raw"]
+    refresh_config = get_refresh_config()
 
     # Create monitoring dataset if it doesn't exist
     monitoring_dataset = f"{project_id}.monitoring"
@@ -55,9 +61,11 @@ def create_refresh_monitoring_views(environment: str = None):
         last_refresh_timestamp,
         refresh_count,
         CASE 
-          WHEN year_published > current_year THEN 3  -- Upcoming games
-          WHEN year_published = current_year THEN 7  -- Current year
-          ELSE LEAST(90, 7 * POW(2, current_year - year_published))  -- Exponential decay
+          WHEN year_published > current_year THEN {refresh_config["upcoming_interval_days"]}  -- Upcoming games
+          WHEN year_published = current_year THEN {refresh_config["base_interval_days"]}  -- Current year
+          ELSE LEAST(180, 
+                    {refresh_config["base_interval_days"]} * 
+                    POWER(2, LEAST(10, LOG(2, {decay_factor}) * (current_year - year_published))))  -- Safe exponential decay
         END as refresh_interval_days
       FROM game_years
     ),
@@ -138,9 +146,11 @@ def create_refresh_monitoring_views(environment: str = None):
         last_refresh_timestamp,
         refresh_count,
         CASE 
-          WHEN year_published > current_year THEN 3  -- Upcoming games
-          WHEN year_published = current_year THEN 7  -- Current year
-          ELSE LEAST(90, 7 * POW(2, current_year - year_published))  -- Exponential decay
+          WHEN year_published > current_year THEN {refresh_config["upcoming_interval_days"]}  -- Upcoming games
+          WHEN year_published = current_year THEN {refresh_config["base_interval_days"]}  -- Current year
+          ELSE LEAST(180, 
+                    {refresh_config["base_interval_days"]} * 
+                    POWER(2, LEAST(10, LOG(2, {decay_factor}) * (current_year - year_published))))  -- Safe exponential decay
         END as refresh_interval_days
       FROM game_years
     ),
@@ -198,9 +208,24 @@ def create_refresh_monitoring_views(environment: str = None):
 
 def main():
     """Main entry point for creating monitoring views."""
-    environment = os.environ.get("ENVIRONMENT", "dev")
-    logger.info(f"Creating refresh monitoring views for environment: {environment}")
-    create_refresh_monitoring_views(environment)
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Create refresh monitoring views")
+    parser.add_argument(
+        "--environment", "-e", default="dev", help="Specify the environment (default: dev)"
+    )
+    parser.add_argument(
+        "--decay-factor",
+        type=float,
+        default=2.0,
+        help="Exponential decay factor for refresh intervals (default: 2.0)",
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Log and create views
+    logger.info(f"Creating refresh monitoring views for environment: {args.environment}")
+    create_refresh_monitoring_views(args.environment, args.decay_factor)
 
 
 if __name__ == "__main__":
