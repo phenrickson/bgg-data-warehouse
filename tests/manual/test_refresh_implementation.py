@@ -4,9 +4,18 @@ import logging
 import os
 from datetime import datetime, timedelta
 from google.cloud import bigquery
+from dotenv import load_dotenv
 
 from src.pipeline.fetch_responses import BGGResponseFetcher
 from src.config import get_bigquery_config, get_refresh_config
+
+# Load environment variables
+load_dotenv()
+
+# Explicitly set the credentials path
+credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+if credentials_path:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -87,7 +96,7 @@ def setup_test_data(client, config):
     logger.info("Test data setup complete")
 
 
-def verify_refresh_candidates(client, config):
+def verify_refresh_candidates(client, config, decay_factor=2.0):
     """Verify that refresh candidates are selected correctly."""
     # Query to check refresh candidates
     project_id = config["project"]["id"]
@@ -119,9 +128,9 @@ def verify_refresh_candidates(client, config):
         CASE 
           WHEN year_published > current_year THEN {get_refresh_config()["upcoming_interval_days"]}  -- Upcoming games
           WHEN year_published = current_year THEN {get_refresh_config()["base_interval_days"]}  -- Current year
-          ELSE LEAST({get_refresh_config()["max_interval_days"]}, 
+          ELSE LEAST(180, 
                     {get_refresh_config()["base_interval_days"]} * 
-                    POW({get_refresh_config()["decay_factor"]}, current_year - year_published))  -- Exponential decay
+                    POWER(2, LEAST(10, LOG(2, {decay_factor}) * (current_year - year_published))))  -- Safe exponential decay
         END as refresh_interval_days
       FROM game_years
     ),
@@ -182,13 +191,14 @@ def check_data_consistency(client, config, game_ids):
         min_playtime, 
         max_playtime, 
         min_age,
-        rating_average, 
-        rating_bayes_average, 
-        rating_stddev, 
-        rating_median,
-        rating_num_weights, 
-        rating_average_weight,
-        last_updated
+        users_rated,
+        average_rating, 
+        bayes_average, 
+        standard_deviation, 
+        median_rating,
+        num_weights, 
+        average_weight,
+        load_timestamp
     FROM `{project_id}.{dataset}.{games_table}`
     WHERE game_id IN ({game_ids_str})
     """
@@ -259,7 +269,7 @@ def check_monitoring_views(client, config):
     project_id = config["project"]["id"]
 
     # Check each monitoring view
-    views = ["refresh_queue", "refresh_activity", "games_overdue_for_refresh"]
+    views = ["refresh_activity", "games_overdue_for_refresh"]
 
     for view in views:
         query = f"SELECT * FROM `{project_id}.monitoring.{view}` LIMIT 10"
@@ -271,7 +281,7 @@ def check_monitoring_views(client, config):
             logger.error(f"Failed to query view {view}: {e}")
 
 
-def run_test_refresh(environment="dev"):
+def run_test_refresh(environment="dev", decay_factor=2.0):
     """Run a test refresh cycle."""
     logger.info(f"Starting test refresh in {environment} environment")
 
@@ -284,7 +294,7 @@ def run_test_refresh(environment="dev"):
 
     # 2. Verify refresh candidates
     logger.info("Verifying refresh candidates...")
-    candidates = verify_refresh_candidates(client, config)
+    candidates = verify_refresh_candidates(client, config, decay_factor)
     if candidates is None or len(candidates) == 0:
         logger.warning("No refresh candidates found. Test setup may be incorrect.")
         return
@@ -363,13 +373,19 @@ def main():
     parser.add_argument(
         "--create-env", action="store_true", help="Create a test environment (not implemented)"
     )
+    parser.add_argument(
+        "--decay-factor",
+        type=float,
+        default=2.0,
+        help="Exponential decay factor for refresh intervals",
+    )
 
     args = parser.parse_args()
 
     if args.create_env:
         create_test_environment()
     else:
-        run_test_refresh(args.environment)
+        run_test_refresh(args.environment, args.decay_factor)
 
 
 if __name__ == "__main__":

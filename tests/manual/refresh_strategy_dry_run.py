@@ -36,7 +36,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_refresh_candidates(client, config, limit=100):
+def get_refresh_candidates(client, config, limit=25000, decay_factor=2.0):
     """Get games that would be selected for refresh based on the strategy.
 
     This is a read-only operation that doesn't modify any data.
@@ -51,8 +51,10 @@ def get_refresh_candidates(client, config, limit=100):
     refresh_config = get_refresh_config()
 
     # Log detailed configuration
-    logger.debug(f"Refresh Configuration: {refresh_config}")
-    logger.debug(f"Limit: {limit}")
+    logger.info(f"Refresh Configuration: {refresh_config}")
+    logger.info(f"Limit: {limit}")
+    logger.info(f"Decay Factor: {decay_factor}")
+    logger.info(f"Current Date: {datetime.now().date()}")
 
     # Query to identify refresh candidates based on the exponential decay formula
     query = f"""
@@ -63,7 +65,8 @@ def get_refresh_candidates(client, config, limit=100):
         g.primary_name,
         r.last_refresh_timestamp,
         r.refresh_count,
-        EXTRACT(YEAR FROM CURRENT_DATE()) as current_year
+        EXTRACT(YEAR FROM CURRENT_DATE()) as current_year,
+        TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), r.last_refresh_timestamp, DAY) as days_since_last_refresh
       FROM `{project_id}.{raw_dataset}.{raw_responses_table}` r
       JOIN `{project_id}.{main_dataset}.{games_table}` g
         ON r.game_id = g.game_id
@@ -78,12 +81,13 @@ def get_refresh_candidates(client, config, limit=100):
         last_refresh_timestamp,
         refresh_count,
         current_year,
+        days_since_last_refresh,
         CASE 
           WHEN year_published > current_year THEN {refresh_config["upcoming_interval_days"]}  -- Upcoming games
           WHEN year_published = current_year THEN {refresh_config["base_interval_days"]}  -- Current year
-      ELSE LEAST({refresh_config["max_interval_days"]}, 
+      ELSE LEAST(180, 
                     {refresh_config["base_interval_days"]} * 
-                    POW({refresh_config["decay_factor"]}, LEAST(50, current_year - year_published)))  -- Exponential decay with year cap
+                    POW({decay_factor}, LEAST(50, current_year - year_published)))  -- Exponential decay with year cap
         END as refresh_interval_days
       FROM game_years
     ),
@@ -96,6 +100,7 @@ def get_refresh_candidates(client, config, limit=100):
         last_refresh_timestamp,
         refresh_count,
         refresh_interval_days,
+        days_since_last_refresh,
         TIMESTAMP_ADD(last_refresh_timestamp, INTERVAL CAST(refresh_interval_days AS INT64) DAY) as next_due,
         TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), 
                       TIMESTAMP_ADD(last_refresh_timestamp, INTERVAL CAST(refresh_interval_days AS INT64) DAY), 
@@ -110,6 +115,7 @@ def get_refresh_candidates(client, config, limit=100):
         last_refresh_timestamp,
         refresh_count,
         refresh_interval_days,
+        days_since_last_refresh,
         next_due,
         hours_overdue,
         CASE 
@@ -229,6 +235,32 @@ def analyze_refresh_distribution(refresh_candidates):
     for year, hours in avg_overdue.items():
         logger.info(f"Year {year}: {hours:.1f} hours")
 
+    # Detailed analysis of 2023 games
+    logger.info("\n=== Detailed Analysis of 2023 Games ===")
+    if 2023 in year_counts.index:
+        year_2023_games = refresh_candidates[refresh_candidates["year_published"] == 2023]
+        logger.info(f"Total 2023 games due for refresh: {len(year_2023_games)}")
+
+        # Days since last refresh
+        avg_days_since_refresh = year_2023_games["days_since_last_refresh"].mean()
+        logger.info(f"Average days since last refresh: {avg_days_since_refresh:.1f}")
+
+        # Refresh interval details
+        avg_refresh_interval = year_2023_games["refresh_interval_days"].mean()
+        logger.info(f"Average refresh interval: {avg_refresh_interval:.1f} days")
+
+        # Sample of 2023 games
+        logger.info("\nSample of 2023 games due for refresh:")
+        sample_columns = [
+            "game_id",
+            "primary_name",
+            "last_refresh_timestamp",
+            "days_since_last_refresh",
+            "refresh_interval_days",
+            "hours_overdue",
+        ]
+        logger.info(year_2023_games[sample_columns].head(10).to_string())
+
 
 def simulate_batch_selection(
     unfetched_games, refresh_candidates, batch_size=1000, refresh_batch_size=200
@@ -280,7 +312,7 @@ def export_results_to_csv(unfetched_games, refresh_candidates):
         logger.info(f"Exported {len(refresh_candidates)} refresh candidates to {refresh_file}")
 
 
-def run_dry_run(environment="dev", export_csv=False):
+def run_dry_run(environment="dev", export_csv=False, limit=1000, decay_factor=2.0):
     """Run a dry run of the refresh strategy."""
     logger.info(f"Starting refresh strategy dry run in {environment} environment")
 
@@ -292,7 +324,7 @@ def run_dry_run(environment="dev", export_csv=False):
     logger.info("\n=== Refresh Configuration ===")
     logger.info(f"Base interval (current year): {refresh_config['base_interval_days']} days")
     logger.info(f"Upcoming interval: {refresh_config['upcoming_interval_days']} days")
-    logger.info(f"Decay factor: {refresh_config['decay_factor']}")
+    logger.info(f"Decay factor: {decay_factor}")
     logger.info(f"Maximum interval: {refresh_config['max_interval_days']} days")
     logger.info(f"Refresh batch size: {refresh_config['refresh_batch_size']}")
 
@@ -306,7 +338,7 @@ def run_dry_run(environment="dev", export_csv=False):
 
     # Get refresh candidates
     logger.info("\nIdentifying refresh candidates...")
-    refresh_candidates = get_refresh_candidates(client, config)
+    refresh_candidates = get_refresh_candidates(client, config, limit, decay_factor)
     logger.info(f"Found {len(refresh_candidates)} games due for refresh")
 
     # Analyze refresh distribution
@@ -338,6 +370,12 @@ def main():
     )
     parser.add_argument("--export-csv", action="store_true", help="Export results to CSV files")
     parser.add_argument("--limit", type=int, default=100, help="Maximum number of games to analyze")
+    parser.add_argument(
+        "--decay-factor",
+        type=float,
+        default=2,
+        help="Exponential decay factor for refresh intervals",
+    )
 
     args = parser.parse_args()
 
@@ -345,7 +383,7 @@ def main():
     if args.environment:
         os.environ["ENVIRONMENT"] = args.environment
 
-    run_dry_run(args.environment, args.export_csv)
+    run_dry_run(args.environment, args.export_csv, args.limit, args.decay_factor)
 
 
 if __name__ == "__main__":

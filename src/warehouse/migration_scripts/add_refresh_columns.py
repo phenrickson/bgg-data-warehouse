@@ -2,8 +2,13 @@
 
 import logging
 import os
+import argparse
+from dotenv import load_dotenv
 from google.cloud import bigquery
 from src.config import get_bigquery_config
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,9 +77,18 @@ def add_refresh_columns(environment: str = None):
 
 def main():
     """Main entry point for the migration."""
-    environment = os.environ.get("ENVIRONMENT", "dev")
-    logger.info(f"Running migration for environment: {environment}")
-    add_refresh_columns(environment)
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Add refresh columns to raw_responses table")
+    parser.add_argument(
+        "--environment", "-e", default="dev", help="Specify the environment (default: dev)"
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Log and run migration
+    logger.info(f"Running migration for environment: {args.environment}")
+    add_refresh_columns(args.environment)
 
 
 if __name__ == "__main__":
