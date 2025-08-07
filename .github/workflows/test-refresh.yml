@@ -56,14 +56,14 @@ jobs:
         run: |
           gcloud run jobs execute bgg-fetch-responses \
             --region us-central1 \
-            --set-env-vars=ENVIRONMENT=${{ inputs.environment }},PIPELINE_STAGE=fetch_responses \
+            --update-env-vars ENVIRONMENT=${{ inputs.environment }},PIPELINE_STAGE=fetch_responses \
             --wait
 
       - name: Run Process Responses Job
         run: |
           gcloud run jobs execute bgg-process-responses \
             --region us-central1 \
-            --set-env-vars=ENVIRONMENT=${{ inputs.environment }},PIPELINE_STAGE=process_responses \
+            --update-env-vars ENVIRONMENT=${{ inputs.environment }},PIPELINE_STAGE=process_responses \
             --wait
 
       - name: Check Monitoring Views
