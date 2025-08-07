@@ -70,19 +70,24 @@ update:
 quality:
 	ENVIRONMENT=$(ENV) uv run -m src.quality_monitor.monitor
 
-# Development tasks
-dev-setup: requirements create-datasets-dev
-	@echo "Development environment setup complete"
 
-test-setup: requirements create-datasets-test
-	@echo "Test environment setup complete"
+# migrate
+migrate-bgg-data:
+	uv run scripts\migrate_datasets.py \
+	--source-dataset bgg_data_dev \
+	--dest-dataset bgg_data_test
 
-prod-setup: requirements create-datasets-prod
-	@echo "Production environment setup complete"
+migrate-bgg-raw:
+	uv run scripts\migrate_datasets.py \
+	--source-dataset bgg_raw_dev \
+	--dest-dataset bgg_raw_test
 
 # Visualization
-dashboard:
-	uv run streamlit run src/visualization/dashboard.py
+monitor:
+	uv run streamlit run src/visualization/dashboard.py --server.port 8501
+
+search:
+	uv run streamlit run src/visualization/game_search_dashboard.py --server.port 8502
 
 .DEFAULT_GOAL := help
 help:
