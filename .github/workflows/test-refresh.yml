@@ -42,8 +42,8 @@ jobs:
 
       - name: Install Project Dependencies
         run: |
-          uv pip install -e .
-
+          uv venv
+          uv sync
       - name: Run Refresh Migration Scripts
         run: |
           # Add refresh columns to raw_responses table
