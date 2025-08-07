@@ -47,7 +47,7 @@ jobs:
       - name: Run Refresh Migration Scripts
         run: |
           # Add refresh columns to raw_responses table
-          uv run -m src.warehouse/migration_scripts.add_refresh_columns --environment ${{ inputs.environment }}
+          uv run -m src.warehouse.migration_scripts.add_refresh_columns --environment ${{ inputs.environment }}
           
           # Create monitoring views
           uv run -m src.warehouse.create_refresh_monitoring_views --environment ${{ inputs.environment }}
