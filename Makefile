@@ -73,14 +73,16 @@ quality:
 
 # migrate
 migrate-bgg-data:
-	uv run scripts\migrate_datasets.py \
+	uv run -m src.scripts.migrate_datasets \
 	--source-dataset bgg_data_dev \
-	--dest-dataset bgg_data_test
+	--dest-dataset bgg_data_test \
+	--project-id gcp-demos-411520
 
 migrate-bgg-raw:
-	uv run scripts\migrate_datasets.py \
+	uv run -m src.scripts.migrate_datasets \
 	--source-dataset bgg_raw_dev \
-	--dest-dataset bgg_raw_test
+	--dest-dataset bgg_raw_test \
+	--project-id gcp-demos-411520
 
 # Visualization
 monitor:

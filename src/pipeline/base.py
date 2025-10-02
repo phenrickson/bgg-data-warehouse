@@ -8,7 +8,7 @@ import pandas as pd
 
 from ..api_client.client import BGGAPIClient
 from ..data_processor.processor import BGGDataProcessor
-from ..pipeline.load_data import DataLoader
+from ..pipeline.load_data import BigQueryLoader
 from ..config import get_bigquery_config
 from ..utils.logging_config import setup_logging
 
@@ -16,12 +16,13 @@ from ..utils.logging_config import setup_logging
 logger = logging.getLogger(__name__)
 setup_logging()
 
+
 class BaseBGGPipeline:
     """Base pipeline for processing BGG data."""
 
     def __init__(self, batch_size: int = 100, environment: str = "prod") -> None:
         """Initialize the pipeline.
-        
+
         Args:
             batch_size: Number of games to process in each batch
             environment: Environment to use (prod/dev)
@@ -31,15 +32,15 @@ class BaseBGGPipeline:
         self.environment = environment
         self.api_client = BGGAPIClient()
         self.processor = BGGDataProcessor()
-        self.loader = DataLoader(environment=environment)
+        self.loader = BigQueryLoader(environment=environment)
         self.bq_client = bigquery.Client()
 
     def get_unprocessed_ids(self, limit: int = None) -> List[dict]:
         """Get IDs that haven't been processed yet.
-        
+
         Args:
             limit: Optional limit on number of IDs to return. If None, uses batch_size.
-            
+
         Returns:
             List of dictionaries containing unprocessed game IDs and their types
         """
@@ -52,7 +53,7 @@ class BaseBGGPipeline:
             count_df = self.bq_client.query(count_query).to_dataframe()
             total_records = count_df["total"].iloc[0]
             logger.info(f"Total records in thing_ids table: {total_records}")
-            
+
             # Check number of processed records
             processed_query = f"""
             SELECT COUNT(*) as processed
@@ -72,13 +73,13 @@ class BaseBGGPipeline:
             ORDER BY game_id
             LIMIT {limit or self.batch_size}
             """
-            
+
             df = self.bq_client.query(query).to_dataframe()
             logger.info(f"Query returned {len(df)} records")
             if len(df) > 0:
                 logger.info("Sample of records:")
                 logger.info(df.head())
-                
+
             return [{"game_id": row["game_id"], "type": row["type"]} for _, row in df.iterrows()]
         except Exception as e:
             logger.error(f"Failed to fetch unprocessed IDs: {e}")
@@ -86,7 +87,7 @@ class BaseBGGPipeline:
 
     def mark_ids_as_processed(self, game_ids: List[int], success: bool = True) -> None:
         """Mark game IDs as processed in BigQuery.
-        
+
         Args:
             game_ids: List of game IDs to mark
             success: Whether processing was successful
@@ -99,7 +100,7 @@ class BaseBGGPipeline:
             process_timestamp = CURRENT_TIMESTAMP()
         WHERE game_id IN ({ids_str})
         """
-        
+
         try:
             self.bq_client.query(query).result()
             logger.info(f"Marked {len(game_ids)} IDs as processed")
@@ -108,17 +109,17 @@ class BaseBGGPipeline:
 
     def process_games(self, games: List[dict]) -> List[dict]:
         """Process a batch of games.
-        
+
         Args:
             games: List of dictionaries containing game IDs and types to process
-            
+
         Returns:
             List of processed game data
         """
         processed_games = []
         games_loaded = 0
         total_games = len(games)
-        
+
         logger.info(f"Processing {total_games} games...")
         for game in games:
             game_id = game["game_id"]
@@ -137,7 +138,9 @@ class BaseBGGPipeline:
                 if processed:
                     processed_games.append(processed)
                     games_loaded += 1
-                    logger.info(f"Successfully processed game {game_id} ({games_loaded}/{total_games})")
+                    logger.info(
+                        f"Successfully processed game {game_id} ({games_loaded}/{total_games})"
+                    )
                 else:
                     logger.warning(f"Failed to process game {game_id}")
 
@@ -148,10 +151,10 @@ class BaseBGGPipeline:
 
     def process_and_load_batch(self, games: List[dict]) -> bool:
         """Process and load a batch of games.
-        
+
         Args:
             games: List of games to process and load
-            
+
         Returns:
             bool: Whether the batch was processed and loaded successfully
         """
@@ -169,10 +172,9 @@ class BaseBGGPipeline:
         dataframes = self.processor.prepare_for_bigquery(processed_games)
 
         # Validate data
-        if not all([
-            self.processor.validate_data(df, table_name)
-            for table_name, df in dataframes.items()
-        ]):
+        if not all(
+            [self.processor.validate_data(df, table_name) for table_name, df in dataframes.items()]
+        ):
             logger.error("Data validation failed for this batch")
             return False
 
@@ -190,11 +192,11 @@ class BaseBGGPipeline:
             self.mark_ids_as_processed(processed_ids)
             logger.info("Batch completed successfully")
             logger.info(f"Processed {len(processed_games)} games")
-            
+
             # Log API request statistics
             stats = self.api_client.get_request_stats(minutes=60)
             logger.info(f"API Stats (last hour): {stats}")
-            
+
             return True
         else:
             logger.error("Failed to load batch to BigQuery")

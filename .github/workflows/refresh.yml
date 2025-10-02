@@ -1,0 +1,50 @@
+name: BGG Data Refresh
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Run every 4 hours
+  workflow_dispatch:        # Allow manual triggers
+
+jobs:
+  refresh-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run Refresh Job
+        run: |
+          gcloud run jobs execute bgg-refresh-data \
+            --region us-central1 \
+            --tasks 1 \
+            --max-retries 0 \
+            --task-timeout 10m \
+            --command python \
+            --args "-m,src.pipeline.refresh_data" \
+            --wait
+
+      - name: Process Refreshed Data
+        run: |
+          gcloud run jobs execute bgg-process-responses \
+            --region us-central1 \
+            --wait

@@ -4,7 +4,7 @@ environments:
     dataset: bgg_data_dev
     location: US
     
-  test_refresh:
+  test:
     project_id: gcp-demos-411520
     dataset: bgg_data_test
     location: US

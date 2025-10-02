@@ -1,9 +1,14 @@
-"""Script to migrate a BigQuery dataset."""
+"""Module for migrating BigQuery datasets."""
 
-import argparse
 import logging
 from typing import List, Optional
+
 from google.cloud import bigquery
+from src.utils.logging_config import setup_logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
+setup_logging()
 
 
 def get_all_tables(client: bigquery.Client, dataset_ref: str) -> List[str]:
@@ -32,18 +37,17 @@ def migrate_dataset(
     Args:
         source_dataset (str): Source dataset name
         dest_dataset (str): Destination dataset name
-        project_id (str, optional): Google Cloud project ID
+        project_id (str, optional): Google Cloud project ID. If not provided,
+            uses the project from the default client configuration.
     """
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-
     # Create BigQuery client
+    if not project_id:
+        raise ValueError("project_id is required")
     client = bigquery.Client(project=project_id)
 
     # Source and destination dataset references
-    source_ref = f"{project_id}.{source_dataset}"
-    dest_ref = f"{project_id}.{dest_dataset}"
+    source_ref = f"{client.project}.{source_dataset}"
+    dest_ref = f"{client.project}.{dest_dataset}"
 
     # Check if destination dataset exists, create if not
     try:
@@ -67,7 +71,7 @@ def migrate_dataset(
 
         # Copy entire table
         query = f"""
-        CREATE TABLE `{dest_table}` AS
+        CREATE OR REPLACE TABLE `{dest_table}` AS
         SELECT * 
         FROM `{source_table}`
         """
@@ -75,28 +79,3 @@ def migrate_dataset(
         job = client.query(query)
         job.result()
         logger.info(f"Migrated table: {table_name}")
-
-
-def main():
-    import os
-    from dotenv import load_dotenv
-
-    # Load environment variables from .env file
-    load_dotenv()
-
-    parser = argparse.ArgumentParser(description="Migrate a BigQuery dataset")
-    parser.add_argument("--source-dataset", required=True, help="Source dataset name")
-    parser.add_argument("--dest-dataset", required=True, help="Destination dataset name")
-    parser.add_argument(
-        "--project-id",
-        default=os.getenv("GCP_PROJECT_ID", "gcp-demos-411520"),
-        help="Google Cloud project ID",
-    )
-
-    args = parser.parse_args()
-
-    migrate_dataset(args.source_dataset, args.dest_dataset, args.project_id)
-
-
-if __name__ == "__main__":
-    main()
