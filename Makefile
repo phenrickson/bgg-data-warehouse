@@ -27,6 +27,11 @@ fetch-ids:
 fetch-responses:
 	uv run -m src.pipeline.fetch_responses
 
+# Refresh data in specified environment (Usage: make refresh ENV=test|dev|prod)
+refresh:
+	@if not defined ENV (echo Usage: make refresh ENV=test^|dev^|prod && exit /b 1)
+	set "ENVIRONMENT=$(ENV)" && uv run -m src.pipeline.refresh_data
+
 # Default batch size if not specified
 BATCH_SIZE ?= 100
 
@@ -37,6 +42,8 @@ process-responses:
 create-datasets:
 	uv run -m src.warehouse.setup_bigquery
 
+add-refresh-columns:
+	uv run -m src.warehouse.migration_scripts.add_refresh_columns --environment $(ENV)r
 # Utility tasks
 examine-game:
 	@if [ -z "$(GAME)" ]; then \

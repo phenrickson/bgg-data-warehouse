@@ -60,7 +60,7 @@ class BGGResponseFetcher:
             List of dictionaries containing game IDs, types, and priorities
         """
         # In test environment, always return predefined test data
-        if self.environment == "test":
+        if self.environment == "testing":
             return [
                 {"game_id": 13, "type": "boardgame", "priority": "unfetched"},
                 {"game_id": 9209, "type": "boardgame", "priority": "unfetched"},
@@ -445,7 +445,7 @@ class BGGResponseFetcher:
         # Get unfetched IDs
         try:
             # For test environment, use method without arguments
-            if self.environment == "test":
+            if self.environment == "testing":
                 unfetched = self.get_unfetched_ids()
             else:
                 unfetched = self.get_unfetched_ids(game_ids)

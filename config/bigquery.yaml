@@ -28,3 +28,5 @@ raw_tables:
     name: thing_ids
   fetch_in_progress:
     name: fetch_in_progress
+  request_log:
+    name: request_log

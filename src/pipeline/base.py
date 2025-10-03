@@ -1,7 +1,7 @@
 """Base pipeline module for BGG data processing."""
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from google.cloud import bigquery
 import pandas as pd
@@ -27,7 +27,7 @@ class BaseBGGPipeline:
             batch_size: Number of games to process in each batch
             environment: Environment to use (prod/dev)
         """
-        self.config = get_bigquery_config()
+        self.config = get_bigquery_config(environment)
         self.batch_size = batch_size
         self.environment = environment
         self.api_client = BGGAPIClient()
@@ -148,6 +148,28 @@ class BaseBGGPipeline:
                 logger.error(f"Failed to process game {game_id}: {e}")
 
         return processed_games
+
+    def execute_query(self, query: str, params: Optional[Dict] = None) -> List[Any]:
+        """Execute a BigQuery query.
+
+        Args:
+            query: The query to execute
+            params: Optional query parameters
+
+        Returns:
+            Query results
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter(
+                    key, "INT64" if isinstance(val, int) else "STRING", val
+                )
+                for key, val in (params or {}).items()
+            ]
+        )
+
+        query_job = self.bq_client.query(query, job_config=job_config)
+        return list(query_job.result())
 
     def process_and_load_batch(self, games: List[dict]) -> bool:
         """Process and load a batch of games.

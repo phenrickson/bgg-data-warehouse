@@ -32,13 +32,11 @@ def get_bigquery_config(environment: Optional[str] = None) -> Dict:
 
     # Get environment
     env = environment or config.get("default_environment", "dev")
-    logger.info(f"Using environment: {env}")
     if env not in config["environments"]:
         raise ValueError(f"Invalid environment: {env}")
 
     # Build config with environment-specific values
     env_config = config["environments"][env]
-    logger.info(f"Environment config: {env_config}")
     return {
         "project": {
             "id": env_config["project_id"],

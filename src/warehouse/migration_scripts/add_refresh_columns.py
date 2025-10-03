@@ -56,20 +56,50 @@ def add_refresh_columns(environment: str = None):
     logger.info("Backfilling existing data...")
 
     backfill_query = f"""
-    UPDATE `{table_id}`
+    UPDATE `{table_id}` AS r
     SET 
-        last_refresh_timestamp = fetch_timestamp,
+        last_refresh_timestamp = CURRENT_TIMESTAMP(),
         refresh_count = 0,
-        next_refresh_due = TIMESTAMP_ADD(fetch_timestamp, INTERVAL 90 DAY)
-    WHERE last_refresh_timestamp IS NULL
+        next_refresh_due = TIMESTAMP_ADD(
+            CURRENT_TIMESTAMP(),
+            INTERVAL LEAST(
+                90,  -- max_interval_days
+                CAST(7 * POW(2.0, 
+                    GREATEST(0, EXTRACT(YEAR FROM CURRENT_DATE()) - COALESCE(g.year_published, EXTRACT(YEAR FROM CURRENT_DATE())))
+                ) AS INT64)
+            ) DAY)
+    FROM `{config['project']['id']}.{config['project']['dataset']}.games` AS g
+    WHERE r.game_id = g.game_id 
+      AND r.last_refresh_timestamp IS NULL
     """
 
     try:
         job = client.query(backfill_query)
         result = job.result()
-        logger.info(f"Backfilled {job.num_dml_affected_rows} rows")
+        logger.info(f"Backfilled {job.num_dml_affected_rows} rows with proper refresh intervals")
     except Exception as e:
         logger.error(f"Failed to backfill data: {e}")
+        raise
+
+    # Handle any remaining rows that don't have corresponding games data
+    fallback_query = f"""
+    UPDATE `{table_id}`
+    SET 
+        last_refresh_timestamp = CURRENT_TIMESTAMP(),
+        refresh_count = 0,
+        next_refresh_due = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+    WHERE last_refresh_timestamp IS NULL
+    """
+
+    try:
+        job = client.query(fallback_query)
+        result = job.result()
+        if job.num_dml_affected_rows > 0:
+            logger.info(
+                f"Applied fallback refresh intervals to {job.num_dml_affected_rows} rows without games data"
+            )
+    except Exception as e:
+        logger.error(f"Failed to apply fallback refresh intervals: {e}")
         raise
 
     logger.info("Migration completed successfully")
