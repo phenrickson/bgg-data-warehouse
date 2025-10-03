@@ -11,19 +11,28 @@ logger = logging.getLogger(__name__)
 setup_logging()
 
 
-def get_all_tables(client: bigquery.Client, dataset_ref: str) -> List[str]:
+def get_tables_and_views(client: bigquery.Client, dataset_ref: str) -> tuple[List[str], List[str]]:
     """
-    Retrieve all table names in a given dataset.
+    Retrieve all table and view names in a given dataset, separated by type.
 
     Args:
         client (bigquery.Client): BigQuery client
         dataset_ref (str): Full dataset reference (project.dataset)
 
     Returns:
-        List[str]: List of table names in the dataset
+        tuple[List[str], List[str]]: Lists of (table_names, view_names)
     """
-    tables = client.list_tables(dataset_ref)
-    return [table.table_id for table in tables]
+    tables = []
+    views = []
+
+    for table in client.list_tables(dataset_ref):
+        table_obj = client.get_table(table.reference)
+        if table_obj.table_type == "TABLE":
+            tables.append(table.table_id)
+        elif table_obj.table_type == "VIEW":
+            views.append(table.table_id)
+
+    return tables, views
 
 
 def migrate_dataset(
@@ -60,11 +69,11 @@ def migrate_dataset(
         client.create_dataset(dataset)
         logger.info(f"Created destination dataset: {dest_ref}")
 
-    # Get all tables in source dataset
-    tables = get_all_tables(client, source_ref)
-    logger.info(f"Found {len(tables)} tables to migrate")
+    # Get tables and views separately
+    tables, views = get_tables_and_views(client, source_ref)
+    logger.info(f"Found {len(tables)} tables and {len(views)} views")
 
-    # Copy each table
+    # Copy each table (not views)
     for table_name in tables:
         source_table = f"{source_ref}.{table_name}"
         dest_table = f"{dest_ref}.{table_name}"
@@ -79,3 +88,10 @@ def migrate_dataset(
         job = client.query(query)
         job.result()
         logger.info(f"Migrated table: {table_name}")
+
+    # Handle views
+    if views:
+        logger.warning(f"Found {len(views)} views that were NOT migrated:")
+        for view_name in views:
+            logger.warning(f"  - {view_name} (VIEW)")
+        logger.warning("Views should be recreated using: python src/warehouse/create_views.py")

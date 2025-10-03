@@ -34,6 +34,7 @@ refresh:
 
 # Default batch size if not specified
 BATCH_SIZE ?= 100
+ENV ?= test
 
 process-responses:
 	uv run -m src.pipeline.process_responses --batch-size $(BATCH_SIZE)
@@ -42,8 +43,6 @@ process-responses:
 create-datasets:
 	uv run -m src.warehouse.setup_bigquery
 
-add-refresh-columns:
-	uv run -m src.warehouse.migration_scripts.add_refresh_columns --environment $(ENV)r
 # Utility tasks
 examine-game:
 	@if [ -z "$(GAME)" ]; then \
@@ -54,9 +53,6 @@ examine-game:
 
 check-duplicates:
 	uv run -m src.scripts.check_duplicates
-
-# Load data tasks (default to dev environment)
-ENV ?= dev
 
 load-unprocessed:
 	ENVIRONMENT=$(ENV) uv run -m src.scripts.load_games
@@ -77,19 +73,26 @@ update:
 quality:
 	ENVIRONMENT=$(ENV) uv run -m src.quality_monitor.monitor
 
-
 # migrate
-migrate-bgg-data:
+migrate-bgg-data-to-test:
 	uv run -m src.scripts.migrate_datasets \
 	--source-dataset bgg_data_dev \
 	--dest-dataset bgg_data_test \
 	--project-id gcp-demos-411520
 
-migrate-bgg-raw:
+migrate-bgg-raw-to-test:
 	uv run -m src.scripts.migrate_datasets \
 	--source-dataset bgg_raw_dev \
 	--dest-dataset bgg_raw_test \
 	--project-id gcp-demos-411520
+
+create-views:
+	uv run -m src.warehouse.create_views --environment test
+
+add-refresh-columns:
+	uv run -m src.warehouse.migration_scripts.add_refresh_columns --environment test
+
+migrate-to-test: migrate-bgg-data-to-test migrate-bgg-raw-to-test create-views-test add-refresh-columns
 
 # Visualization
 monitor:

@@ -58,19 +58,23 @@ def add_refresh_columns(environment: str = None):
     backfill_query = f"""
     UPDATE `{table_id}` AS r
     SET 
-        last_refresh_timestamp = CURRENT_TIMESTAMP(),
+        last_refresh_timestamp = r.fetch_timestamp,  -- Use original fetch time, not current time
         refresh_count = 0,
         next_refresh_due = TIMESTAMP_ADD(
-            CURRENT_TIMESTAMP(),
+            r.fetch_timestamp,  -- Calculate next refresh from original fetch time
             INTERVAL LEAST(
                 90,  -- max_interval_days
                 CAST(7 * POW(2.0, 
-                    GREATEST(0, EXTRACT(YEAR FROM CURRENT_DATE()) - COALESCE(g.year_published, EXTRACT(YEAR FROM CURRENT_DATE())))
+                    -- Cap the exponent at 6 to prevent overflow (2^6 = 64, so max interval would be 7*64=448 days, but capped at 90)
+                    LEAST(6, GREATEST(0, EXTRACT(YEAR FROM CURRENT_DATE()) - COALESCE(g.year_published, EXTRACT(YEAR FROM CURRENT_DATE()))))
                 ) AS INT64)
             ) DAY)
-    FROM `{config['project']['id']}.{config['project']['dataset']}.games` AS g
+    FROM (
+        SELECT DISTINCT game_id, year_published
+        FROM `{config['project']['id']}.{config['project']['dataset']}.games`
+    ) AS g
     WHERE r.game_id = g.game_id 
-      AND r.last_refresh_timestamp IS NULL
+      AND (r.last_refresh_timestamp IS NULL OR r.last_refresh_timestamp != r.fetch_timestamp)
     """
 
     try:
@@ -85,9 +89,9 @@ def add_refresh_columns(environment: str = None):
     fallback_query = f"""
     UPDATE `{table_id}`
     SET 
-        last_refresh_timestamp = CURRENT_TIMESTAMP(),
+        last_refresh_timestamp = COALESCE(fetch_timestamp, CURRENT_TIMESTAMP()),
         refresh_count = 0,
-        next_refresh_due = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+        next_refresh_due = TIMESTAMP_ADD(COALESCE(fetch_timestamp, CURRENT_TIMESTAMP()), INTERVAL 7 DAY)
     WHERE last_refresh_timestamp IS NULL
     """
 
