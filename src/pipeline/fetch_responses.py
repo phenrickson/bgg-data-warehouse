@@ -28,6 +28,7 @@ class BGGResponseFetcher:
         chunk_size: int = 20,
         environment: str = "prod",
         max_retries: int = 1,
+        bq_client: Optional[bigquery.Client] = None,
     ) -> None:
         """Initialize the fetcher.
 
@@ -36,6 +37,7 @@ class BGGResponseFetcher:
             chunk_size: Number of games to request in each API call
             environment: Environment to use (prod/dev/test)
             max_retries: Maximum number of retry attempts for failed requests
+            bq_client: Optional BigQuery client (for testing)
         """
         self.config = get_bigquery_config()
         self.refresh_config = get_refresh_config()
@@ -45,7 +47,7 @@ class BGGResponseFetcher:
         self.max_retries = max_retries
         self.id_fetcher = BGGIDFetcher()
         self.api_client = BGGAPIClient()
-        self.bq_client = bigquery.Client()
+        self.bq_client = bq_client or bigquery.Client()
 
     def get_unfetched_ids(
         self, game_ids: Optional[List[int]] = None, include_refresh: bool = True

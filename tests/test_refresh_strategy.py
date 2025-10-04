@@ -14,7 +14,13 @@ class TestRefreshStrategy:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.fetcher = BGGResponseFetcher(batch_size=100, chunk_size=5, environment="test")
+        # Create a mock BigQuery client for testing
+        from unittest.mock import Mock
+
+        self.mock_bq_client = Mock()
+        self.fetcher = BGGResponseFetcher(
+            batch_size=100, chunk_size=5, environment="test", bq_client=self.mock_bq_client
+        )
 
     def test_refresh_config_loaded(self):
         """Test that refresh configuration is properly loaded."""
@@ -27,13 +33,8 @@ class TestRefreshStrategy:
         assert config["max_interval_days"] == 90
         assert config["refresh_batch_size"] == 200
 
-    @patch("src.pipeline.fetch_responses.bigquery.Client")
-    def test_get_unfetched_ids_includes_priority(self, mock_bq_client):
+    def test_get_unfetched_ids_includes_priority(self):
         """Test that get_unfetched_ids returns priority information."""
-        # Mock the BigQuery client and query result
-        mock_client = Mock()
-        mock_bq_client.return_value = mock_client
-
         # Mock cleanup query (delete old in-progress entries)
         mock_cleanup_job = Mock()
         mock_cleanup_job.result.return_value = None
@@ -50,12 +51,22 @@ class TestRefreshStrategy:
         mock_unfetched_job = Mock()
         mock_unfetched_job.to_dataframe.return_value = mock_unfetched_df
 
+        # Mock refresh candidates query (empty since we don't want refresh in this test)
+        mock_refresh_df = pd.DataFrame()
+        mock_refresh_job = Mock()
+        mock_refresh_job.to_dataframe.return_value = mock_refresh_df
+
         # Mock mark games in progress query
         mock_mark_job = Mock()
         mock_mark_job.result.return_value = None
 
-        # Set up query call sequence: cleanup, unfetched, mark_in_progress
-        mock_client.query.side_effect = [mock_cleanup_job, mock_unfetched_job, mock_mark_job]
+        # Set up query call sequence: cleanup, unfetched, refresh_candidates, mark_in_progress
+        self.mock_bq_client.query.side_effect = [
+            mock_cleanup_job,
+            mock_unfetched_job,
+            mock_refresh_job,
+            mock_mark_job,
+        ]
 
         result = self.fetcher.get_unfetched_ids()
 

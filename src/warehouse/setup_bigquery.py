@@ -77,6 +77,10 @@ class BigQuerySetup:
                 bigquery.SchemaField("refresh_count", "INTEGER"),
                 bigquery.SchemaField("next_refresh_due", "TIMESTAMP"),
             ],
+            "fetch_in_progress": [
+                bigquery.SchemaField("game_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("fetch_start_timestamp", "TIMESTAMP", mode="REQUIRED"),
+            ],
         }
         return schemas.get(table_name, [])
 
