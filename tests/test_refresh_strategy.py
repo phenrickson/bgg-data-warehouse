@@ -27,9 +27,36 @@ class TestRefreshStrategy:
         assert config["max_interval_days"] == 90
         assert config["refresh_batch_size"] == 200
 
-    def test_get_unfetched_ids_includes_priority(self):
+    @patch("src.pipeline.fetch_responses.bigquery.Client")
+    def test_get_unfetched_ids_includes_priority(self, mock_bq_client):
         """Test that get_unfetched_ids returns priority information."""
-        # In test environment, should return predefined data with priorities
+        # Mock the BigQuery client and query result
+        mock_client = Mock()
+        mock_bq_client.return_value = mock_client
+
+        # Mock cleanup query (delete old in-progress entries)
+        mock_cleanup_job = Mock()
+        mock_cleanup_job.result.return_value = None
+
+        # Mock unfetched games query
+        mock_unfetched_df = pd.DataFrame(
+            [
+                {"game_id": 13, "type": "boardgame"},
+                {"game_id": 9209, "type": "boardgame"},
+                {"game_id": 325, "type": "boardgame"},
+            ]
+        )
+
+        mock_unfetched_job = Mock()
+        mock_unfetched_job.to_dataframe.return_value = mock_unfetched_df
+
+        # Mock mark games in progress query
+        mock_mark_job = Mock()
+        mock_mark_job.result.return_value = None
+
+        # Set up query call sequence: cleanup, unfetched, mark_in_progress
+        mock_client.query.side_effect = [mock_cleanup_job, mock_unfetched_job, mock_mark_job]
+
         result = self.fetcher.get_unfetched_ids()
 
         assert len(result) == 3

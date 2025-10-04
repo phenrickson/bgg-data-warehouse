@@ -27,11 +27,6 @@ fetch-ids:
 fetch-responses:
 	uv run -m src.pipeline.fetch_responses
 
-# Refresh data in specified environment (Usage: make refresh ENV=test|dev|prod)
-refresh:
-	@if not defined ENV (echo Usage: make refresh ENV=test^|dev^|prod && exit /b 1)
-	set "ENVIRONMENT=$(ENV)" && uv run -m src.pipeline.refresh_data
-
 # Default batch size if not specified
 BATCH_SIZE ?= 100
 ENV ?= test
@@ -94,6 +89,14 @@ add-refresh-columns:
 
 migrate-to-test: migrate-bgg-data-to-test migrate-bgg-raw-to-test create-views-test add-refresh-columns
 
+# Refresh data in specified environment (Usage: make refresh ENV=test|dev|prod)
+refresh:
+	uv run -m src.pipeline.refresh_games --environment $(ENV)
+
+# Preview refresh statistics without running (Usage: make refresh-preview ENV=test|dev|prod)
+refresh-preview:
+	uv run -m src.pipeline.refresh_games --environment $(ENV) --preview
+
 # Visualization
 monitor:
 	uv run streamlit run src/visualization/dashboard.py --server.port 8501
@@ -123,6 +126,8 @@ help:
 	@echo "  load-unprocessed Load all unprocessed games (ENV=prod|dev|test, default: dev)"
 	@echo "  load-games      Load specific games (Usage: make load-games GAMES='1234 5678' [ENV=prod|dev|test])"
 	@echo "  update          Update data (ENV=prod|dev|test, default: dev)"
+	@echo "  refresh         Refresh game data (ENV=prod|dev|test, default: dev)"
+	@echo "  refresh-preview Preview refresh statistics (ENV=prod|dev|test, default: dev)"
 	@echo "  quality         Run data quality checks (ENV=prod|dev|test, default: dev)"
 	@echo ""
 	@echo "Utility Tasks:"

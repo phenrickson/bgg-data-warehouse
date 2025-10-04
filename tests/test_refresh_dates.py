@@ -4,7 +4,7 @@ import pytest
 import logging
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
-from src.pipeline.refresh_data import RefreshPipeline
+from src.pipeline.refresh_games import RefreshPipeline
 from src.config import get_refresh_config
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,8 @@ class TestRefreshDatesFix:
         with (
             patch("src.config.get_bigquery_config", return_value=mock_config),
             patch("src.config.get_refresh_config", return_value=mock_refresh_config),
-            patch("src.pipeline.refresh_data.BGGResponseFetcher"),
-            patch("src.pipeline.refresh_data.BGGResponseProcessor"),
+            patch("src.pipeline.refresh_games.BGGResponseFetcher"),
+            patch("src.pipeline.refresh_games.BGGResponseProcessor"),
         ):
 
             pipeline = RefreshPipeline(environment="test")
@@ -109,7 +109,7 @@ class TestRefreshDatesFix:
             if years_old >= 4:
                 assert calculated_interval == 90
 
-    @patch("src.pipeline.refresh_data.datetime")
+    @patch("src.pipeline.refresh_games.datetime")
     def test_next_refresh_due_is_after_last_refresh(self, mock_datetime, refresh_pipeline):
         """Test that next_refresh_due is always after last_refresh_timestamp."""
         # Set a fixed current time

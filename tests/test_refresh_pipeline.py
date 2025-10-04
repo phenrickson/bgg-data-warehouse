@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 from unittest.mock import Mock, patch
 
-from src.pipeline.refresh_data import RefreshPipeline
+from src.pipeline.refresh_games import RefreshPipeline
 
 
 @pytest.fixture
@@ -19,8 +19,8 @@ def mock_config():
 @pytest.fixture
 def mock_bigquery_config():
     return {
-        "project": {"id": "test-project"},
-        "datasets": {"raw": "raw", "bgg_data": "bgg_data"},
+        "project": {"id": "test-project", "dataset": "bgg_data_test"},
+        "datasets": {"raw": "raw_test", "bgg_data": "bgg_data_test"},
         "raw_tables": {"thing_ids": {"name": "thing_ids"}},
     }
 
@@ -28,16 +28,25 @@ def mock_bigquery_config():
 @pytest.fixture
 def refresh_pipeline(mock_config, mock_bigquery_config):
     with (
-        patch("src.pipeline.refresh_data.get_refresh_config", return_value=mock_config),
+        patch("src.pipeline.refresh_games.get_refresh_config", return_value=mock_config),
         patch("src.pipeline.base.get_bigquery_config", return_value=mock_bigquery_config),
         patch("src.pipeline.base.bigquery.Client"),
-        patch("src.pipeline.base.BGGAPIClient") as mock_api_client,
-        patch("src.pipeline.base.BGGDataProcessor"),
-        patch("src.pipeline.base.BigQueryLoader") as mock_loader,
+        patch("src.pipeline.refresh_games.BGGResponseFetcher") as mock_fetcher_class,
+        patch("src.pipeline.refresh_games.BGGResponseProcessor") as mock_processor_class,
     ):
+        # Create mock instances
+        mock_fetcher = Mock()
+        mock_processor = Mock()
+        mock_fetcher_class.return_value = mock_fetcher
+        mock_processor_class.return_value = mock_processor
 
         pipeline = RefreshPipeline()
         pipeline.execute_query = Mock()
+
+        # Ensure the mocked components are attached
+        pipeline.fetcher = mock_fetcher
+        pipeline.processor = mock_processor
+
         return pipeline
 
 
@@ -73,13 +82,13 @@ def test_update_refresh_tracking(refresh_pipeline):
     params = call_args[1]["params"]
 
     # Verify query content
-    assert "UPDATE raw.raw_responses" in query
+    assert "UPDATE `test-project.raw_test.raw_responses`" in query
     assert "last_refresh_timestamp" in query
     assert "refresh_count" in query
     assert "next_refresh_due" in query
+    assert "FROM `test-project.bgg_data_test.games`" in query
 
     # Verify parameters
-    assert params["game_ids"] == game_ids
     assert params["base_interval"] == 7
     assert params["decay_factor"] == 2.0
     assert params["max_interval"] == 90
@@ -105,7 +114,8 @@ def test_execute_no_games(refresh_pipeline):
     assert isinstance(result["duration_seconds"], float)
 
     # Verify no further processing
-    refresh_pipeline.api_client.fetch_items.assert_not_called()
+    refresh_pipeline.fetcher.fetch_batch.assert_not_called()
+    refresh_pipeline.processor.run.assert_not_called()
 
 
 def test_execute_with_games(refresh_pipeline):
@@ -113,14 +123,12 @@ def test_execute_with_games(refresh_pipeline):
     # Mock refresh batch
     game_ids = [1, 2, 3]
     refresh_pipeline.get_refresh_batch = Mock(return_value=game_ids)
+
+    # Mock update_refresh_tracking to avoid the query execution
     original_update_tracking = refresh_pipeline.update_refresh_tracking
     refresh_pipeline.update_refresh_tracking = Mock()
 
     try:
-        # Mock API responses
-        mock_responses = [{"id": i, "data": f"game_{i}"} for i in game_ids]
-        refresh_pipeline.api_client.fetch_items = Mock(return_value=mock_responses)
-
         # Execute pipeline
         result = refresh_pipeline.execute(batch_size=3)
 
@@ -130,9 +138,9 @@ def test_execute_with_games(refresh_pipeline):
         assert "Successfully refreshed 3 games" in result["message"]
         assert isinstance(result["duration_seconds"], float)
 
-        # Verify processing
-        refresh_pipeline.api_client.fetch_items.assert_called_once_with(game_ids)
-        refresh_pipeline.loader.load_games.assert_called_once_with(mock_responses)
+        # Verify processing steps
+        refresh_pipeline.fetcher.fetch_batch.assert_called_once_with(game_ids)
+        refresh_pipeline.processor.run.assert_called_once()
         refresh_pipeline.update_refresh_tracking.assert_called_once_with(game_ids)
     finally:
         # Restore original method
@@ -141,47 +149,131 @@ def test_execute_with_games(refresh_pipeline):
 
 def test_execute_respects_batch_size(refresh_pipeline):
     """Test that execute respects the batch size parameter."""
-    # Test with different batch sizes
-    for batch_size in [1, 5, 10]:
-        # Mock the refresh batch to return some game IDs
-        game_ids = list(range(batch_size))
-        refresh_pipeline.get_refresh_batch = Mock(return_value=game_ids)
-
-        # Mock API responses
-        mock_responses = [{"id": i, "data": f"game_{i}"} for i in game_ids]
-        refresh_pipeline.api_client.fetch_items = Mock(return_value=mock_responses)
-
-        # Execute pipeline
-        refresh_pipeline.execute(batch_size=batch_size)
-
-        # Verify batch size was respected
-        refresh_pipeline.get_refresh_batch.assert_called_once_with(batch_size)
-
-        # Reset mocks for next iteration
-        refresh_pipeline.get_refresh_batch.reset_mock()
-        refresh_pipeline.api_client.fetch_items.reset_mock()
-
-
-def test_execute_handles_api_error(refresh_pipeline):
-    """Test execute handles API errors gracefully."""
-    # Mock refresh batch
-    game_ids = [1, 2, 3]
-    refresh_pipeline.get_refresh_batch = Mock(return_value=game_ids)
+    # Mock update_refresh_tracking to avoid the query execution
     original_update_tracking = refresh_pipeline.update_refresh_tracking
     refresh_pipeline.update_refresh_tracking = Mock()
 
     try:
-        # Mock API error
-        refresh_pipeline.api_client.fetch_items = Mock(side_effect=Exception("API Error"))
+        # Test with different batch sizes
+        for batch_size in [1, 5, 10]:
+            # Mock the refresh batch to return some game IDs
+            game_ids = list(range(batch_size))
+            refresh_pipeline.get_refresh_batch = Mock(return_value=game_ids)
+
+            # Execute pipeline
+            refresh_pipeline.execute(batch_size=batch_size)
+
+            # Verify batch size was respected
+            refresh_pipeline.get_refresh_batch.assert_called_once_with(batch_size)
+
+            # Reset mocks for next iteration
+            refresh_pipeline.get_refresh_batch.reset_mock()
+            refresh_pipeline.fetcher.fetch_batch.reset_mock()
+            refresh_pipeline.processor.run.reset_mock()
+    finally:
+        # Restore original method
+        refresh_pipeline.update_refresh_tracking = original_update_tracking
+
+
+def test_execute_handles_fetcher_error(refresh_pipeline):
+    """Test execute handles fetcher errors gracefully."""
+    # Mock refresh batch
+    game_ids = [1, 2, 3]
+    refresh_pipeline.get_refresh_batch = Mock(return_value=game_ids)
+
+    # Mock update_refresh_tracking to avoid the query execution
+    original_update_tracking = refresh_pipeline.update_refresh_tracking
+    refresh_pipeline.update_refresh_tracking = Mock()
+
+    try:
+        # Mock fetcher error
+        refresh_pipeline.fetcher.fetch_batch = Mock(side_effect=Exception("Fetcher Error"))
 
         # Execute should raise the error
         with pytest.raises(Exception) as exc:
             refresh_pipeline.execute()
-        assert "API Error" in str(exc.value)
+        assert "Fetcher Error" in str(exc.value)
 
-        # Verify no updates were made
-        refresh_pipeline.loader.load_games.assert_not_called()
+        # Verify fetcher was called but processor and update weren't
+        refresh_pipeline.fetcher.fetch_batch.assert_called_once_with(game_ids)
+        refresh_pipeline.processor.run.assert_not_called()
         refresh_pipeline.update_refresh_tracking.assert_not_called()
     finally:
         # Restore original method
         refresh_pipeline.update_refresh_tracking = original_update_tracking
+
+
+def test_execute_handles_processor_error(refresh_pipeline):
+    """Test execute handles processor errors gracefully."""
+    # Mock refresh batch
+    game_ids = [1, 2, 3]
+    refresh_pipeline.get_refresh_batch = Mock(return_value=game_ids)
+
+    # Mock update_refresh_tracking to avoid the query execution
+    original_update_tracking = refresh_pipeline.update_refresh_tracking
+    refresh_pipeline.update_refresh_tracking = Mock()
+
+    try:
+        # Mock processor error
+        refresh_pipeline.processor.run = Mock(side_effect=Exception("Processor Error"))
+
+        # Execute should raise the error
+        with pytest.raises(Exception) as exc:
+            refresh_pipeline.execute()
+        assert "Processor Error" in str(exc.value)
+
+        # Verify fetcher was called but update wasn't
+        refresh_pipeline.fetcher.fetch_batch.assert_called_once_with(game_ids)
+        refresh_pipeline.processor.run.assert_called_once()
+        refresh_pipeline.update_refresh_tracking.assert_not_called()
+    finally:
+        # Restore original method
+        refresh_pipeline.update_refresh_tracking = original_update_tracking
+
+
+def test_max_games_limit(refresh_pipeline):
+    """Test that max_games limit is respected in get_refresh_batch."""
+    # Set max_games on the pipeline
+    refresh_pipeline.max_games = 5
+
+    # Mock query for processed games count
+    mock_count_result = [Mock(count=3)]
+    # Only return 2 games since remaining capacity is 2 (5 - 3 = 2)
+    mock_games_result = [Mock(game_id=i) for i in range(1, 3)]  # Only 2 games
+    refresh_pipeline.execute_query.side_effect = [
+        mock_count_result,  # First call for processed count
+        mock_games_result,  # Second call for games to refresh
+    ]
+
+    # Get refresh batch - should limit to remaining capacity (5 - 3 = 2)
+    result = refresh_pipeline.get_refresh_batch(batch_size=10)
+
+    # Should return exactly 2 games (remaining capacity)
+    assert len(result) == 2
+    assert result == [1, 2]
+
+    # Verify both queries were called
+    assert refresh_pipeline.execute_query.call_count == 2
+
+    # Check that effective batch size was used in the second query
+    second_call_params = refresh_pipeline.execute_query.call_args_list[1][1]["params"]
+    assert second_call_params["batch_size"] == 2  # min(10, 2)
+
+
+def test_max_games_capacity_exceeded(refresh_pipeline):
+    """Test behavior when max_games capacity is already exceeded."""
+    # Set max_games on the pipeline
+    refresh_pipeline.max_games = 5
+
+    # Mock query for processed games count - already at limit
+    mock_count_result = [Mock(count=5)]
+    refresh_pipeline.execute_query.return_value = mock_count_result
+
+    # Get refresh batch - should return empty list
+    result = refresh_pipeline.get_refresh_batch(batch_size=10)
+
+    # Should return empty list
+    assert result == []
+
+    # Only the count query should have been called
+    assert refresh_pipeline.execute_query.call_count == 1

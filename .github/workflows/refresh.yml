@@ -34,17 +34,6 @@ jobs:
 
       - name: Run Refresh Job
         run: |
-          gcloud run jobs execute bgg-refresh-data \
-            --region us-central1 \
-            --tasks 1 \
-            --max-retries 0 \
-            --task-timeout 10m \
-            --command python \
-            --args "-m,src.pipeline.refresh_data" \
-            --wait
-
-      - name: Process Refreshed Data
-        run: |
-          gcloud run jobs execute bgg-process-responses \
+          gcloud run jobs execute bgg-refresh-games \
             --region us-central1 \
             --wait

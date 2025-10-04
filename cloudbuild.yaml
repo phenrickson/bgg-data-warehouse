@@ -23,7 +23,7 @@ steps:
       - '--cpu=1'
       - '--region=us-central1'
       - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=dev,PIPELINE_STAGE=fetch_responses'
+      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,PIPELINE_STAGE=fetch_responses'
 
   # Deploy Process Responses Cloud Run Job
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -40,7 +40,24 @@ steps:
       - '--cpu=1'
       - '--region=us-central1'
       - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=dev,PIPELINE_STAGE=process_responses'
+      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,PIPELINE_STAGE=process_responses'
+
+  # Deploy Refresh Games Cloud Run Job
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'update'
+      - 'bgg-refresh-games'
+      - '--image=gcr.io/$PROJECT_ID/bgg-processor'
+      - '--tasks=1'
+      - '--max-retries=3'
+      - '--task-timeout=1h'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--region=us-central1'
+      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,PIPELINE_STAGE=refresh_games,MAX_GAMES=15000'
 
 # Images to push to Container Registry
 images:
