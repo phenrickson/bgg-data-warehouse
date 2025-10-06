@@ -4,11 +4,41 @@ import logging
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Literal
 from dotenv import load_dotenv
+
+# Load environment variables once at module level
+load_dotenv()
 
 # Get logger
 logger = logging.getLogger(__name__)
+
+# Define valid environments
+ValidEnvironment = Literal["dev", "test", "prod"]
+VALID_ENVIRONMENTS = ["dev", "test", "prod"]
+
+
+class ConfigError(Exception):
+    """Configuration related errors."""
+
+    pass
+
+
+def get_environment() -> ValidEnvironment:
+    """Get the current environment from ENVIRONMENT variable.
+
+    Returns:
+        The current environment, defaults to 'dev' if not set
+
+    Raises:
+        ConfigError: If environment is invalid
+    """
+    env = os.getenv("ENVIRONMENT", "dev").lower()
+
+    if env not in VALID_ENVIRONMENTS:
+        raise ConfigError(f"Invalid environment '{env}'. Must be one of: {VALID_ENVIRONMENTS}")
+
+    return env
 
 
 def load_config(config_name: str) -> Dict:
@@ -42,79 +72,56 @@ def load_config(config_name: str) -> Dict:
     if config is None:
         config = {}
 
-    # Apply environment variable overrides
-    config = _apply_env_overrides(config)
-
+    # Return YAML config as-is - no overrides needed
     return config
 
 
-def _apply_env_overrides(config: Dict) -> Dict:
-    """Apply environment variable overrides to config.
+def get_bigquery_config(environment: Optional[ValidEnvironment] = None) -> Dict:
+    """Get BigQuery configuration for the specified environment.
 
     Args:
-        config: Configuration dictionary
-
-    Returns:
-        Configuration dictionary with environment overrides applied
-    """
-    # Create a copy to avoid mutating the original
-    config = dict(config)
-
-    # Override project ID if environment variable is set
-    if "GCP_PROJECT_ID" in os.environ:
-        if "project" not in config:
-            config["project"] = {}
-        config["project"]["id"] = os.environ["GCP_PROJECT_ID"]
-
-    # Override GCS bucket if environment variable is set
-    if "GCS_BUCKET" in os.environ:
-        if "storage" not in config:
-            config["storage"] = {}
-        config["storage"]["bucket"] = os.environ["GCS_BUCKET"]
-
-    return config
-
-
-def get_bigquery_config(environment: Optional[str] = None) -> Dict:
-    """Get BigQuery configuration.
-
-    Args:
-        environment: Optional environment name (dev/prod). If not provided,
-                    uses ENVIRONMENT from .env file or default_environment from config.
+        environment: Optional environment name. If not provided,
+                    uses ENVIRONMENT variable or defaults to 'dev'.
 
     Returns:
         Dictionary containing BigQuery configuration
+
+    Raises:
+        ConfigError: If environment is invalid
+        FileNotFoundError: If config file doesn't exist
     """
+    # Get environment
+    if environment is None:
+        environment = get_environment()
+    elif environment not in VALID_ENVIRONMENTS:
+        raise ConfigError(
+            f"Invalid environment '{environment}'. Must be one of: {VALID_ENVIRONMENTS}"
+        )
+
     # Load the base configuration
     config = load_config("bigquery")
 
-    # Load environment from .env if not provided
-    if not environment:
-        load_dotenv()
-        environment = os.getenv("ENVIRONMENT")
+    # Extract environment-specific config from YAML
+    if "environments" in config and environment in config["environments"]:
+        env_config = config["environments"][environment]
 
-    # Get environment
-    env = environment or config.get("default_environment", "dev")
-    if "environments" in config and env not in config["environments"]:
-        raise ValueError(f"Invalid environment: {env}")
-
-    # If this is the old-style config (with environments), return environment-specific config
-    if "environments" in config:
-        env_config = config["environments"][env]
-        return {
-            "project": {
-                "id": env_config["project_id"],
-                "dataset": env_config["dataset"],
-                "location": env_config["location"],
-            },
-            "datasets": config.get("datasets", {}),
-            "tables": config.get("tables", {}),
-            "raw_tables": config.get("raw_tables", {}),
-            "environments": config["environments"],  # Include environments in config
+        # Add standardized project structure
+        config["project"] = {
+            "id": env_config["project_id"],
+            "dataset": env_config["dataset"],
+            "location": env_config["location"],
         }
+
+        # Add storage config if bucket is specified
+        if "bucket" in env_config:
+            config["storage"] = {"bucket": env_config["bucket"]}
     else:
-        # For new-style config (with environment overrides), return the config as-is
-        return config
+        raise ConfigError(f"No configuration found for environment '{environment}'")
+
+    # Add environment metadata
+    config["_environment"] = environment
+
+    return config
 
 
 def get_refresh_config() -> Dict:
@@ -130,4 +137,62 @@ def get_refresh_config() -> Dict:
         "decay_factor": 2.0,
         "max_interval_days": 90,
         "refresh_batch_size": 200,
+    }
+
+
+def get_api_config() -> Dict:
+    """Get API configuration from environment variables.
+
+    Returns:
+        Dictionary containing API configuration
+    """
+    return {
+        "rate_limit": float(os.getenv("BGG_API_RATE_LIMIT", "2.0")),
+        "retry_delay": int(os.getenv("BGG_API_RETRY_DELAY", "5")),
+        "max_retries": int(os.getenv("BGG_MAX_RETRIES", "3")),
+        "batch_size": int(os.getenv("BATCH_SIZE", "100")),  # Keep this one as is for now
+    }
+
+
+def get_logging_config() -> Dict:
+    """Get logging configuration from environment variables.
+
+    Returns:
+        Dictionary containing logging configuration
+    """
+    return {
+        "level": os.getenv("BGG_LOG_LEVEL", "INFO"),
+    }
+
+
+def get_monitoring_config() -> Dict:
+    """Get monitoring configuration from environment variables.
+
+    Returns:
+        Dictionary containing monitoring configuration
+    """
+    return {
+        "freshness_threshold_hours": int(os.getenv("FRESHNESS_THRESHOLD_HOURS", "24")),
+        "quality_check_interval": int(os.getenv("QUALITY_CHECK_INTERVAL", "14400")),
+        "alert_on_failures": os.getenv("ALERT_ON_FAILURES", "true").lower() == "true",
+        "port": int(os.getenv("PORT", "8080")),
+    }
+
+
+# Convenience function for backward compatibility
+def get_config() -> Dict:
+    """Get complete configuration for current environment.
+
+    Returns:
+        Dictionary containing all configuration sections
+    """
+    environment = get_environment()
+
+    return {
+        "environment": environment,
+        "bigquery": get_bigquery_config(environment),
+        "api": get_api_config(),
+        "logging": get_logging_config(),
+        "monitoring": get_monitoring_config(),
+        "refresh": get_refresh_config(),
     }

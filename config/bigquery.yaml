@@ -2,16 +2,19 @@ environments:
   dev:
     project_id: gcp-demos-411520
     dataset: bgg_data_dev
+    bucket: bgg-data-warehouse-dev
     location: US
     
   test:
     project_id: gcp-demos-411520
     dataset: bgg_data_test
+    bucket: bgg-data-warehouse-test
     location: US
     
   prod:
     project_id: gcp-demos-411520
-    dataset: bgg_data
+    dataset: bgg_data_prod
+    bucket: bgg-data-warehouse-prod
     location: US
 
 datasets:

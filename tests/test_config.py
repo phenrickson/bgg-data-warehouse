@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 import yaml
 
-from src.config import load_config, get_bigquery_config
+from src.config import load_config, get_bigquery_config, get_environment, ConfigError
 
 
 @pytest.fixture
@@ -81,28 +81,17 @@ def test_load_config_success(mock_config_file):
         assert config["datasets"]["raw"] == "test_raw"
 
 
-def test_load_config_env_override(mock_config_file):
-    """Test environment variable override."""
-    with mock.patch.dict(os.environ, {"GCP_PROJECT_ID": "env-project", "GCS_BUCKET": "env-bucket"}):
-        # Mock Path(__file__).parent.parent to return our test directory
-        with mock.patch("src.config.Path") as mock_path:
-            mock_path.return_value.parent.parent = mock_config_file.parent.parent
-            config = load_config("bigquery")
-
-            # Environment overrides create new top-level keys
-            assert config["project"]["id"] == "env-project"
-            assert config["storage"]["bucket"] == "env-bucket"
-            # But original environment structure should still exist
-            assert "environments" in config
-
-
 def test_get_bigquery_config(mock_config_file):
     """Test BigQuery config getter."""
     # Mock Path(__file__).parent.parent to return our test directory
-    # Also mock the environment to ensure we get dev environment
+    # Also mock the environment to ensure we get dev environment and clear interfering env vars
     with mock.patch("src.config.Path") as mock_path:
         mock_path.return_value.parent.parent = mock_config_file.parent.parent
-        with mock.patch.dict(os.environ, {"ENVIRONMENT": "dev"}, clear=False):
+        # Clear environment variables that could interfere with the test
+        # Only set ENVIRONMENT, exclude GCP_PROJECT_ID and GCS_BUCKET
+        env_vars = {"ENVIRONMENT": "dev"}
+
+        with mock.patch.dict(os.environ, env_vars, clear=True):
             config = get_bigquery_config()
 
             # Check the structure returned by get_bigquery_config
@@ -116,3 +105,63 @@ def test_get_bigquery_config(mock_config_file):
             assert config["project"]["id"] == "test-project"
             assert config["project"]["dataset"] == "test_dataset_dev"  # default to dev
             assert config["project"]["location"] == "US"
+
+
+def test_get_environment_default():
+    """Test get_environment with default value."""
+    with mock.patch.dict(os.environ, {}, clear=True):
+        env = get_environment()
+        assert env == "dev"
+
+
+def test_get_environment_from_env_var():
+    """Test get_environment with environment variable set."""
+    with mock.patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+        env = get_environment()
+        assert env == "prod"
+
+
+def test_get_environment_invalid():
+    """Test get_environment with invalid environment."""
+    with mock.patch.dict(os.environ, {"ENVIRONMENT": "invalid"}):
+        with pytest.raises(ConfigError):
+            get_environment()
+
+
+def test_get_bigquery_config_invalid_environment(mock_config_file):
+    """Test get_bigquery_config with invalid environment."""
+    with mock.patch("src.config.Path") as mock_path:
+        mock_path.return_value.parent.parent = mock_config_file.parent.parent
+        with pytest.raises(ConfigError):
+            get_bigquery_config("invalid")
+
+
+def test_get_bigquery_config_with_specific_environment(mock_config_file):
+    """Test get_bigquery_config with specific environment parameter."""
+    with mock.patch("src.config.Path") as mock_path:
+        mock_path.return_value.parent.parent = mock_config_file.parent.parent
+        # Clear environment variables that could interfere with the test
+        # Only set minimal environment, exclude GCP_PROJECT_ID and GCS_BUCKET
+        env_vars = {}
+
+        with mock.patch.dict(os.environ, env_vars, clear=True):
+            config = get_bigquery_config("test")
+
+            assert config["project"]["id"] == "test-project"
+            assert config["project"]["dataset"] == "test_dataset_test"
+            assert config["_environment"] == "test"
+
+
+def test_get_bigquery_config_prod_dataset_no_suffix(mock_config_file):
+    """Test that prod environment doesn't get dataset suffix."""
+    with mock.patch("src.config.Path") as mock_path:
+        mock_path.return_value.parent.parent = mock_config_file.parent.parent
+        # Clear environment variables that could interfere with the test
+        # Only set minimal environment, exclude GCP_PROJECT_ID and GCS_BUCKET
+        env_vars = {}
+
+        with mock.patch.dict(os.environ, env_vars, clear=True):
+            config = get_bigquery_config("prod")
+
+            assert config["project"]["dataset"] == "test_dataset_prod"
+            assert config["_environment"] == "prod"

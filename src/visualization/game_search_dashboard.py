@@ -19,23 +19,8 @@ st.set_page_config(page_title="BGG Game Search", page_icon="🎲", layout="wide"
 load_dotenv()
 
 
-# BigQuery configuration
-def get_bigquery_config():
-    config_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "bigquery.yaml"
-    )
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    env = os.getenv("ENVIRONMENT", "dev")
-    env_config = config["environments"][env]
-    return {
-        "project": {
-            "id": env_config["project_id"],
-            "dataset": env_config["dataset"],
-            "location": env_config["location"],
-        }
-    }
+# Import the centralized config function
+from src.config import get_bigquery_config
 
 
 # Initialize BigQuery client
