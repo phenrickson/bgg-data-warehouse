@@ -71,7 +71,7 @@ def add_refresh_columns(environment: str = None):
             ) DAY)
     FROM (
         SELECT DISTINCT game_id, year_published
-        FROM `{config['project']['id']}.{config['project']['dataset']}.games`
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.games`
     ) AS g
     WHERE r.game_id = g.game_id 
       AND (r.last_refresh_timestamp IS NULL OR r.last_refresh_timestamp != r.fetch_timestamp)

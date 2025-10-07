@@ -148,7 +148,6 @@ class TestRefreshStrategy:
             with patch.object(self.fetcher.bq_client, "get_table") as mock_get_table:
                 with patch.object(self.fetcher.bq_client, "load_table_from_json") as mock_load:
                     with patch.object(self.fetcher.bq_client, "query") as mock_query:
-
                         # Mock table schema
                         mock_table = Mock()
                         mock_table.schema = []
@@ -186,7 +185,6 @@ class TestRefreshStrategy:
         with patch.object(self.fetcher, "get_unfetched_ids", return_value=mock_games):
             with patch.object(self.fetcher.api_client, "get_thing") as mock_api:
                 with patch.object(self.fetcher, "store_response") as mock_store:
-
                     # Mock API response
                     mock_api.return_value = (
                         '{"items": {"item": [{"@id": "1001"}, {"@id": "1002"}]}}'

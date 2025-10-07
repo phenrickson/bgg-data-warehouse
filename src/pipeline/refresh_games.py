@@ -45,7 +45,7 @@ class RefreshPipeline(BaseBGGPipeline):
             # Count games already processed in current hour
             processed_query = f"""
             SELECT COUNT(*) as count
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.raw_responses`
+            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.raw_responses`
             WHERE last_refresh_timestamp >= TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), HOUR)
             """
 
@@ -64,7 +64,7 @@ class RefreshPipeline(BaseBGGPipeline):
 
         query = f"""
         SELECT game_id 
-        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.raw_responses`
+        FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.raw_responses`
         WHERE next_refresh_due < CURRENT_TIMESTAMP()
         ORDER BY next_refresh_due ASC
         LIMIT @batch_size
@@ -87,7 +87,7 @@ class RefreshPipeline(BaseBGGPipeline):
         game_ids_str = ",".join(str(id) for id in game_ids)
 
         query = f"""
-        UPDATE `{self.config['project']['id']}.{self.config['datasets']['raw']}.raw_responses` AS r
+        UPDATE `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.raw_responses` AS r
         SET last_refresh_timestamp = CURRENT_TIMESTAMP(),
             refresh_count = refresh_count + 1,
             next_refresh_due = TIMESTAMP_ADD(
@@ -98,7 +98,7 @@ class RefreshPipeline(BaseBGGPipeline):
                         GREATEST(0, EXTRACT(YEAR FROM CURRENT_DATE()) - COALESCE(g.year_published, EXTRACT(YEAR FROM CURRENT_DATE()))))
                     AS INT64)
                 ) DAY)
-        FROM `{self.config['project']['id']}.{self.config['project']['dataset']}.games` AS g
+        FROM `{self.config["project"]["id"]}.{self.config["project"]["dataset"]}.games` AS g
         WHERE r.game_id = g.game_id AND r.game_id IN ({game_ids_str})
         """
 
@@ -167,10 +167,10 @@ class RefreshPipeline(BaseBGGPipeline):
         # Get unfetched games count
         unfetched_query = f"""
         SELECT COUNT(*) as count
-        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.thing_ids` t
+        FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.thing_ids` t
         WHERE NOT EXISTS (
             SELECT 1 
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.raw_responses` r
+            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.raw_responses` r
             WHERE t.game_id = r.game_id
         )
         AND t.type = 'boardgame'
@@ -188,8 +188,8 @@ class RefreshPipeline(BaseBGGPipeline):
             r.last_refresh_timestamp,
             r.refresh_count,
             EXTRACT(YEAR FROM CURRENT_DATE()) as current_year
-          FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.raw_responses` r
-          JOIN `{self.config['project']['id']}.{self.config['project']['dataset']}.games` g
+          FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.raw_responses` r
+          JOIN `{self.config["project"]["id"]}.{self.config["project"]["dataset"]}.games` g
             ON r.game_id = g.game_id
           WHERE r.processed = TRUE
             AND r.last_refresh_timestamp IS NOT NULL
@@ -201,11 +201,11 @@ class RefreshPipeline(BaseBGGPipeline):
             last_refresh_timestamp,
             refresh_count,
             CASE 
-              WHEN year_published > current_year THEN {self.refresh_config.get('upcoming_interval_days', 7)}
-              WHEN year_published = current_year THEN {self.refresh_config['base_interval_days']}
-              ELSE LEAST({self.refresh_config['max_interval_days']}, 
-                         {self.refresh_config['base_interval_days']} * LEAST(POW({self.refresh_config['decay_factor']}, LEAST(current_year - year_published, 10)), 
-                               {self.refresh_config['max_interval_days']}))
+              WHEN year_published > current_year THEN {self.refresh_config.get("upcoming_interval_days", 7)}
+              WHEN year_published = current_year THEN {self.refresh_config["base_interval_days"]}
+              ELSE LEAST({self.refresh_config["max_interval_days"]}, 
+                         {self.refresh_config["base_interval_days"]} * LEAST(POW({self.refresh_config["decay_factor"]}, LEAST(current_year - year_published, 10)), 
+                               {self.refresh_config["max_interval_days"]}))
             END as refresh_interval_days
           FROM game_years
         ),

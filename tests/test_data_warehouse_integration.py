@@ -16,7 +16,6 @@ from src.id_fetcher.fetcher import BGGIDFetcher
 from src.api_client.client import BGGAPIClient
 from src.pipeline.fetch_responses import BGGResponseFetcher
 from src.pipeline.process_responses import BGGResponseProcessor
-from src.quality_monitor.monitor import DataQualityMonitor
 
 
 class TestDataWarehouseIntegration:
@@ -86,12 +85,12 @@ class TestDataWarehouseIntegration:
 
                 # fetch_game_ids returns list of integers
                 assert len(game_ids) > 0, "No game IDs retrieved"
-                assert (
-                    len(game_ids) <= test_config["max_games_to_fetch"]
-                ), "Exceeded max games to fetch"
-                assert all(
-                    isinstance(game_id, int) for game_id in game_ids
-                ), "Game IDs should be integers"
+                assert len(game_ids) <= test_config["max_games_to_fetch"], (
+                    "Exceeded max games to fetch"
+                )
+                assert all(isinstance(game_id, int) for game_id in game_ids), (
+                    "Game IDs should be integers"
+                )
 
     def test_response_fetching(self, test_config, mock_game_ids, mock_game_responses):
         """Test game response fetching mechanism."""
@@ -145,7 +144,6 @@ class TestDataWarehouseIntegration:
                 patch.object(response_processor.processor, "prepare_for_bigquery") as mock_prepare,
                 patch.object(response_processor.processor, "validate_data") as mock_validate,
             ):
-
                 # Mock successful game processing - return different games for each call
                 mock_process_game.side_effect = [
                     {
@@ -176,38 +174,6 @@ class TestDataWarehouseIntegration:
                         assert success, "Processing batch failed"
                         assert mock_process_game.call_count > 0, "No games processed"
                         assert mock_load.call_count > 0, "No games loaded"
-
-    def test_data_quality_monitoring(self, test_config):
-        """Test data quality monitoring mechanism."""
-        quality_monitor = DataQualityMonitor(config=test_config)
-
-        with patch.object(quality_monitor, "check_completeness") as mock_completeness:
-            with patch.object(quality_monitor, "check_freshness") as mock_freshness:
-                with patch.object(quality_monitor, "check_validity") as mock_validity:
-
-                    # Mock all checks to pass
-                    mock_completeness.return_value = True
-                    mock_freshness.return_value = True
-                    mock_validity.return_value = True
-
-                    # Run all quality checks
-                    quality_results = quality_monitor.run_all_checks()
-
-                    # Verify the actual return structure
-                    expected_checks = [
-                        "games_completeness",
-                        "responses_completeness",
-                        "games_freshness",
-                        "responses_freshness",
-                        "games_validity",
-                    ]
-
-                    for check in expected_checks:
-                        assert check in quality_results, f"Missing check: {check}"
-                        assert quality_results[check] is True, f"Check {check} failed"
-
-                    # Verify all checks passed
-                    assert all(quality_results.values()), "Some quality checks failed"
 
 
 if __name__ == "__main__":

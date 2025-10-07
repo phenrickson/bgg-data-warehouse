@@ -63,7 +63,7 @@ class BGGResponseProcessor:
 
         # Use the main dataset for processed tables
         self.processed_games_table = (
-            f"{self.config['project']['id']}." f"{self.config['project']['dataset']}." "games"
+            f"{self.config['project']['id']}.{self.config['project']['dataset']}.games"
         )
 
     def _convert_dataframe_to_list(self, df: Any) -> List[Dict]:
@@ -198,7 +198,7 @@ class BGGResponseProcessor:
                         process_status = 'no_response',
                         process_timestamp = CURRENT_TIMESTAMP(),
                         process_attempt = process_attempt + 1
-                    WHERE game_id = {row['game_id']}
+                    WHERE game_id = {row["game_id"]}
                     """
                     try:
                         query_job = self.bq_client.query(update_query)
@@ -231,7 +231,7 @@ class BGGResponseProcessor:
                         process_status = 'parse_error',
                         process_timestamp = CURRENT_TIMESTAMP(),
                         process_attempt = process_attempt + 1
-                    WHERE game_id = {row['game_id']}
+                    WHERE game_id = {row["game_id"]}
                     """
                     try:
                         query_job = self.bq_client.query(update_query)
@@ -269,7 +269,6 @@ class BGGResponseProcessor:
         # Process each response
         for response in responses:
             try:
-
                 # Attempt to process game with game_type
                 processed_game = self.processor.process_game(
                     response["game_id"],
@@ -292,7 +291,7 @@ class BGGResponseProcessor:
                         process_status = 'failed',
                         process_timestamp = CURRENT_TIMESTAMP(),
                         process_attempt = process_attempt + 1
-                    WHERE game_id = {response['game_id']}
+                    WHERE game_id = {response["game_id"]}
                     """
                     try:
                         query_job = self.bq_client.query(update_query)
@@ -314,7 +313,7 @@ class BGGResponseProcessor:
                     process_status = 'error',
                     process_timestamp = CURRENT_TIMESTAMP(),
                     process_attempt = process_attempt + 1
-                WHERE game_id = {response['game_id']}
+                WHERE game_id = {response["game_id"]}
                 """
                 try:
                     query_job = self.bq_client.query(update_query)

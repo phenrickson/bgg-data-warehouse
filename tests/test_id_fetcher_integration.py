@@ -33,17 +33,17 @@ def test_can_download_and_parse_ids():
             # Parse and validate content
             games = fetcher.parse_ids(file_path)
             assert len(games) > 0, "No games parsed from file"
-            assert (
-                len(games) > 100000
-            ), f"Expected many games, got {len(games)}"  # BGG has 100k+ games
+            assert len(games) > 100000, (
+                f"Expected many games, got {len(games)}"
+            )  # BGG has 100k+ games
 
             # Validate data structure of first few games
             for i, game in enumerate(games[:10]):
                 assert "game_id" in game, f"Game {i} missing game_id"
                 assert "type" in game, f"Game {i} missing type"
-                assert isinstance(
-                    game["game_id"], int
-                ), f"Game {i} game_id is not int: {type(game['game_id'])}"
+                assert isinstance(game["game_id"], int), (
+                    f"Game {i} game_id is not int: {type(game['game_id'])}"
+                )
                 assert game["type"] in [
                     "boardgame",
                     "boardgameexpansion",
@@ -71,16 +71,16 @@ def test_file_format_validation():
             # Each line should be "ID type"
             for i, line in enumerate(lines):
                 parts = line.split()
-                assert len(parts) == 2, f"Line {i+1} has {len(parts)} parts, expected 2: '{line}'"
-                assert parts[0].isdigit(), f"Line {i+1} first part is not numeric: '{parts[0]}'"
+                assert len(parts) == 2, f"Line {i + 1} has {len(parts)} parts, expected 2: '{line}'"
+                assert parts[0].isdigit(), f"Line {i + 1} first part is not numeric: '{parts[0]}'"
                 assert parts[1] in [
                     "boardgame",
                     "boardgameexpansion",
-                ], f"Line {i+1} has invalid type: '{parts[1]}'"
+                ], f"Line {i + 1} has invalid type: '{parts[1]}'"
 
                 # Validate the ID is reasonable (positive integer)
                 game_id = int(parts[0])
-                assert game_id > 0, f"Line {i+1} has invalid game ID: {game_id}"
+                assert game_id > 0, f"Line {i + 1} has invalid game ID: {game_id}"
 
         except Exception as e:
             pytest.fail(f"Failed to validate file format: {e}")
@@ -127,14 +127,14 @@ def test_game_types_distribution():
             assert "boardgameexpansion" in type_counts, "No expansions found"
 
             # Boardgames should be much more numerous than expansions
-            assert (
-                type_counts["boardgame"] > type_counts["boardgameexpansion"]
-            ), f"Expected more boardgames than expansions: {type_counts}"
+            assert type_counts["boardgame"] > type_counts["boardgameexpansion"], (
+                f"Expected more boardgames than expansions: {type_counts}"
+            )
 
             # Should have many of each type
-            assert (
-                type_counts["boardgame"] > 10000
-            ), f"Too few boardgames: {type_counts['boardgame']}"
+            assert type_counts["boardgame"] > 10000, (
+                f"Too few boardgames: {type_counts['boardgame']}"
+            )
 
         except Exception as e:
             pytest.fail(f"Failed to analyze game type distribution: {e}")

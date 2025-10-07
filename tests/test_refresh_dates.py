@@ -39,7 +39,6 @@ class TestRefreshDatesFix:
             patch("src.pipeline.refresh_games.BGGResponseFetcher"),
             patch("src.pipeline.refresh_games.BGGResponseProcessor"),
         ):
-
             pipeline = RefreshPipeline(environment="test")
             pipeline.execute_query = Mock()
             return pipeline

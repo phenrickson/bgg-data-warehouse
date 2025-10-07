@@ -64,7 +64,7 @@ class BGGResponseFetcher:
         try:
             # Clean up old in-progress entries first
             cleanup_query = f"""
-            DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+            DELETE FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["fetch_in_progress"]["name"]}`
             WHERE fetch_start_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
             """
             self.bq_client.query(cleanup_query).result()
@@ -110,12 +110,12 @@ class BGGResponseFetcher:
             FROM input_ids i
             WHERE NOT EXISTS (
                 SELECT 1 
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
+                FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["raw_responses"]["name"]}` r
                 WHERE i.game_id = r.game_id
             )
             AND NOT EXISTS (
                 SELECT 1
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
+                FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["fetch_in_progress"]["name"]}` f
                 WHERE i.game_id = f.game_id
             )
             LIMIT {self.batch_size}
@@ -123,15 +123,15 @@ class BGGResponseFetcher:
         else:
             query = f"""
             SELECT t.game_id, t.type
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}` t
+            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["thing_ids"]["name"]}` t
             WHERE NOT EXISTS (
                 SELECT 1 
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
+                FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["raw_responses"]["name"]}` r
                 WHERE t.game_id = r.game_id
             )
             AND NOT EXISTS (
                 SELECT 1
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
+                FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["fetch_in_progress"]["name"]}` f
                 WHERE t.game_id = f.game_id
             )
             AND t.type = 'boardgame'
@@ -162,14 +162,14 @@ class BGGResponseFetcher:
             r.last_refresh_timestamp,
             r.refresh_count,
             EXTRACT(YEAR FROM CURRENT_DATE()) as current_year
-          FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
-          JOIN `{self.config['project']['id']}.{self.config['project']['dataset']}.{self.config['tables']['games']['name']}` g
+          FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["raw_responses"]["name"]}` r
+          JOIN `{self.config["project"]["id"]}.{self.config["project"]["dataset"]}.{self.config["tables"]["games"]["name"]}` g
             ON r.game_id = g.game_id
           WHERE r.processed = TRUE
             AND r.last_refresh_timestamp IS NOT NULL
             AND NOT EXISTS (
                 SELECT 1
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
+                FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["fetch_in_progress"]["name"]}` f
                 WHERE r.game_id = f.game_id
             )
         ),
@@ -180,11 +180,11 @@ class BGGResponseFetcher:
             last_refresh_timestamp,
             refresh_count,
             CASE 
-              WHEN year_published > current_year THEN {self.refresh_config['upcoming_interval_days']}  -- Upcoming games
-              WHEN year_published = current_year THEN {self.refresh_config['base_interval_days']}  -- Current year
-              ELSE LEAST({self.refresh_config['max_interval_days']}, 
-                         {self.refresh_config['base_interval_days']} * LEAST(POW({self.refresh_config['decay_factor']}, LEAST(current_year - year_published, 10)), 
-                               {self.refresh_config['max_interval_days']}))  -- Controlled exponential decay
+              WHEN year_published > current_year THEN {self.refresh_config["upcoming_interval_days"]}  -- Upcoming games
+              WHEN year_published = current_year THEN {self.refresh_config["base_interval_days"]}  -- Current year
+              ELSE LEAST({self.refresh_config["max_interval_days"]}, 
+                         {self.refresh_config["base_interval_days"]} * LEAST(POW({self.refresh_config["decay_factor"]}, LEAST(current_year - year_published, 10)), 
+                               {self.refresh_config["max_interval_days"]}))  -- Controlled exponential decay
             END as refresh_interval_days
           FROM game_years
         ),
@@ -225,7 +225,7 @@ class BGGResponseFetcher:
 
         game_ids_str = ", ".join(str(id) for id in game_ids)
         mark_query = f"""
-        INSERT INTO `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+        INSERT INTO `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["fetch_in_progress"]["name"]}`
             (game_id, fetch_start_timestamp)
         SELECT game_id, CURRENT_TIMESTAMP()
         FROM UNNEST([{game_ids_str}]) AS game_id
@@ -388,7 +388,7 @@ class BGGResponseFetcher:
             try:
                 game_ids_str = ",".join(str(row["game_id"]) for row in rows)
                 cleanup_query = f"""
-                DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+                DELETE FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["fetch_in_progress"]["name"]}`
                 WHERE game_id IN ({game_ids_str})
                 """
                 self.bq_client.query(cleanup_query).result()
@@ -413,7 +413,7 @@ class BGGResponseFetcher:
         game_ids_str = ",".join(str(id) for id in game_ids)
 
         update_query = f"""
-        UPDATE `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
+        UPDATE `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["raw_responses"]["name"]}`
         SET 
             last_refresh_timestamp = CURRENT_TIMESTAMP(),
             refresh_count = COALESCE(refresh_count, 0) + 1

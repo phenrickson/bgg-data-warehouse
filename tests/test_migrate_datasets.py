@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch, call
 from src.warehouse.migrate_datasets import get_tables_and_views, migrate_dataset
-from src.scripts.migrate_datasets import main
+from src.warehouse.migrate_datasets import main
 
 
 @pytest.fixture

@@ -48,7 +48,7 @@ class BaseBGGPipeline:
             # First check total number of records
             count_query = f"""
             SELECT COUNT(*) as total
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
+            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["thing_ids"]["name"]}`
             """
             count_df = self.bq_client.query(count_query).to_dataframe()
             total_records = count_df["total"].iloc[0]
@@ -57,7 +57,7 @@ class BaseBGGPipeline:
             # Check number of processed records
             processed_query = f"""
             SELECT COUNT(*) as processed
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
+            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["thing_ids"]["name"]}`
             WHERE processed = TRUE
             """
             processed_df = self.bq_client.query(processed_query).to_dataframe()
@@ -68,7 +68,7 @@ class BaseBGGPipeline:
             # Get unprocessed IDs
             query = f"""
             SELECT game_id, type
-            FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
+            FROM `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["thing_ids"]["name"]}`
             WHERE NOT processed
             ORDER BY game_id
             LIMIT {limit or self.batch_size}
@@ -94,7 +94,7 @@ class BaseBGGPipeline:
         """
         ids_str = ", ".join(str(id) for id in game_ids)
         query = f"""
-        UPDATE `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}`
+        UPDATE `{self.config["project"]["id"]}.{self.config["datasets"]["raw"]}.{self.config["raw_tables"]["thing_ids"]["name"]}`
         SET 
             processed = {str(success).lower()},
             process_timestamp = CURRENT_TIMESTAMP()

@@ -77,7 +77,9 @@ def mock_api_client():
 def test_fetch_responses_basic_flow(mock_bq_client, mock_api_client):
     """Test basic fetch responses workflow."""
     fetcher = BGGResponseFetcher(
-        batch_size=5, chunk_size=2, environment="test"  # Use test environment
+        batch_size=5,
+        chunk_size=2,
+        environment="test",  # Use test environment
     )
 
     # Replace clients with mocks
@@ -169,15 +171,17 @@ def test_fetch_responses_api_error_handling(mock_bq_client, mock_api_client):
                     found_no_response_call = True
                     assert 13 in call_args[1]["no_response_ids"]
                     break
-            assert (
-                found_no_response_call
-            ), "Expected store_response to be called with no_response_ids"
+            assert found_no_response_call, (
+                "Expected store_response to be called with no_response_ids"
+            )
 
 
 def test_fetch_responses_chunking(mock_bq_client, mock_api_client):
     """Test that fetcher properly chunks requests."""
     fetcher = BGGResponseFetcher(
-        batch_size=10, chunk_size=3, environment="test"  # Small chunk size to test chunking
+        batch_size=10,
+        chunk_size=3,
+        environment="test",  # Small chunk size to test chunking
     )
 
     # Replace clients with mocks

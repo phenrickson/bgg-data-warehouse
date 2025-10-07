@@ -234,7 +234,7 @@ class BGGAPIClient:
             query = f"""
             WITH recent_requests AS (
                 SELECT *
-                FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}`
+                FROM `{config["project"]["id"]}.{config["datasets"]["raw"]}.{config["raw_tables"]["request_log"]["name"]}`
                 WHERE request_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {minutes} MINUTE)
             )
             SELECT
