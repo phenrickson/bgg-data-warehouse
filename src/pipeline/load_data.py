@@ -2,13 +2,12 @@
 
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from datetime import UTC, datetime
 
 import polars as pl
 from dotenv import load_dotenv
-from google.cloud import bigquery, storage
 from google.api_core import retry
+from google.cloud import bigquery
 
 from src.config import get_bigquery_config
 from src.data_processor.processor import BGGDataProcessor
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 class BigQueryLoader:
     """Loads processed BGG data into BigQuery."""
 
-    def __init__(self, environment: Optional[str] = None):
+    def __init__(self, environment: str | None = None):
         """Initialize BigQuery client and configuration.
 
         Args:
@@ -66,7 +65,7 @@ class BigQueryLoader:
         """
         return f"{self.dataset_ref}.{table_name}"
 
-    def _delete_existing_game_records(self, table_name: str, game_ids: Set[int]) -> None:
+    def _delete_existing_game_records(self, table_name: str, game_ids: set[int]) -> None:
         """Delete existing records for specified games from a table.
 
         Args:
@@ -95,7 +94,7 @@ class BigQueryLoader:
             logger.error(f"Failed to delete records from {table_name}: {e}")
             raise
 
-    def _load_dataframe(self, df: pl.DataFrame, table_name: str, game_ids: Set[int] = None) -> None:
+    def _load_dataframe(self, df: pl.DataFrame, table_name: str, game_ids: set[int] = None) -> None:
         """Load a DataFrame into BigQuery.
 
         Args:
@@ -210,7 +209,7 @@ class BigQueryLoader:
             logger.error(f"Failed to load data into {table_name}: {e}")
             raise
 
-    def load_games(self, processed_games: List[Dict]) -> None:
+    def load_games(self, processed_games: list[dict]) -> None:
         """Load processed game data into BigQuery.
 
         Args:
@@ -406,7 +405,7 @@ class BigQueryLoader:
             # Only archive if data exists
             if not result.empty:
                 # Prepare archive file path
-                archive_path = f"archive/{table_name}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.parquet"
+                archive_path = f"archive/{table_name}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.parquet"
 
                 # Upload to GCS
                 blob = self.bucket.blob(archive_path)

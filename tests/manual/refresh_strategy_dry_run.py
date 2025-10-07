@@ -10,9 +10,10 @@ import os
 import sys
 import traceback
 from datetime import datetime
+
 import pandas as pd
-from google.cloud import bigquery
 from dotenv import load_dotenv
+from google.cloud import bigquery
 
 from src.config import get_bigquery_config, get_refresh_config
 
@@ -275,7 +276,7 @@ def simulate_batch_selection(
     remaining_slots = batch_size - unfetched_count
     refresh_count = min(len(refresh_candidates), min(remaining_slots, refresh_batch_size))
 
-    logger.info(f"Batch composition:")
+    logger.info("Batch composition:")
     logger.info(f"  - Unfetched games: {unfetched_count}")
     logger.info(f"  - Refresh games: {refresh_count}")
     logger.info(f"  - Total batch size: {unfetched_count + refresh_count}")

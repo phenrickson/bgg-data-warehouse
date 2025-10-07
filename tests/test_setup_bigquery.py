@@ -1,10 +1,8 @@
 """Tests for BigQuery setup module."""
 
-from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core import exceptions
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 

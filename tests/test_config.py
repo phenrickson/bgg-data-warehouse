@@ -1,13 +1,12 @@
 """Tests for configuration management."""
 
 import os
-from pathlib import Path
 from unittest import mock
 
 import pytest
 import yaml
 
-from src.config import load_config, get_bigquery_config, get_environment, ConfigError
+from src.config import ConfigError, get_bigquery_config, get_environment, load_config
 
 
 @pytest.fixture

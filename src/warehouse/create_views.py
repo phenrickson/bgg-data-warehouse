@@ -1,7 +1,9 @@
 """Script to create BigQuery views for BGG Data Warehouse."""
 
 import logging
+
 from google.cloud import bigquery
+
 from src.config import get_bigquery_config
 
 # Configure basic logging
@@ -20,7 +22,7 @@ def create_views(environment=None):
 
         logger.info(f"Creating views for project: {project_id}, dataset: {dataset}")
 
-        with open("src/warehouse/bigquery_views.sql", "r") as f:
+        with open("src/warehouse/bigquery_views.sql") as f:
             views_sql = f.read()
 
         # Replace placeholders with actual values

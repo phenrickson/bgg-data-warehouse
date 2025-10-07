@@ -2,12 +2,13 @@
 
 import logging
 import os
-from datetime import datetime, timedelta
-from google.cloud import bigquery
-from dotenv import load_dotenv
+from datetime import datetime
 
-from src.pipeline.fetch_responses import BGGResponseFetcher
+from dotenv import load_dotenv
+from google.cloud import bigquery
+
 from src.config import get_bigquery_config, get_refresh_config
+from src.pipeline.fetch_responses import BGGResponseFetcher
 
 # Load environment variables
 load_dotenv()

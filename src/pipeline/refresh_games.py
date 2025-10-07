@@ -2,15 +2,15 @@
 
 import argparse
 import logging
+import math
 import os
 from datetime import datetime
-from typing import List, Dict, Any
-import math
+from typing import Any
 
+from src.config import get_refresh_config
 from src.pipeline.base import BaseBGGPipeline
 from src.pipeline.fetch_responses import BGGResponseFetcher
 from src.pipeline.process_responses import BGGResponseProcessor
-from src.config import get_refresh_config
 from src.utils.logging_config import setup_logging
 
 # Set up logging
@@ -31,7 +31,7 @@ class RefreshPipeline(BaseBGGPipeline):
         self.processor = BGGResponseProcessor(environment=environment)
         self.max_games = max_games
 
-    def get_refresh_batch(self, batch_size: int = 1000) -> List[int]:
+    def get_refresh_batch(self, batch_size: int = 1000) -> list[int]:
         """Get a single batch of games that are due for refresh.
 
         Args:
@@ -74,7 +74,7 @@ class RefreshPipeline(BaseBGGPipeline):
 
         return [row.game_id for row in results]
 
-    def update_refresh_tracking(self, game_ids: List[int]) -> None:
+    def update_refresh_tracking(self, game_ids: list[int]) -> None:
         """Update refresh tracking columns for processed games.
 
         Args:
@@ -111,7 +111,7 @@ class RefreshPipeline(BaseBGGPipeline):
             },
         )
 
-    def execute(self, batch_size: int = 20) -> Dict[str, Any]:
+    def execute(self, batch_size: int = 20) -> dict[str, Any]:
         """Execute one batch of the refresh pipeline.
 
         Args:
@@ -152,7 +152,7 @@ class RefreshPipeline(BaseBGGPipeline):
             "duration_seconds": (datetime.now() - start_time).total_seconds(),
         }
 
-    def count_games_needing_refresh(self) -> Dict[str, Any]:
+    def count_games_needing_refresh(self) -> dict[str, Any]:
         """Count total games that need refresh and calculate batch statistics.
 
         Returns:

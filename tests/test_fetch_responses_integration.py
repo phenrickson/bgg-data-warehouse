@@ -2,11 +2,9 @@
 
 import logging
 from unittest import mock
-from datetime import datetime
 
-import pytest
-import polars as pl
 import pandas as pd
+import pytest
 
 from src.pipeline.fetch_responses import BGGResponseFetcher
 

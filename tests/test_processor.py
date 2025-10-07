@@ -1,7 +1,6 @@
 """Tests for the BGG data processor."""
 
-from datetime import datetime, UTC
-from unittest import mock
+from datetime import UTC, datetime
 
 import polars as pl
 import pytest

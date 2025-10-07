@@ -2,12 +2,11 @@
 
 import os
 import sys
+
 import streamlit as st
-import pandas as pd
-import yaml
+from dotenv import load_dotenv
 from google.auth import default
 from google.cloud import bigquery
-from dotenv import load_dotenv
 
 # Add project to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -21,7 +20,6 @@ load_dotenv()
 
 # Import the centralized config function
 from src.config import get_bigquery_config
-
 
 # Initialize BigQuery client
 credentials, _ = default()

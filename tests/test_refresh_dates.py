@@ -1,11 +1,12 @@
 """Test to verify that refresh date calculation fix works correctly."""
 
-import pytest
 import logging
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime
+from unittest.mock import Mock, patch
+
+import pytest
+
 from src.pipeline.refresh_games import RefreshPipeline
-from src.config import get_refresh_config
 
 logger = logging.getLogger(__name__)
 

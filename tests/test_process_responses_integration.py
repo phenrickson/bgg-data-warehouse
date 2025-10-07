@@ -1,11 +1,12 @@
 """Integration tests for the BGG response processor."""
 
 import logging
-import xmltodict
 from unittest import mock
 
-import pytest
 import polars as pl
+import pytest
+import xmltodict
+
 from src.pipeline.process_responses import BGGResponseProcessor
 
 # Configure logging
@@ -106,7 +107,7 @@ def mock_bq_client():
                 # Add fetch_timestamp to match expected structure
                 row_data = row.copy()
                 if "fetch_timestamp" not in row_data:
-                    from datetime import datetime, UTC
+                    from datetime import UTC, datetime
 
                     row_data["fetch_timestamp"] = datetime.now(UTC)
 

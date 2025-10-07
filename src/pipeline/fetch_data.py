@@ -2,15 +2,14 @@
 
 import logging
 from pathlib import Path
-from typing import List
 
 from google.cloud import bigquery
 
-from ..id_fetcher.fetcher import BGGIDFetcher
 from ..api_client.client import BGGAPIClient
-from ..data_processor.processor import BGGDataProcessor
-from ..pipeline.load_data import DataLoader
 from ..config import get_bigquery_config
+from ..data_processor.processor import BGGDataProcessor
+from ..id_fetcher.fetcher import BGGIDFetcher
+from ..pipeline.load_data import DataLoader
 from ..utils.logging_config import setup_logging
 
 # Set up logging
@@ -53,7 +52,7 @@ class BGGPipeline:
         self.loader = DataLoader(environment=environment)
         self.bq_client = bigquery.Client()
 
-    def get_unprocessed_ids(self) -> List[dict]:
+    def get_unprocessed_ids(self) -> list[dict]:
         """Get IDs that haven't been processed yet.
 
         Returns:
@@ -102,7 +101,7 @@ class BGGPipeline:
             logger.error(f"Failed to fetch unprocessed IDs: {e}")
             return []
 
-    def process_specific_games(self, game_ids: List[int]) -> None:
+    def process_specific_games(self, game_ids: list[int]) -> None:
         """Process and load specific games.
 
         Args:
@@ -131,7 +130,7 @@ class BGGPipeline:
             logger.error(f"Failed to process specific games: {e}")
             raise
 
-    def process_and_load_batch(self, games: List[dict]) -> bool:
+    def process_and_load_batch(self, games: list[dict]) -> bool:
         """Process and load a batch of games.
 
         Args:
@@ -229,7 +228,7 @@ class BGGPipeline:
             logger.error("Failed to load batch to BigQuery")
             return False
 
-    def mark_ids_as_processed(self, game_ids: List[int], success: bool = True) -> None:
+    def mark_ids_as_processed(self, game_ids: list[int], success: bool = True) -> None:
         """Mark game IDs as processed in BigQuery.
 
         Args:

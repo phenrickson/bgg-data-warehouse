@@ -2,7 +2,6 @@
 
 import logging
 import sys
-from typing import List
 
 from ..pipeline.fetch_data import BGGPipeline
 from ..utils.logging_config import setup_logging
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 setup_logging()
 
 
-def load_games(game_ids: List[int] = None, batch_size: int = 100) -> None:
+def load_games(game_ids: list[int] = None, batch_size: int = 100) -> None:
     """Load games into the dev data warehouse.
 
     Args:

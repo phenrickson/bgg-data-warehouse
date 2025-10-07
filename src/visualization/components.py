@@ -1,8 +1,8 @@
 """Reusable components for the monitoring dashboard."""
 
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
 import streamlit as st
 
 

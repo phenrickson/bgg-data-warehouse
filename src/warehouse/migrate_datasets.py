@@ -3,10 +3,10 @@
 import argparse
 import logging
 import os
-from typing import List, Optional
 
 from dotenv import load_dotenv
 from google.cloud import bigquery
+
 from src.utils.logging_config import setup_logging
 
 # Set up logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 setup_logging()
 
 
-def get_tables_and_views(client: bigquery.Client, dataset_ref: str) -> tuple[List[str], List[str]]:
+def get_tables_and_views(client: bigquery.Client, dataset_ref: str) -> tuple[list[str], list[str]]:
     """
     Retrieve all table and view names in a given dataset, separated by type.
 
@@ -41,7 +41,7 @@ def get_tables_and_views(client: bigquery.Client, dataset_ref: str) -> tuple[Lis
 def migrate_dataset(
     source_dataset: str,
     dest_dataset: str,
-    project_id: Optional[str] = None,
+    project_id: str | None = None,
 ) -> None:
     """
     Migrate an entire dataset, copying all tables.

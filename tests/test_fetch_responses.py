@@ -1,9 +1,11 @@
 """Integration tests for fetch_responses pipeline."""
 
-import pytest
 import ast
-from src.pipeline.fetch_responses import BGGResponseFetcher
+
+import pytest
+
 from src.api_client.client import BGGAPIClient
+from src.pipeline.fetch_responses import BGGResponseFetcher
 
 
 def test_fetch_responses_game_id_integrity():

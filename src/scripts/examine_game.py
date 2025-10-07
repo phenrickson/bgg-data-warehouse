@@ -3,6 +3,7 @@
 import json
 import logging
 from collections import Counter
+
 from src.api_client.client import BGGAPIClient
 
 # Set up logging

@@ -1,6 +1,7 @@
 """Migration script to create the fetch_in_progress table."""
 
 import logging
+
 from google.cloud import bigquery
 
 from ...config import get_bigquery_config

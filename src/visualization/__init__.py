@@ -1,6 +1,5 @@
 """BGG Data Warehouse visualization package."""
 
-from . import queries
-from . import components
+from . import components, queries
 
 # Removed dashboard import to prevent circular imports

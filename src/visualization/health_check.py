@@ -1,7 +1,7 @@
 """Health check endpoint for Cloud Run."""
 
-import os
 import http.server
+import os
 import socketserver
 import threading
 import time

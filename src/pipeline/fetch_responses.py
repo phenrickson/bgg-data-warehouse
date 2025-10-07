@@ -1,17 +1,14 @@
 """Pipeline module for fetching and storing raw BGG API responses."""
 
 import logging
-import random
-import inspect
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Union
 
 from google.cloud import bigquery
 
-from ..id_fetcher.fetcher import BGGIDFetcher
 from ..api_client.client import BGGAPIClient
 from ..config import get_bigquery_config, get_refresh_config
+from ..id_fetcher.fetcher import BGGIDFetcher
 from ..utils.logging_config import setup_logging
 
 # Set up logging
@@ -28,7 +25,7 @@ class BGGResponseFetcher:
         chunk_size: int = 20,
         environment: str = "prod",
         max_retries: int = 1,
-        bq_client: Optional[bigquery.Client] = None,
+        bq_client: bigquery.Client | None = None,
     ) -> None:
         """Initialize the fetcher.
 
@@ -50,8 +47,8 @@ class BGGResponseFetcher:
         self.bq_client = bq_client or bigquery.Client()
 
     def get_unfetched_ids(
-        self, game_ids: Optional[List[int]] = None, include_refresh: bool = True
-    ) -> List[Dict]:
+        self, game_ids: list[int] | None = None, include_refresh: bool = True
+    ) -> list[dict]:
         """Get IDs that need fetching (new + refresh).
 
         Args:
@@ -98,7 +95,7 @@ class BGGResponseFetcher:
             logger.error(f"Failed to fetch games for processing: {e}")
             return []
 
-    def _get_unfetched_games(self, game_ids: Optional[List[int]] = None) -> List[Dict]:
+    def _get_unfetched_games(self, game_ids: list[int] | None = None) -> list[dict]:
         """Get games that have never been fetched."""
         if game_ids:
             query = f"""
@@ -149,7 +146,7 @@ class BGGResponseFetcher:
             for _, row in df.iterrows()
         ]
 
-    def _get_refresh_candidates(self, limit: int) -> List[Dict]:
+    def _get_refresh_candidates(self, limit: int) -> list[dict]:
         """Get games due for refresh based on exponential decay."""
         if limit <= 0:
             return []
@@ -218,7 +215,7 @@ class BGGResponseFetcher:
             logger.error(f"Failed to get refresh candidates: {e}")
             return []
 
-    def _mark_games_in_progress(self, game_ids: List[int]) -> None:
+    def _mark_games_in_progress(self, game_ids: list[int]) -> None:
         """Mark games as currently being fetched."""
         if not game_ids:
             return
@@ -234,9 +231,9 @@ class BGGResponseFetcher:
 
     def store_response(
         self,
-        game_ids: List[int],
+        game_ids: list[int],
         response_data: str,
-        no_response_ids: Optional[List[int]] = None,
+        no_response_ids: list[int] | None = None,
         is_refresh: bool = False,
     ) -> None:
         """Store raw API response in BigQuery using load jobs.
@@ -405,7 +402,7 @@ class BGGResponseFetcher:
 
             raise
 
-    def _update_refresh_tracking(self, game_ids: List[int]) -> None:
+    def _update_refresh_tracking(self, game_ids: list[int]) -> None:
         """Update refresh timestamps and counts for refreshed games."""
         if not game_ids:
             return
@@ -427,7 +424,7 @@ class BGGResponseFetcher:
         except Exception as e:
             logger.error(f"Failed to update refresh tracking: {e}")
 
-    def fetch_batch(self, game_ids: Optional[List[int]] = None) -> bool:
+    def fetch_batch(self, game_ids: list[int] | None = None) -> bool:
         """Fetch and store a batch of responses.
 
         Args:
@@ -546,7 +543,7 @@ class BGGResponseFetcher:
 
         return True
 
-    def run(self, game_ids: Optional[List[int]] = None) -> None:
+    def run(self, game_ids: list[int] | None = None) -> None:
         """Run the fetcher pipeline.
 
         Args:

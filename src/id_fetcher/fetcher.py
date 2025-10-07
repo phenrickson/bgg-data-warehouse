@@ -3,7 +3,6 @@
 import datetime
 import logging
 from pathlib import Path
-from typing import List, Set, Dict, Optional
 from urllib.error import URLError
 from urllib.request import urlretrieve
 
@@ -22,7 +21,7 @@ class BGGIDFetcher:
 
     BGG_IDS_URL = "http://bgg.activityclub.org/bggdata/thingids.txt"
 
-    def __init__(self, config: Optional[Dict] = None) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         """Initialize the fetcher with BigQuery configuration.
 
         Args:
@@ -57,7 +56,7 @@ class BGGIDFetcher:
             logger.error("Failed to download BGG IDs: %s", e)
             raise
 
-    def parse_ids(self, file_path: Path) -> List[dict]:
+    def parse_ids(self, file_path: Path) -> list[dict]:
         """Parse game IDs and types from the downloaded file.
 
         Args:
@@ -68,7 +67,7 @@ class BGGIDFetcher:
         """
         logger.info("Parsing game IDs from %s", file_path)
         games = []
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             content = f.read()
             logger.info("File content: %s", content[:1000])  # Print first 1000 chars
             # File contains "ID type" per line (e.g., "12345 boardgame" or "67890 boardgameexpansion")
@@ -80,7 +79,7 @@ class BGGIDFetcher:
         logger.info("Found %d game IDs", len(games))
         return games
 
-    def get_existing_ids(self) -> Set[tuple]:
+    def get_existing_ids(self) -> set[tuple]:
         """Get existing game IDs and types from BigQuery.
 
         Returns:
@@ -100,7 +99,7 @@ class BGGIDFetcher:
             logger.error("Failed to fetch existing IDs: %s", e)
             return set()
 
-    def upload_new_ids(self, new_games: List[dict]) -> None:
+    def upload_new_ids(self, new_games: list[dict]) -> None:
         """Upload new game IDs to BigQuery.
 
         Args:
@@ -198,7 +197,7 @@ class BGGIDFetcher:
         else:
             logger.info("No new game IDs found")
 
-    def fetch_game_ids(self, config: Optional[Dict] = None) -> List[int]:
+    def fetch_game_ids(self, config: dict | None = None) -> list[int]:
         """
         Fetch game IDs from the downloaded file.
 

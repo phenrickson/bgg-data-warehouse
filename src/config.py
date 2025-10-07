@@ -2,9 +2,10 @@
 
 import logging
 import os
-import yaml
 from pathlib import Path
-from typing import Dict, Optional, Literal
+from typing import Literal
+
+import yaml
 from dotenv import load_dotenv
 
 # Load environment variables once at module level
@@ -41,7 +42,7 @@ def get_environment() -> ValidEnvironment:
     return env
 
 
-def load_config(config_name: str) -> Dict:
+def load_config(config_name: str) -> dict:
     """Load configuration from YAML file.
 
     Args:
@@ -62,7 +63,7 @@ def load_config(config_name: str) -> Dict:
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     try:
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             config = yaml.safe_load(f)
     except yaml.YAMLError as e:
         logger.error(f"Invalid YAML in config file {config_path}: {e}")
@@ -76,7 +77,7 @@ def load_config(config_name: str) -> Dict:
     return config
 
 
-def get_bigquery_config(environment: Optional[ValidEnvironment] = None) -> Dict:
+def get_bigquery_config(environment: ValidEnvironment | None = None) -> dict:
     """Get BigQuery configuration for the specified environment.
 
     Args:
@@ -124,7 +125,7 @@ def get_bigquery_config(environment: Optional[ValidEnvironment] = None) -> Dict:
     return config
 
 
-def get_refresh_config() -> Dict:
+def get_refresh_config() -> dict:
     """Get refresh strategy configuration.
 
     Returns:
@@ -140,7 +141,7 @@ def get_refresh_config() -> Dict:
     }
 
 
-def get_api_config() -> Dict:
+def get_api_config() -> dict:
     """Get API configuration from environment variables.
 
     Returns:
@@ -154,7 +155,7 @@ def get_api_config() -> Dict:
     }
 
 
-def get_logging_config() -> Dict:
+def get_logging_config() -> dict:
     """Get logging configuration from environment variables.
 
     Returns:
@@ -165,7 +166,7 @@ def get_logging_config() -> Dict:
     }
 
 
-def get_monitoring_config() -> Dict:
+def get_monitoring_config() -> dict:
     """Get monitoring configuration from environment variables.
 
     Returns:
@@ -180,7 +181,7 @@ def get_monitoring_config() -> Dict:
 
 
 # Convenience function for backward compatibility
-def get_config() -> Dict:
+def get_config() -> dict:
     """Get complete configuration for current environment.
 
     Returns:

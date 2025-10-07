@@ -1,12 +1,11 @@
 """Tests for the BGG API client."""
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime
 from unittest import mock
 
+import pandas as pd
 import pytest
 import requests
-import pandas as pd
-from google.cloud import bigquery
 
 from src.api_client.client import BGGAPIClient
 

@@ -1,8 +1,8 @@
 """Tests for the refresh pipeline."""
 
-from datetime import datetime, timedelta
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 from src.pipeline.refresh_games import RefreshPipeline
 

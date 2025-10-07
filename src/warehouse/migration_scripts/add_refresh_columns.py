@@ -1,10 +1,11 @@
 """Migration script to add refresh tracking columns to raw_responses table."""
 
-import logging
-import os
 import argparse
+import logging
+
 from dotenv import load_dotenv
 from google.cloud import bigquery
+
 from src.config import get_bigquery_config
 
 # Load environment variables from .env file

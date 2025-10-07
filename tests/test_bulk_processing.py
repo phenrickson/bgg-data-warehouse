@@ -2,13 +2,11 @@
 
 import logging
 import time
-from typing import List
 
 import pytest
 import requests
 import xmltodict
 
-from src.api_client.client import BGGAPIClient
 from src.data_processor.processor import BGGDataProcessor
 
 # Configure logging
@@ -16,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def fetch_games(game_ids: List[int]) -> dict:
+def fetch_games(game_ids: list[int]) -> dict:
     """Helper function to fetch games from BGG API.
 
     Args:

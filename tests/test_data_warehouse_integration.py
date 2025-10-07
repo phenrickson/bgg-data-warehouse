@@ -6,14 +6,14 @@ ensuring that the entire pipeline works as expected from ID fetching
 to data warehouse loading.
 """
 
-import pytest
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import Mock, patch
-import pandas as pd
 
-from src.id_fetcher.fetcher import BGGIDFetcher
+import pytest
+
 from src.api_client.client import BGGAPIClient
+from src.id_fetcher.fetcher import BGGIDFetcher
 from src.pipeline.fetch_responses import BGGResponseFetcher
 from src.pipeline.process_responses import BGGResponseProcessor
 

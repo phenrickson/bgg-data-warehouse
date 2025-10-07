@@ -1,12 +1,12 @@
 """Tests for the BigQuery data loading module."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest import mock
 
 import pandas as pd
 import polars as pl
 import pytest
-from google.cloud import bigquery, storage
+from google.cloud import bigquery
 
 from src.pipeline.load_data import BigQueryLoader
 

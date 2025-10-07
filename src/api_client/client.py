@@ -3,8 +3,7 @@
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, UTC
-from typing import Dict, List, Optional, Union
+from datetime import UTC, datetime
 from urllib.parse import urljoin
 
 import pandas as pd
@@ -43,12 +42,12 @@ class BGGAPIClient:
     def _log_request(
         self,
         request_id: str,
-        game_ids: Optional[Union[int, List[int]]],
+        game_ids: int | list[int] | None,
         start_time: datetime,
         end_time: datetime,
         status_code: int,
         success: bool,
-        error_message: Optional[str],
+        error_message: str | None,
         retry_count: int,
     ) -> None:
         """Log request details to BigQuery and console.
@@ -102,7 +101,7 @@ class BGGAPIClient:
         except Exception as e:
             logger.error(f"Failed to log request to BigQuery: {e}")
 
-    def get_thing(self, game_ids: Union[int, List[int]], stats: bool = True) -> Optional[Dict]:
+    def get_thing(self, game_ids: int | list[int], stats: bool = True) -> dict | None:
         """Get details for one or more games.
 
         Args:
@@ -160,7 +159,7 @@ class BGGAPIClient:
                             end_time=end_time,
                             status_code=response.status_code,
                             success=False,
-                            error_message=f"XML parsing error: {str(e)}",
+                            error_message=f"XML parsing error: {e!s}",
                             retry_count=retry_count,
                         )
                         return None
@@ -217,7 +216,7 @@ class BGGAPIClient:
 
         return None
 
-    def get_request_stats(self, minutes: int = 60) -> Dict[str, Union[int, float]]:
+    def get_request_stats(self, minutes: int = 60) -> dict[str, int | float]:
         """Get statistics about API requests from BigQuery.
 
         Args:

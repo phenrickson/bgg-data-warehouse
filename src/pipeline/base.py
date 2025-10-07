@@ -1,15 +1,14 @@
 """Base pipeline module for BGG data processing."""
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 from google.cloud import bigquery
-import pandas as pd
 
 from ..api_client.client import BGGAPIClient
+from ..config import get_bigquery_config
 from ..data_processor.processor import BGGDataProcessor
 from ..pipeline.load_data import BigQueryLoader
-from ..config import get_bigquery_config
 from ..utils.logging_config import setup_logging
 
 # Set up logging
@@ -35,7 +34,7 @@ class BaseBGGPipeline:
         self.loader = BigQueryLoader(environment=environment)
         self.bq_client = bigquery.Client()
 
-    def get_unprocessed_ids(self, limit: int = None) -> List[dict]:
+    def get_unprocessed_ids(self, limit: int = None) -> list[dict]:
         """Get IDs that haven't been processed yet.
 
         Args:
@@ -85,7 +84,7 @@ class BaseBGGPipeline:
             logger.error(f"Failed to fetch unprocessed IDs: {e}")
             return []
 
-    def mark_ids_as_processed(self, game_ids: List[int], success: bool = True) -> None:
+    def mark_ids_as_processed(self, game_ids: list[int], success: bool = True) -> None:
         """Mark game IDs as processed in BigQuery.
 
         Args:
@@ -107,7 +106,7 @@ class BaseBGGPipeline:
         except Exception as e:
             logger.error(f"Failed to mark IDs as processed: {e}")
 
-    def process_games(self, games: List[dict]) -> List[dict]:
+    def process_games(self, games: list[dict]) -> list[dict]:
         """Process a batch of games.
 
         Args:
@@ -149,7 +148,7 @@ class BaseBGGPipeline:
 
         return processed_games
 
-    def execute_query(self, query: str, params: Optional[Dict] = None) -> List[Any]:
+    def execute_query(self, query: str, params: dict | None = None) -> list[Any]:
         """Execute a BigQuery query.
 
         Args:
@@ -171,7 +170,7 @@ class BaseBGGPipeline:
         query_job = self.bq_client.query(query, job_config=job_config)
         return list(query_job.result())
 
-    def process_and_load_batch(self, games: List[dict]) -> bool:
+    def process_and_load_batch(self, games: list[dict]) -> bool:
         """Process and load a batch of games.
 
         Args:

@@ -1,8 +1,8 @@
 """Module for processing BGG API responses into BigQuery-compatible format."""
 
 import logging
-from datetime import datetime, UTC
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from datetime import UTC, datetime
+from typing import Any
 
 import polars as pl
 
@@ -14,7 +14,7 @@ class BGGDataProcessor:
     class GameStats:
         """Container for game statistics."""
 
-        def __init__(self, stats: Dict[str, Any]):
+        def __init__(self, stats: dict[str, Any]):
             ratings = stats.get("statistics", {}).get("ratings", {})
 
             def safe_int(value: Any) -> int:
@@ -60,7 +60,7 @@ class BGGDataProcessor:
     class GameRanks:
         """Container for game ranking information."""
 
-        def __init__(self, stats: Dict[str, Any]):
+        def __init__(self, stats: dict[str, Any]):
             def safe_int(value: Any) -> int:
                 """Safely convert a value to integer."""
                 if isinstance(value, int):
@@ -125,7 +125,7 @@ class BGGDataProcessor:
                 return 0
         return 0
 
-    def _extract_names(self, item: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
+    def _extract_names(self, item: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
         """Extract primary name and alternate names of the game.
 
         Args:
@@ -172,7 +172,7 @@ class BGGDataProcessor:
 
         return primary_name, alternate_names
 
-    def _extract_year(self, item: Dict[str, Any]) -> Optional[int]:
+    def _extract_year(self, item: dict[str, Any]) -> int | None:
         """Extract the publication year.
 
         Args:
@@ -189,7 +189,7 @@ class BGGDataProcessor:
             int(year_value) if year_value and year_value.isdigit() and int(year_value) > 0 else None
         )
 
-    def _extract_links(self, item: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    def _extract_links(self, item: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         """Extract all linked entities (categories, mechanics, etc.).
 
         Args:
@@ -237,7 +237,7 @@ class BGGDataProcessor:
 
         return result
 
-    def _extract_poll_results(self, item: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    def _extract_poll_results(self, item: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         """Extract poll results from the game data.
 
         Args:
@@ -326,10 +326,10 @@ class BGGDataProcessor:
     def process_game(
         self,
         game_id: int,
-        api_response: Dict[str, Any],
+        api_response: dict[str, Any],
         game_type: str,
-        load_timestamp: Optional[datetime] = None,
-    ) -> Optional[Dict[str, Any]]:
+        load_timestamp: datetime | None = None,
+    ) -> dict[str, Any] | None:
         """Process a game's API response data.
 
         Args:
@@ -424,8 +424,8 @@ class BGGDataProcessor:
             return None
 
     def prepare_for_bigquery(
-        self, processed_games: List[Dict[str, Any]]
-    ) -> Dict[str, pl.DataFrame]:
+        self, processed_games: list[dict[str, Any]]
+    ) -> dict[str, pl.DataFrame]:
         """Prepare processed game data for BigQuery loading.
 
         Args:

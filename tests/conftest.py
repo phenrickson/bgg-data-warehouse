@@ -6,7 +6,6 @@ from unittest import mock
 
 import pytest
 from google.auth import credentials
-from google.cloud import bigquery
 
 
 @pytest.fixture

@@ -1,11 +1,11 @@
 """Tests for the BGG response processor."""
 
 import logging
-from datetime import datetime, UTC
-from unittest.mock import Mock, patch, MagicMock
+from datetime import UTC, datetime
+from unittest.mock import Mock, patch
 
-import pytest
 import polars as pl
+import pytest
 
 from src.pipeline.process_responses import BGGResponseProcessor
 

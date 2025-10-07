@@ -2,8 +2,10 @@
 
 import tempfile
 from pathlib import Path
+
 import pytest
 import requests
+
 from src.id_fetcher.fetcher import BGGIDFetcher
 
 

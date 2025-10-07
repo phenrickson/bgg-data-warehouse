@@ -2,7 +2,8 @@
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import streamlit as st
 
 # Use a hardcoded port value to avoid any issues with environment variables
@@ -12,10 +13,9 @@ print(f"Starting Streamlit on port {port}")
 os.environ["STREAMLIT_SERVER_PORT"] = str(port)
 
 import pandas as pd
-import yaml
+from dotenv import load_dotenv
 from google.auth import default
 from google.cloud import bigquery
-from dotenv import load_dotenv
 
 # add to project path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -27,8 +27,7 @@ st.set_page_config(page_title="BGG Data Warehouse Monitor", page_icon="🎲", la
 load_dotenv()
 
 # Import local modules directly
-import src.visualization.queries as queries
-import src.visualization.components as components
+from src.visualization import components, queries
 
 # Start health check server for Cloud Run
 try:
@@ -78,7 +77,7 @@ def main():
     st.write("Real-time monitoring of the BGG data pipeline")
 
     # Current timestamp
-    current_time = datetime.now(timezone.utc)
+    current_time = datetime.now(UTC)
     st.write(f"Last updated: {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
 
     # Load all metrics data at once

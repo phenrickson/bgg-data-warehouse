@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from google.cloud import bigquery
@@ -35,7 +34,7 @@ class BigQuerySetup:
         self.main_dataset = f"{self.project_id}.{self.config['project']['dataset']}"
         self.raw_dataset = f"{self.project_id}.{self.config['datasets']['raw']}"
 
-    def _get_raw_schema(self, table_name: str) -> List[bigquery.SchemaField]:
+    def _get_raw_schema(self, table_name: str) -> list[bigquery.SchemaField]:
         """Get schema for a raw table.
 
         Args:
@@ -84,7 +83,7 @@ class BigQuerySetup:
         }
         return schemas.get(table_name, [])
 
-    def _get_schema(self, table_name: str) -> List[bigquery.SchemaField]:
+    def _get_schema(self, table_name: str) -> list[bigquery.SchemaField]:
         """Get schema for a warehouse table.
 
         Args:
@@ -231,7 +230,7 @@ class BigQuerySetup:
             logger.error(f"Failed to create dataset: {e}")
             raise
 
-    def create_table(self, table_config: Dict, dataset_ref: str, is_raw: bool = False) -> None:
+    def create_table(self, table_config: dict, dataset_ref: str, is_raw: bool = False) -> None:
         """Create a BigQuery table with the specified configuration.
 
         Args:
@@ -326,7 +325,6 @@ class BigQuerySetup:
 
 def main():
     """Main entry point for BigQuery setup."""
-    import os
 
     environment = os.environ.get("ENVIRONMENT")
     logger.info(f"Setting up BigQuery warehouse for environment: {environment or 'dev'}")

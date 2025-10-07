@@ -1,12 +1,12 @@
 """Tests for the refresh strategy implementation."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import pandas as pd
-from datetime import datetime, UTC
+from unittest.mock import Mock, patch
 
-from src.pipeline.fetch_responses import BGGResponseFetcher
+import pandas as pd
+import pytest
+
 from src.config import get_refresh_config
+from src.pipeline.fetch_responses import BGGResponseFetcher
 
 
 class TestRefreshStrategy:

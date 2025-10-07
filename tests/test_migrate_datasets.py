@@ -1,8 +1,10 @@
 """Tests for dataset migration functionality."""
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, call
-from src.warehouse.migrate_datasets import get_tables_and_views, migrate_dataset, main
+
+from src.warehouse.migrate_datasets import get_tables_and_views, main, migrate_dataset
 
 
 @pytest.fixture
@@ -82,7 +84,7 @@ def test_migrate_dataset_existing_destination(mock_get_tables, mock_bigquery_cli
 
     assert mock_bigquery_client.query.call_count == 2
     calls = mock_bigquery_client.query.call_args_list
-    for query, expected in zip(calls, expected_queries):
+    for query, expected in zip(calls, expected_queries, strict=False):
         assert query[0][0].strip() == expected.strip()
 
 

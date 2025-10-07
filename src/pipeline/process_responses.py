@@ -1,11 +1,10 @@
 """Pipeline module for processing raw BGG API responses."""
 
+import argparse
 import logging
 import os
-import argparse
 import time
-from datetime import datetime, UTC
-from typing import List, Dict, Optional, Any
+from typing import Any
 
 from dotenv import load_dotenv
 from google.cloud import bigquery
@@ -30,8 +29,8 @@ class BGGResponseProcessor:
         self,
         batch_size: int = 100,
         max_retries: int = 3,
-        environment: Optional[str] = None,
-        config: Optional[Dict] = None,
+        environment: str | None = None,
+        config: dict | None = None,
     ) -> None:
         """Initialize the processor.
 
@@ -66,7 +65,7 @@ class BGGResponseProcessor:
             f"{self.config['project']['id']}.{self.config['project']['dataset']}.games"
         )
 
-    def _convert_dataframe_to_list(self, df: Any) -> List[Dict]:
+    def _convert_dataframe_to_list(self, df: Any) -> list[dict]:
         """Convert various DataFrame types to a list of dictionaries.
 
         Args:
@@ -85,7 +84,7 @@ class BGGResponseProcessor:
                     response_data = records.get("response_data", [])
                     return [
                         {"game_id": game_id, "response_data": data}
-                        for game_id, data in zip(game_ids, response_data)
+                        for game_id, data in zip(game_ids, response_data, strict=False)
                     ]
                 elif isinstance(records, list):
                     # Handle list-style mock
@@ -154,7 +153,7 @@ class BGGResponseProcessor:
             logger.error(f"Failed to get unprocessed count: {e}")
             return 0
 
-    def get_unprocessed_responses(self) -> List[Dict]:
+    def get_unprocessed_responses(self) -> list[dict]:
         """Retrieve unprocessed responses from BigQuery.
 
         Returns:
