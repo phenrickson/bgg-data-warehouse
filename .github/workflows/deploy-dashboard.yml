@@ -7,12 +7,23 @@ on:
         - develop
     paths:
       - 'src/visualization/**'
-  workflow_dispatch:  # Allow manual triggers for testing
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy dashboard to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - test
+        - prod
 
 jobs:
   deploy-dashboard:
     name: deploy-dashboard
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -36,8 +47,8 @@ jobs:
           echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
 
           cat << EOF > .env
-          GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
           GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
           EOF
 
@@ -65,16 +76,18 @@ jobs:
           context: .
           file: ./Dockerfile.dashboard
           push: true
-          tags: gcr.io/${{ vars.GCP_PROJECT_ID }}/bgg-dashboard:latest
+          tags: gcr.io/${{ secrets.GCP_PROJECT_ID }}/bgg-dashboard:${{ vars.ENVIRONMENT }}
 
       - name: Deploy Dashboard to Cloud Run
         run: |
-          # Get the project ID from the environment
-          PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
+          # Get the project ID and environment from the environment
+          PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
           
-          gcloud run deploy bgg-dashboard \
-            --image gcr.io/${PROJECT_ID}/bgg-dashboard:latest \
+          echo "Deploying dashboard to environment: ${ENVIRONMENT}"
+          
+          gcloud run deploy bgg-dashboard-${ENVIRONMENT} \
+            --image gcr.io/${PROJECT_ID}/bgg-dashboard:${ENVIRONMENT} \
             --platform managed \
             --region us-central1 \
             --allow-unauthenticated \
@@ -91,4 +104,5 @@ jobs:
 
       - name: Output Dashboard URL
         run: |
-          echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard --platform managed --region us-central1 --format='value(status.url)')"
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard-${ENVIRONMENT} --platform managed --region us-central1 --format='value(status.url)')"

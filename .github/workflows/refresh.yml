@@ -2,12 +2,23 @@ name: BGG Data Refresh
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Run every 4 hours
-  workflow_dispatch:        # Allow manual triggers
+    - cron: '0 */4 * * *'  # Run every 4 hours (dev environment)
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run refresh in'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - test
+        - prod
 
 jobs:
   refresh-data:
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     
     steps:
       - name: Checkout code
@@ -34,6 +45,8 @@ jobs:
 
       - name: Run Refresh Job
         run: |
-          gcloud run jobs execute bgg-refresh-games \
+          echo "Running refresh job in environment: ${{ vars.ENVIRONMENT }}"
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          gcloud run jobs execute bgg-refresh-games-${ENVIRONMENT} \
             --region us-central1 \
             --wait
