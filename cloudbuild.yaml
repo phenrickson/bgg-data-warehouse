@@ -8,56 +8,89 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT}']
 
-  # Deploy Fetch Responses Cloud Run Job
+  # Deploy Fetch Responses Cloud Run Job (create or update)
   - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'jobs'
-      - 'update'
-      - 'bgg-fetch-responses-${_ENVIRONMENT}'
-      - '--image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT}'
-      - '--tasks=1'  # Fewer tasks for fetching
-      - '--max-retries=3'
-      - '--task-timeout=1h'
-      - '--memory=2Gi'
-      - '--cpu=1'
-      - '--region=us-central1'
-      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,PIPELINE_STAGE=fetch_responses'
+      - '-c'
+      - |
+        # Try to update first, if it fails (job doesn't exist), create it
+        gcloud run jobs update bgg-fetch-responses-${_ENVIRONMENT} \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT} \
+          --tasks=1 \
+          --max-retries=3 \
+          --task-timeout=1h \
+          --memory=2Gi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=${_ENVIRONMENT},PIPELINE_STAGE=fetch_responses \
+        || gcloud run jobs create bgg-fetch-responses-${_ENVIRONMENT} \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT} \
+          --tasks=1 \
+          --max-retries=3 \
+          --task-timeout=1h \
+          --memory=2Gi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=${_ENVIRONMENT},PIPELINE_STAGE=fetch_responses
 
-  # Deploy Process Responses Cloud Run Job
+  # Deploy Process Responses Cloud Run Job (create or update)
   - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'jobs'
-      - 'update'
-      - 'bgg-process-responses-${_ENVIRONMENT}'
-      - '--image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT}'
-      - '--tasks=1'  # More tasks for processing
-      - '--max-retries=3'
-      - '--task-timeout=1h'
-      - '--memory=2Gi'
-      - '--cpu=1'
-      - '--region=us-central1'
-      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,PIPELINE_STAGE=process_responses'
+      - '-c'
+      - |
+        # Try to update first, if it fails (job doesn't exist), create it
+        gcloud run jobs update bgg-process-responses-${_ENVIRONMENT} \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT} \
+          --tasks=1 \
+          --max-retries=3 \
+          --task-timeout=1h \
+          --memory=2Gi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=${_ENVIRONMENT},PIPELINE_STAGE=process_responses \
+        || gcloud run jobs create bgg-process-responses-${_ENVIRONMENT} \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT} \
+          --tasks=1 \
+          --max-retries=3 \
+          --task-timeout=1h \
+          --memory=2Gi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=${_ENVIRONMENT},PIPELINE_STAGE=process_responses
 
-  # Deploy Refresh Games Cloud Run Job
+  # Deploy Refresh Games Cloud Run Job (create or update)
   - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'jobs'
-      - 'update'
-      - 'bgg-refresh-games-${_ENVIRONMENT}'
-      - '--image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT}'
-      - '--tasks=1'
-      - '--max-retries=3'
-      - '--task-timeout=1h'
-      - '--memory=2Gi'
-      - '--cpu=1'
-      - '--region=us-central1'
-      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,PIPELINE_STAGE=refresh_games,MAX_GAMES=15000'
+      - '-c'
+      - |
+        # Try to update first, if it fails (job doesn't exist), create it
+        gcloud run jobs update bgg-refresh-games-${_ENVIRONMENT} \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT} \
+          --tasks=1 \
+          --max-retries=3 \
+          --task-timeout=1h \
+          --memory=2Gi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=${_ENVIRONMENT},PIPELINE_STAGE=refresh_games,MAX_GAMES=15000 \
+        || gcloud run jobs create bgg-refresh-games-${_ENVIRONMENT} \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:${_ENVIRONMENT} \
+          --tasks=1 \
+          --max-retries=3 \
+          --task-timeout=1h \
+          --memory=2Gi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=${_ENVIRONMENT},PIPELINE_STAGE=refresh_games,MAX_GAMES=15000
 
 # Images to push to Container Registry
 images:
