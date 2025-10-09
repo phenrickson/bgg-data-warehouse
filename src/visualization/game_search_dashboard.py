@@ -2,12 +2,11 @@
 
 import os
 import sys
+
 import streamlit as st
-import pandas as pd
-import yaml
+from dotenv import load_dotenv
 from google.auth import default
 from google.cloud import bigquery
-from dotenv import load_dotenv
 
 # Add project to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -19,24 +18,8 @@ st.set_page_config(page_title="BGG Game Search", page_icon="🎲", layout="wide"
 load_dotenv()
 
 
-# BigQuery configuration
-def get_bigquery_config():
-    config_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "bigquery.yaml"
-    )
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    env = os.getenv("ENVIRONMENT", "dev")
-    env_config = config["environments"][env]
-    return {
-        "project": {
-            "id": env_config["project_id"],
-            "dataset": env_config["dataset"],
-            "location": env_config["location"],
-        }
-    }
-
+# Import the centralized config function
+from src.config import get_bigquery_config
 
 # Initialize BigQuery client
 credentials, _ = default()
@@ -54,8 +37,8 @@ def get_publishers():
             p.name, 
             COUNT(DISTINCT gp.game_id) as game_count,
             ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT gp.game_id) DESC) as rank
-        FROM `{config['project']['id']}.{config['project']['dataset']}.publishers` p
-        JOIN `{config['project']['id']}.{config['project']['dataset']}.game_publishers` gp 
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.publishers` p
+        JOIN `{config["project"]["id"]}.{config["project"]["dataset"]}.game_publishers` gp 
             ON p.publisher_id = gp.publisher_id
         GROUP BY p.publisher_id, p.name
     )
@@ -77,8 +60,8 @@ def get_designers():
             d.name, 
             COUNT(DISTINCT gd.game_id) as game_count,
             ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT gd.game_id) DESC) as rank
-        FROM `{config['project']['id']}.{config['project']['dataset']}.designers` d
-        JOIN `{config['project']['id']}.{config['project']['dataset']}.game_designers` gd 
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.designers` d
+        JOIN `{config["project"]["id"]}.{config["project"]["dataset"]}.game_designers` gd 
             ON d.designer_id = gd.designer_id
         GROUP BY d.designer_id, d.name
     )
@@ -100,8 +83,8 @@ def get_categories():
             c.name, 
             COUNT(DISTINCT gc.game_id) as game_count,
             ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT gc.game_id) DESC) as rank
-        FROM `{config['project']['id']}.{config['project']['dataset']}.categories` c
-        JOIN `{config['project']['id']}.{config['project']['dataset']}.game_categories` gc 
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.categories` c
+        JOIN `{config["project"]["id"]}.{config["project"]["dataset"]}.game_categories` gc 
             ON c.category_id = gc.category_id
         GROUP BY c.category_id, c.name
     )
@@ -123,8 +106,8 @@ def get_mechanics():
             m.name, 
             COUNT(DISTINCT gm.game_id) as game_count,
             ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT gm.game_id) DESC) as rank
-        FROM `{config['project']['id']}.{config['project']['dataset']}.mechanics` m
-        JOIN `{config['project']['id']}.{config['project']['dataset']}.game_mechanics` gm 
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.mechanics` m
+        JOIN `{config["project"]["id"]}.{config["project"]["dataset"]}.game_mechanics` gm 
             ON m.mechanic_id = gm.mechanic_id
         GROUP BY m.mechanic_id, m.name
     )
@@ -175,7 +158,7 @@ def search_games(
                 END, 
                 '; '
             ) AS best_player_counts
-        FROM `{config['project']['id']}.{config['project']['dataset']}.player_count_recommendations`
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.player_count_recommendations`
         GROUP BY game_id
     ),
     filtered_games AS (
@@ -187,20 +170,20 @@ def search_games(
             g.bayes_average,
             g.average_weight,
             g.users_rated
-        FROM `{config['project']['id']}.{config['project']['dataset']}.games_active` g
+        FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.games_active` g
         WHERE 
             g.bayes_average IS NOT NULL 
             AND g.bayes_average > 0
-            {f'AND g.game_id IN (SELECT game_id FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.game_publishers` WHERE publisher_id IN ({", ".join(map(str, publishers))}))' if publishers else ''}
-            {f'AND g.game_id IN (SELECT game_id FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.game_designers` WHERE designer_id IN ({", ".join(map(str, designers))}))' if designers else ''}
-            {f'AND g.game_id IN (SELECT game_id FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.game_categories` WHERE category_id IN ({", ".join(map(str, categories))}))' if categories else ''}
-            {f'AND g.game_id IN (SELECT game_id FROM `{config["project"]["id"]}.{config["project"]["dataset"]}.game_mechanics` WHERE mechanic_id IN ({", ".join(map(str, mechanics))}))' if mechanics else ''}
-            {f'AND g.year_published >= {min_year}' if min_year else ''}
-            {f'AND g.year_published <= {max_year}' if max_year else ''}
-            {f'AND g.bayes_average >= {min_rating}' if min_rating else ''}
-            {f'AND g.bayes_average <= {max_rating}' if max_rating else ''}
-            {f'AND g.average_weight >= {min_complexity_weight}' if min_complexity_weight is not None else ''}
-            {f'AND g.average_weight <= {max_complexity_weight}' if max_complexity_weight is not None else ''}
+            {f"AND g.game_id IN (SELECT game_id FROM `{config['project']['id']}.{config['project']['dataset']}.game_publishers` WHERE publisher_id IN ({', '.join(map(str, publishers))}))" if publishers else ""}
+            {f"AND g.game_id IN (SELECT game_id FROM `{config['project']['id']}.{config['project']['dataset']}.game_designers` WHERE designer_id IN ({', '.join(map(str, designers))}))" if designers else ""}
+            {f"AND g.game_id IN (SELECT game_id FROM `{config['project']['id']}.{config['project']['dataset']}.game_categories` WHERE category_id IN ({', '.join(map(str, categories))}))" if categories else ""}
+            {f"AND g.game_id IN (SELECT game_id FROM `{config['project']['id']}.{config['project']['dataset']}.game_mechanics` WHERE mechanic_id IN ({', '.join(map(str, mechanics))}))" if mechanics else ""}
+            {f"AND g.year_published >= {min_year}" if min_year else ""}
+            {f"AND g.year_published <= {max_year}" if max_year else ""}
+            {f"AND g.bayes_average >= {min_rating}" if min_rating else ""}
+            {f"AND g.bayes_average <= {max_rating}" if max_rating else ""}
+            {f"AND g.average_weight >= {min_complexity_weight}" if min_complexity_weight is not None else ""}
+            {f"AND g.average_weight <= {max_complexity_weight}" if max_complexity_weight is not None else ""}
     )
     SELECT 
         fg.game_id,
@@ -215,10 +198,10 @@ def search_games(
     FROM filtered_games fg
     LEFT JOIN player_count_data pcd ON fg.game_id = pcd.game_id
     WHERE 1=1
-    {f'AND SAFE_CAST(SPLIT(pcd.recommended_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) >= {min_recommended_player_count}' if min_recommended_player_count else ''}
-    {f'AND SAFE_CAST(SPLIT(pcd.recommended_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) <= {max_recommended_player_count}' if max_recommended_player_count else ''}
-    {f'AND SAFE_CAST(SPLIT(pcd.best_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) >= {min_best_player_count}' if min_best_player_count else ''}
-    {f'AND SAFE_CAST(SPLIT(pcd.best_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) <= {max_best_player_count}' if max_best_player_count else ''}
+    {f'AND SAFE_CAST(SPLIT(pcd.recommended_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) >= {min_recommended_player_count}' if min_recommended_player_count else ""}
+    {f'AND SAFE_CAST(SPLIT(pcd.recommended_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) <= {max_recommended_player_count}' if max_recommended_player_count else ""}
+    {f'AND SAFE_CAST(SPLIT(pcd.best_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) >= {min_best_player_count}' if min_best_player_count else ""}
+    {f'AND SAFE_CAST(SPLIT(pcd.best_player_counts, "; ")[SAFE_OFFSET(0)] AS INT64) <= {max_best_player_count}' if max_best_player_count else ""}
     ORDER BY fg.bayes_average DESC
     LIMIT {limit}
     """

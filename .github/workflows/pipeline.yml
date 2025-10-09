@@ -2,12 +2,23 @@ name: Run BGG Data Warehouse Jobs
 
 on:
   schedule:
-    - cron: '0 */3 * * *'  # Run every 3 hours
-  workflow_dispatch:      # Allow manual triggers for testing
+    - cron: '0 */3 * * *'  # Run every 3 hours (dev environment)
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run pipeline in'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - test
+        - prod
 
 jobs:
   update-warehouse:
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
     
     steps:
       - name: Checkout code
@@ -34,12 +45,15 @@ jobs:
 
       - name: Run Jobs
         run: |
+          echo "Running pipeline in environment: ${{ vars.ENVIRONMENT }}"
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          
           # Run fetch-responses job and wait for completion
-          gcloud run jobs execute bgg-fetch-responses \
+          gcloud run jobs execute bgg-fetch-responses-${ENVIRONMENT} \
             --region us-central1 \
             --wait
           
           # Run process-responses job and wait for completion
-          gcloud run jobs execute bgg-process-responses \
+          gcloud run jobs execute bgg-process-responses-${ENVIRONMENT} \
             --region us-central1 \
             --wait

@@ -1,12 +1,12 @@
-name: Deploy BGG Data Warehouse
+name: BGG Data Refresh
 
 on:
-  push:
-    branches: [ main ]
+  schedule:
+    - cron: '0 */4 * * *'  # Run every 4 hours (dev environment)
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: 'Environment to run refresh in'
         required: true
         default: 'dev'
         type: choice
@@ -16,7 +16,7 @@ on:
         - prod
 
 jobs:
-  deploy:
+  refresh-data:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
     
@@ -43,9 +43,10 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy
+      - name: Run Refresh Job
         run: |
-          echo "Deploying to environment: ${{ vars.ENVIRONMENT }}"
-          # Build and update job configurations
-          gcloud builds submit --config cloudbuild.yaml \
-            --substitutions=_ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          echo "Running refresh job in environment: ${{ vars.ENVIRONMENT }}"
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          gcloud run jobs execute bgg-refresh-games-${ENVIRONMENT} \
+            --region us-central1 \
+            --wait

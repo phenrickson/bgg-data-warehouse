@@ -1,15 +1,20 @@
-.PHONY: requirements test lint clean fetch load update quality create-datasets
+.PHONY: requirements test lint clean fetch load update create-datasets
+
+# Default batch size if not specified
+BATCH_SIZE ?= 100
+ENV ?= test
 
 requirements:
 	uv sync
 
 test:
-	uv run -m pytest
+	uv run pytest tests/
 
-lint:
-	black .
+format:
+	ruff format .
+
+check:
 	ruff check .
-	mypy .
 
 clean:
 	rm -rf .pytest_cache
@@ -27,9 +32,6 @@ fetch-ids:
 fetch-responses:
 	uv run -m src.pipeline.fetch_responses
 
-# Default batch size if not specified
-BATCH_SIZE ?= 100
-
 process-responses:
 	uv run -m src.pipeline.process_responses --batch-size $(BATCH_SIZE)
 
@@ -37,48 +39,34 @@ process-responses:
 create-datasets:
 	uv run -m src.warehouse.setup_bigquery
 
-# Utility tasks
-examine-game:
-	@if [ -z "$(GAME)" ]; then \
-		echo "Usage: make examine-game GAME=1234"; \
-		exit 1; \
-	fi
-	uv run -m src.scripts.examine_game $(GAME)
+# migrate
+migrate-bgg-data-to-test:
+	uv run -m src.warehouse.migrate_datasets \
+	--source-dataset bgg_data_dev \
+	--dest-dataset bgg_data_test \
+	--project-id gcp-demos-411520
 
-check-duplicates:
-	uv run -m src.scripts.check_duplicates
+migrate-bgg-raw-to-test:
+	uv run -m src.warehouse.migrate_datasets \
+	--source-dataset bgg_raw_dev \
+	--dest-dataset bgg_raw_test \
+	--project-id gcp-demos-411520
 
-# Load data tasks (default to dev environment)
-ENV ?= dev
+create-views-test:
+	uv run -m src.warehouse.create_views --environment test
 
-load-unprocessed:
-	ENVIRONMENT=$(ENV) uv run -m src.scripts.load_games
+add-refresh-columns-test:
+	uv run -m src.warehouse.migration_scripts.add_refresh_columns --environment test
 
-load-games:
-	@if [ -z "$(GAMES)" ]; then \
-		echo "Usage: make load-games GAMES='1234 5678 9012' [ENV=prod|dev|test]"; \
-		exit 1; \
-	fi
-	ENVIRONMENT=$(ENV) uv run -m src.scripts.load_games $(GAMES)
+migrate-to-test: migrate-bgg-data-to-test migrate-bgg-raw-to-test create-views-test add-refresh-columns-test
 
-load: load-unprocessed
-	@echo "Loaded all unprocessed games to $(ENV) environment"
+# Refresh data in specified environment (Usage: make refresh ENV=test|dev|prod)
+refresh:
+	uv run -m src.pipeline.refresh_games --environment $(ENV)
 
-update:
-	ENVIRONMENT=$(ENV) uv run -m src.pipeline.update_data
-
-quality:
-	ENVIRONMENT=$(ENV) uv run -m src.quality_monitor.monitor
-
-# Development tasks
-dev-setup: requirements create-datasets-dev
-	@echo "Development environment setup complete"
-
-test-setup: requirements create-datasets-test
-	@echo "Test environment setup complete"
-
-prod-setup: requirements create-datasets-prod
-	@echo "Production environment setup complete"
+# Preview refresh statistics without running (Usage: make refresh-preview ENV=test|dev|prod)
+refresh-preview:
+	uv run -m src.pipeline.refresh_games --environment $(ENV) --preview
 
 # Visualization
 monitor:
@@ -109,7 +97,8 @@ help:
 	@echo "  load-unprocessed Load all unprocessed games (ENV=prod|dev|test, default: dev)"
 	@echo "  load-games      Load specific games (Usage: make load-games GAMES='1234 5678' [ENV=prod|dev|test])"
 	@echo "  update          Update data (ENV=prod|dev|test, default: dev)"
-	@echo "  quality         Run data quality checks (ENV=prod|dev|test, default: dev)"
+	@echo "  refresh         Refresh game data (ENV=prod|dev|test, default: dev)"
+	@echo "  refresh-preview Preview refresh statistics (ENV=prod|dev|test, default: dev)"
 	@echo ""
 	@echo "Utility Tasks:"
 	@echo "  examine-game     Examine a specific game (Usage: make examine-game GAME=1234)"
@@ -119,5 +108,4 @@ help:
 	@echo "Examples:"
 	@echo "  make load ENV=dev                    # Load unprocessed games to dev environment"
 	@echo "  make load-games GAMES='1234' ENV=test # Load specific game to test environment"
-	@echo "  make quality ENV=prod                # Run quality checks on production data"
 	@echo "  make process-responses BATCH_SIZE=50 # Process responses with batch size of 50"

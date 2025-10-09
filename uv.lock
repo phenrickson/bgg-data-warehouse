@@ -70,6 +70,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "requests" },
+    { name = "ruff" },
     { name = "streamlit" },
     { name = "xmltodict" },
 ]
@@ -101,6 +102,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "requests", specifier = ">=2.31.0" },
+    { name = "ruff", specifier = ">=0.11.13" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.2.0" },
     { name = "streamlit", specifier = ">=1.29.0" },
     { name = "xmltodict", specifier = ">=0.13.0" },

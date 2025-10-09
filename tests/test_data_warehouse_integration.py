@@ -6,28 +6,17 @@ ensuring that the entire pipeline works as expected from ID fetching
 to data warehouse loading.
 """
 
-import pytest
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import Mock, patch
-import pandas as pd
 
-from src.id_fetcher.fetcher import BGGIDFetcher
+import pytest
+
 from src.api_client.client import BGGAPIClient
+from src.id_fetcher.fetcher import BGGIDFetcher
 from src.pipeline.fetch_responses import BGGResponseFetcher
 from src.pipeline.process_responses import BGGResponseProcessor
-from src.quality_monitor.monitor import DataQualityMonitor
 
-class MockQueryJob:
-    """Simulate a BigQuery query job result."""
-    def __init__(self, rows):
-        self._rows = rows
-    
-    def __iter__(self):
-        return iter(self._rows)
-    
-    def result(self):
-        return self
 
 class TestDataWarehouseIntegration:
     @pytest.fixture
@@ -36,22 +25,18 @@ class TestDataWarehouseIntegration:
         Provide a test configuration with controlled parameters.
         """
         return {
-            'environment': 'test',
-            'max_games_to_fetch': 50,
-            'batch_size': 10,
-            'chunk_size': 5,
-            'raw_responses_table': 'test-project.test_raw.test_raw_responses',
-            'processed_games_table': 'test-project.test_transformed.test_processed_games',
-            'game_type': 'boardgame',
-            'project': {'id': 'test-project'},
-            'datasets': {
-                'raw': 'test_raw',
-                'transformed': 'test_transformed'
+            "environment": "test",
+            "max_games_to_fetch": 50,
+            "batch_size": 10,
+            "chunk_size": 5,
+            "game_type": "boardgame",
+            "project": {"id": "test-project", "dataset": "test_data"},
+            "datasets": {"raw": "test_raw", "transformed": "test_transformed"},
+            "raw_tables": {
+                "thing_ids": {"name": "test_thing_ids"},
+                "raw_responses": {"name": "test_raw_responses"},
             },
-            'raw_tables': {
-                'thing_ids': {'name': 'test_thing_ids'},
-                'raw_responses': {'name': 'test_raw_responses'}
-            }
+            "tables": {"games": {"name": "games"}},
         }
 
     @pytest.fixture
@@ -63,169 +48,133 @@ class TestDataWarehouseIntegration:
     def mock_game_responses(self, mock_game_ids):
         """Generate mock game responses."""
         return {
-            game_id: f"""
-            <item type="boardgame" id="{game_id}">
-                <name type="primary" value="Game {game_id}"/>
-                <yearpublished value="{2000 + (game_id % 20)}"/>
-                <minplayers value="{1 + (game_id % 4)}"/>
-                <maxplayers value="{2 + (game_id % 6)}"/>
-            </item>
-            """ for game_id in mock_game_ids
+            game_id: {
+                "items": {
+                    "item": {
+                        "@id": str(game_id),
+                        "name": {"@value": f"Game {game_id}"},
+                        "yearpublished": {"@value": str(2000 + (game_id % 20))},
+                        "minplayers": {"@value": str(1 + (game_id % 4))},
+                        "maxplayers": {"@value": str(2 + (game_id % 6))},
+                    }
+                }
+            }
+            for game_id in mock_game_ids
         }
 
     def test_id_fetching(self, test_config, mock_game_ids):
         """Test game ID fetching mechanism."""
-        with patch.object(BGGIDFetcher, 'download_ids') as mock_download:
+        with patch.object(BGGIDFetcher, "download_ids") as mock_download:
             # Simulate ID download
             mock_download.return_value = Mock(spec=os.PathLike)
-            
-            with patch.object(BGGIDFetcher, 'parse_ids') as mock_parse:
-                # Return mock game IDs
+
+            with patch.object(BGGIDFetcher, "parse_ids") as mock_parse:
+                # Return mock game IDs - parse_ids returns list of dicts
                 mock_parse.return_value = [
-                    {"game_id": game_id, "type": "boardgame"} 
-                    for game_id in mock_game_ids[:test_config['max_games_to_fetch']]
+                    {"game_id": game_id, "type": "boardgame"}
+                    for game_id in mock_game_ids[: test_config["max_games_to_fetch"]]
                 ]
-                
+
                 id_fetcher = BGGIDFetcher()
-                game_ids = id_fetcher.fetch_game_ids({
-                    'max_games_to_fetch': test_config['max_games_to_fetch'],
-                    'game_type': test_config.get('game_type', 'boardgame')
-                })
-                
+                game_ids = id_fetcher.fetch_game_ids(
+                    {
+                        "max_games_to_fetch": test_config["max_games_to_fetch"],
+                        "game_type": test_config.get("game_type", "boardgame"),
+                    }
+                )
+
+                # fetch_game_ids returns list of integers
                 assert len(game_ids) > 0, "No game IDs retrieved"
-                assert len(game_ids) <= test_config['max_games_to_fetch'], "Exceeded max games to fetch"
+                assert len(game_ids) <= test_config["max_games_to_fetch"], (
+                    "Exceeded max games to fetch"
+                )
+                assert all(isinstance(game_id, int) for game_id in game_ids), (
+                    "Game IDs should be integers"
+                )
 
     def test_response_fetching(self, test_config, mock_game_ids, mock_game_responses):
         """Test game response fetching mechanism."""
-        with patch.object(BGGResponseFetcher, 'get_unfetched_ids') as mock_unfetched:
-            # Create a mock DataFrame that mimics BigQuery result
-            mock_df = pd.DataFrame({
-                'game_id': mock_game_ids[:test_config['batch_size']],
-                'type': ['boardgame'] * test_config['batch_size']
-            })
+        with patch.object(BGGResponseFetcher, "get_unfetched_ids") as mock_unfetched:
+            # get_unfetched_ids returns list of dicts with priority field
             mock_unfetched.return_value = [
-                {"game_id": game_id, "type": "boardgame"} 
-                for game_id in mock_game_ids[:test_config['batch_size']]
+                {"game_id": game_id, "type": "boardgame", "priority": "unfetched"}
+                for game_id in mock_game_ids[: test_config["batch_size"]]
             ]
-            
-            with patch.object(BGGAPIClient, 'get_thing') as mock_get_thing:
+
+            with patch.object(BGGAPIClient, "get_thing") as mock_get_thing:
                 # Simulate API responses
                 mock_get_thing.return_value = {
                     "items": {
                         "item": [
-                            {"@id": str(game_id), "response": mock_game_responses[game_id]} 
-                            for game_id in mock_game_ids[:test_config['batch_size']]
+                            {"@id": str(game_id)}
+                            for game_id in mock_game_ids[: test_config["batch_size"]]
                         ]
                     }
                 }
-                
+
                 response_fetcher = BGGResponseFetcher(
-                    batch_size=test_config['batch_size'], 
-                    chunk_size=test_config['chunk_size']
+                    batch_size=test_config["batch_size"],
+                    chunk_size=test_config["chunk_size"],
+                    environment="testing",
                 )
-                
-                with patch.object(response_fetcher, 'store_response') as mock_store:
-                    fetch_success = response_fetcher.fetch_batch(mock_game_ids[:test_config['batch_size']])
-                    
+
+                with patch.object(response_fetcher, "store_response") as mock_store:
+                    fetch_success = response_fetcher.fetch_batch()
+
                     assert fetch_success, "Failed to fetch game responses"
                     assert mock_store.call_count > 0, "No responses stored"
 
     def test_response_processing(self, test_config, mock_game_ids, mock_game_responses):
         """Test game response processing mechanism."""
-        response_processor = BGGResponseProcessor(config=test_config)
-        
-        with patch.object(response_processor.bq_client, 'query') as mock_query, \
-             patch.object(response_processor.bq_client, 'insert_rows_json') as mock_insert:
-            # Create a mock query result
-            mock_rows = [
+        response_processor = BGGResponseProcessor(config=test_config, environment="test")
+
+        with patch.object(response_processor, "get_unprocessed_responses") as mock_get_responses:
+            # Mock unprocessed responses
+            mock_get_responses.return_value = [
                 {
-                    'game_id': game_id, 
-                    'response_data': mock_game_responses[game_id]
-                } 
-                for game_id in mock_game_ids[:test_config['max_games_to_fetch']]
+                    "game_id": game_id,
+                    "response_data": mock_game_responses[game_id],
+                    "fetch_timestamp": datetime.now(),
+                }
+                for game_id in mock_game_ids[:5]  # Process 5 games
             ]
-            mock_query_job = MockQueryJob(mock_rows)
-            mock_query.return_value = mock_query_job
-            mock_insert.return_value = []  # No errors
-            
-            with patch.object(response_processor, '_parse_game_response') as mock_parse:
-                # Simulate parsing responses
-                mock_parse.side_effect = [
+
+            with (
+                patch.object(response_processor.processor, "process_game") as mock_process_game,
+                patch.object(response_processor.processor, "prepare_for_bigquery") as mock_prepare,
+                patch.object(response_processor.processor, "validate_data") as mock_validate,
+            ):
+                # Mock successful game processing - return different games for each call
+                mock_process_game.side_effect = [
                     {
                         "game_id": game_id,
-                        "name": f"Game {game_id}",
-                        "year_published": 2000 + (game_id % 20),
-                        "min_players": 1 + (game_id % 4),
-                        "max_players": 2 + (game_id % 6),
-                        "processing_timestamp": datetime.now().isoformat()
+                        "primary_name": f"Test Game {game_id}",
+                        "year_published": 2020,
+                        "min_players": 2,
+                        "max_players": 4,
                     }
-                    for game_id in mock_game_ids[:test_config['max_games_to_fetch']]
+                    for game_id in mock_game_ids[:5]
                 ]
-                
-                process_results = response_processor.process_responses(
-                    mock_game_ids[:test_config['max_games_to_fetch']], 
-                    track_version=True
-                )
-                
-                assert process_results, "Processing failed"
-                assert 'version_timestamp' in process_results, "No version timestamp"
-                assert process_results['total_games_processed'] > 0, "No games processed"
 
-    def test_data_quality_monitoring(self, test_config):
-        """Test data quality monitoring mechanism."""
-        quality_monitor = DataQualityMonitor(config=test_config)
-        
-        with patch.object(quality_monitor.bq_client, 'query') as mock_query:
-            # Simulate query results for quality checks
-            mock_completeness_rows = [
-                {
-                    'total_rows': 50,
-                    'non_null_game_ids': 50,
-                    'non_null_names': 48,
-                    'non_null_years': 45
-                }
-            ]
-            mock_completeness_job = MockQueryJob(mock_completeness_rows)
-            
-            mock_consistency_rows = [
-                {
-                    'total_rows': 50,
-                    'unique_game_ids': 50,
-                    'invalid_player_count': 0,
-                    'invalid_year_count': 0
-                }
-            ]
-            mock_consistency_job = MockQueryJob(mock_consistency_rows)
-            
-            mock_timeliness_rows = [
-                {
-                    'hours_since_last_update': 1,
-                    'days_of_data_span': 1
-                }
-            ]
-            mock_timeliness_job = MockQueryJob(mock_timeliness_rows)
-            
-            mock_query.side_effect = [
-                mock_completeness_job,
-                mock_consistency_job,
-                mock_timeliness_job
-            ]
-            
-            # Manually calculate quality score to match the test expectations
-            def mock_calculate_quality_score(table_results):
-                completeness_score = (
-                    0.4 * (50/50) +  # game_id_completeness
-                    0.3 * (48/50) +  # name_completeness
-                    0.3 * (45/50)    # year_published_completeness
-                )
-                consistency_score = 1.0  # No invalid entries
-                return completeness_score * consistency_score
-            
-            with patch.object(quality_monitor, '_calculate_quality_score', side_effect=mock_calculate_quality_score):
-                quality_results = quality_monitor.run_quality_checks()
-                
-                assert quality_results['overall_quality_score'] > 0.8, "Data quality below threshold"
-                assert not quality_results['critical_issues'], "Critical data quality issues detected"
+                # Mock data preparation and validation
+                mock_prepare.return_value = {"games": []}
+                mock_validate.return_value = True
+
+                with patch.object(response_processor.loader, "load_games") as mock_load:
+                    with patch.object(response_processor.bq_client, "query") as mock_query:
+                        # Mock the update query
+                        mock_job = Mock()
+                        mock_job.result.return_value = None
+                        mock_job.num_dml_affected_rows = 5
+                        mock_query.return_value = mock_job
+
+                        # Process batch
+                        success = response_processor.process_batch()
+
+                        assert success, "Processing batch failed"
+                        assert mock_process_game.call_count > 0, "No games processed"
+                        assert mock_load.call_count > 0, "No games loaded"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
