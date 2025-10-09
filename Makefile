@@ -52,13 +52,13 @@ migrate-bgg-raw-to-test:
 	--dest-dataset bgg_raw_test \
 	--project-id gcp-demos-411520
 
-create-views:
+create-views-test:
 	uv run -m src.warehouse.create_views --environment test
 
-add-refresh-columns:
+add-refresh-columns-test:
 	uv run -m src.warehouse.migration_scripts.add_refresh_columns --environment test
 
-migrate-to-test: migrate-bgg-data-to-test migrate-bgg-raw-to-test create-views-test add-refresh-columns
+migrate-to-test: migrate-bgg-data-to-test migrate-bgg-raw-to-test create-views-test add-refresh-columns-test
 
 # Refresh data in specified environment (Usage: make refresh ENV=test|dev|prod)
 refresh:
