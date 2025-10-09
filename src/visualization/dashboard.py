@@ -29,14 +29,7 @@ load_dotenv()
 # Import local modules directly
 from src.visualization import components, queries
 
-# Start health check server for Cloud Run
-try:
-    from src.visualization.health_check import start_health_check_server
-
-    health_server = start_health_check_server()
-    print("Health check server started")
-except Exception as e:
-    print(f"Warning: Could not start health check server: {e}")
+# Health check is handled by Cloud Run natively, no need for custom health check server
 
 # Load BigQuery config directly
 # Import the centralized config function
@@ -75,6 +68,16 @@ def main():
     """Main dashboard function."""
     st.title("🎲 BGG Data Warehouse Monitoring")
     st.write("Real-time monitoring of the BGG data pipeline")
+
+    # Show environment information
+    config = get_bigquery_config()
+    environment = config.get("_environment", "unknown")
+    dataset = config["project"]["dataset"]
+    project_id = config["project"]["id"]
+
+    st.info(
+        f"**Environment:** {environment.upper()} | **Dataset:** {dataset} | **Project:** {project_id}"
+    )
 
     # Current timestamp
     current_time = datetime.now(UTC)
