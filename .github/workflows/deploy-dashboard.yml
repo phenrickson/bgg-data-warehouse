@@ -32,15 +32,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install UV
-        run: pip install uv
-
       - name: Setup Environment
         run: |
           mkdir -p credentials
@@ -49,7 +40,7 @@ jobs:
           cat << EOF > .env
           GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT }}
-          GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
           EOF
 
       - name: Google Cloud Auth
@@ -60,49 +51,9 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Configure Docker
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Configure Docker auth for Artifact Registry
+      - name: Deploy Dashboard
         run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.dashboard
-          push: true
-          tags: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/bgg-data-warehouse/dashboard:${{ vars.ENVIRONMENT }}
-
-      - name: Deploy Dashboard to Cloud Run
-        run: |
-          # Get the project ID and environment from the environment
-          PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT }}
-          
-          echo "Deploying dashboard to environment: ${ENVIRONMENT}"
-          
-          gcloud run deploy bgg-dashboard-${ENVIRONMENT} \
-            --image us-central1-docker.pkg.dev/${PROJECT_ID}/bgg-data-warehouse/dashboard:${ENVIRONMENT} \
-            --platform managed \
-            --region us-central1 \
-            --allow-unauthenticated \
-            --memory 1Gi \
-            --cpu 1 \
-            --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
-            --set-env-vars="ENVIRONMENT=${ENVIRONMENT},GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json,STREAMLIT_SERVER_PORT=8501" \
-            --port=8501 \
-            --timeout=300s \
-            --min-instances=0 \
-            --max-instances=1 \
-            --command="/bin/bash" \
-            --args="/app/start.sh"
-
-      - name: Output Dashboard URL
-        run: |
-          ENVIRONMENT=${{ vars.ENVIRONMENT }}
-          echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard-${ENVIRONMENT} --platform managed --region us-central1 --format='value(status.url)')"
+          echo "Deploying dashboard to environment: ${{ vars.ENVIRONMENT }}"
+          # Build dashboard image and deploy Cloud Run service
+          gcloud builds submit --config cloudbuild-dashboard.yaml \
+            --substitutions=_ENVIRONMENT=${{ vars.ENVIRONMENT }}
