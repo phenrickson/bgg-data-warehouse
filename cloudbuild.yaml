@@ -4,17 +4,9 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/processor:${_ENVIRONMENT}', '.']
 
-  # Build the dashboard image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/dashboard:${_ENVIRONMENT}', '-f', 'Dockerfile.dashboard', '.']
-
   # Push the processor image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/processor:${_ENVIRONMENT}']
-
-  # Push the dashboard image to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/dashboard:${_ENVIRONMENT}']
 
   # Deploy Fetch Responses Cloud Run Job (create or update)
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -103,7 +95,6 @@ steps:
 # Images to push to Artifact Registry
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/processor:${_ENVIRONMENT}'
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/dashboard:${_ENVIRONMENT}'
 
 # Timeout for the entire build
 timeout: '1800s'  # 30 minutes

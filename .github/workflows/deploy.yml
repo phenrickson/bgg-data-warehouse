@@ -1,4 +1,4 @@
-name: Deploy BGG Data Warehouse
+name: Deploy BGG Data Pipeline
 
 on:
   push:
@@ -45,7 +45,7 @@ jobs:
 
       - name: Deploy
         run: |
-          echo "Deploying to environment: ${{ vars.ENVIRONMENT }}"
-          # Build and update job configurations
+          echo "Deploying data pipeline to environment: ${{ vars.ENVIRONMENT }}"
+          # Build processor image and deploy Cloud Run Jobs
           gcloud builds submit --config cloudbuild.yaml \
             --substitutions=_ENVIRONMENT=${{ vars.ENVIRONMENT }}
