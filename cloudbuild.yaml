@@ -1,5 +1,20 @@
 # Cloud Build configuration for BGG processor
 steps:
+  # Create Artifact Registry repository if it doesn't exist
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Check if repository exists, create if not
+        gcloud artifacts repositories describe bgg-data-warehouse \
+          --location=us-central1 \
+          --format="value(name)" 2>/dev/null || \
+        gcloud artifacts repositories create bgg-data-warehouse \
+          --repository-format=docker \
+          --location=us-central1 \
+          --description="BGG Data Warehouse container images"
+
   # Build the processor image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/bgg-data-warehouse/processor:${_ENVIRONMENT}', '.']
