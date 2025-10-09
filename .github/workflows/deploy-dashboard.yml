@@ -66,9 +66,9 @@ jobs:
       - name: Configure Docker
         uses: docker/setup-buildx-action@v3
       
-      - name: Configure Docker auth for GCR
+      - name: Configure Docker auth for Artifact Registry
         run: |
-          gcloud auth configure-docker gcr.io
+          gcloud auth configure-docker us-central1-docker.pkg.dev
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -76,7 +76,7 @@ jobs:
           context: .
           file: ./Dockerfile.dashboard
           push: true
-          tags: gcr.io/${{ secrets.GCP_PROJECT_ID }}/bgg-dashboard:${{ vars.ENVIRONMENT }}
+          tags: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/bgg-data-warehouse/dashboard:${{ vars.ENVIRONMENT }}
 
       - name: Deploy Dashboard to Cloud Run
         run: |
@@ -87,7 +87,7 @@ jobs:
           echo "Deploying dashboard to environment: ${ENVIRONMENT}"
           
           gcloud run deploy bgg-dashboard-${ENVIRONMENT} \
-            --image gcr.io/${PROJECT_ID}/bgg-dashboard:${ENVIRONMENT} \
+            --image us-central1-docker.pkg.dev/${PROJECT_ID}/bgg-data-warehouse/dashboard:${ENVIRONMENT} \
             --platform managed \
             --region us-central1 \
             --allow-unauthenticated \

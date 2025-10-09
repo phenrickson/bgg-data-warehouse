@@ -14,7 +14,9 @@ def test_cloud_run_job_configuration():
     """Test Cloud Run Job configuration."""
     # Create a more structured mock
     mock_container = mock.Mock()
-    mock_container.image = "gcr.io/test-project/bgg-processor:latest"
+    mock_container.image = (
+        "us-central1-docker.pkg.dev/test-project/bgg-data-warehouse/processor:latest"
+    )
     mock_container.resources = mock.Mock()
     mock_container.resources.limits = {"cpu": "1", "memory": "2Gi"}
 
@@ -24,7 +26,10 @@ def test_cloud_run_job_configuration():
     mock_template.timeout = mock.Mock(total_seconds=lambda: 3600)  # 1 hour
 
     # Verify job configuration
-    assert mock_template.containers[0].image == "gcr.io/test-project/bgg-processor:latest"
+    assert (
+        mock_template.containers[0].image
+        == "us-central1-docker.pkg.dev/test-project/bgg-data-warehouse/processor:latest"
+    )
     assert mock_template.containers[0].resources.limits["cpu"] == "1"
     assert mock_template.containers[0].resources.limits["memory"] == "2Gi"
     assert mock_template.max_retries == 3
