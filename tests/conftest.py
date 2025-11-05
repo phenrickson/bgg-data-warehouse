@@ -8,10 +8,12 @@ import pytest
 from google.auth import credentials
 from google.cloud import bigquery
 
+
 @pytest.fixture
 def mock_credentials():
     """Mock GCP credentials."""
     return mock.create_autospec(credentials.Credentials)
+
 
 @pytest.fixture
 def mock_bigquery_client(mock_credentials):
@@ -21,46 +23,75 @@ def mock_bigquery_client(mock_credentials):
         client._credentials = mock_credentials
         yield client
 
+
 @pytest.fixture
 def sample_config():
     """Sample configuration for testing."""
     return {
-        "project": {
-            "id": "test-project",
-            "location": "US"
+        "environments": {
+            "dev": {
+                "project_id": "test-project",
+                "dataset": "test_dataset",
+                "location": "US",
+            },
+            "prod": {
+                "project_id": "test-project-prod",
+                "dataset": "test_dataset_prod",
+                "location": "US",
+            },
         },
+        "default_environment": "dev",
+        "project": {"id": "test-project", "dataset": "test_dataset", "location": "US"},
         "datasets": {
             "raw": "test_raw",
             "transformed": "test_transformed",
             "reporting": "test_reporting",
-            "monitoring": "test_monitoring"
+            "monitoring": "test_monitoring",
         },
-        "storage": {
-            "bucket": "test-bucket",
-            "temp_prefix": "tmp/",
-            "archive_prefix": "archive/"
+        "storage": {"bucket": "test-bucket"},
+        "raw_tables": {
+            "thing_ids": {
+                "name": "thing_ids",
+                "description": "Game IDs from BGG with processing status",
+                "clustering_fields": ["game_id"],
+            },
+            "request_log": {
+                "name": "request_log",
+                "description": "API request tracking log",
+                "time_partitioning": "request_timestamp",
+            },
+            "raw_responses": {
+                "name": "raw_responses",
+                "description": "Raw API responses before processing",
+                "clustering_fields": ["game_id"],
+                "time_partitioning": "fetch_timestamp",
+            },
         },
-        "loading": {
-            "batch_size": 1000,
-            "max_bad_records": 0,
-            "write_disposition": "WRITE_APPEND"
+        "tables": {
+            "games": {
+                "name": "games",
+                "description": "Core game information",
+                "clustering_fields": ["game_id"],
+            }
         },
-        "monitoring": {
-            "freshness_threshold_hours": 24,
-            "quality_check_schedule": "0 */4 * * *",
-            "alert_on_failures": True
-        }
     }
+
 
 @pytest.fixture
 def mock_env():
     """Mock environment variables."""
-    with mock.patch.dict(os.environ, {
-        "GCP_PROJECT_ID": "test-project",
-        "GCS_BUCKET": "test-bucket",
-        "GOOGLE_APPLICATION_CREDENTIALS": str(Path.cwd() / "credentials" / "service-account-key.json")
-    }):
+    with mock.patch.dict(
+        os.environ,
+        {
+            "GCP_PROJECT_ID": "test-project",
+            "GCS_BUCKET": "test-bucket",
+            "GOOGLE_APPLICATION_CREDENTIALS": str(
+                Path.cwd() / "credentials" / "service-account-key.json"
+            ),
+        },
+    ):
         yield
+
 
 @pytest.fixture
 def mock_storage_client(mock_credentials):
@@ -70,6 +101,7 @@ def mock_storage_client(mock_credentials):
         client._credentials = mock_credentials
         yield client
 
+
 @pytest.fixture
 def mock_blob():
     """Mock GCS blob."""
@@ -78,12 +110,14 @@ def mock_blob():
     mock_blob.download_as_string.return_value = b"test data"
     return mock_blob
 
+
 @pytest.fixture
 def mock_bucket(mock_blob):
     """Mock GCS bucket."""
     mock_bucket = mock.MagicMock()
     mock_bucket.blob.return_value = mock_blob
     return mock_bucket
+
 
 @pytest.fixture
 def temp_data_dir(tmp_path):

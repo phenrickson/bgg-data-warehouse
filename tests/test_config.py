@@ -7,91 +7,79 @@ from unittest import mock
 import pytest
 import yaml
 
-from src.config import load_config, get_bigquery_config
+from src.config import get_bigquery_config
+
 
 @pytest.fixture
 def mock_config_file(tmp_path):
     """Create a mock config file."""
     config = {
-        "project": {
-            "id": "test-project",
-            "location": "US"
+        "environments": {
+            "dev": {
+                "project_id": "test-project",
+                "dataset": "test_dataset",
+                "location": "US",
+            },
+            "prod": {
+                "project_id": "test-project-prod",
+                "dataset": "test_dataset_prod",
+                "location": "US",
+            },
         },
+        "default_environment": "dev",
         "datasets": {
             "raw": "test_raw",
             "transformed": "test_transformed",
             "reporting": "test_reporting",
-            "monitoring": "test_monitoring"
+            "monitoring": "test_monitoring",
         },
-        "storage": {
-            "bucket": "test-bucket",
-            "temp_prefix": "tmp/",
-            "archive_prefix": "archive/"
+        "storage": {"bucket": "test-bucket"},
+        "tables": {
+            "games": {
+                "name": "games",
+                "description": "Core game information",
+            },
         },
-        "loading": {
-            "batch_size": 1000,
-            "max_bad_records": 0,
-            "write_disposition": "WRITE_APPEND"
-        },
-        "monitoring": {
-            "freshness_threshold_hours": 24,
-            "quality_check_schedule": "0 */4 * * *",
-            "alert_on_failures": True
-        }
     }
-    
+
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     config_file = config_dir / "bigquery.yaml"
-    
+
     with open(config_file, "w") as f:
         yaml.dump(config, f)
-    
+
     return config_file
 
-def test_load_config_file_not_found():
-    """Test loading non-existent config file."""
-    with pytest.raises(FileNotFoundError):
-        load_config("nonexistent")
 
-def test_load_config_invalid_yaml(tmp_path):
-    """Test loading invalid YAML config."""
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    config_file = config_dir / "invalid.yaml"
-    
-    with open(config_file, "w") as f:
-        f.write("invalid: :")  # This is invalid YAML syntax
-    
-    with mock.patch("src.config.Path.parent", return_value=tmp_path):
-        with pytest.raises(yaml.YAMLError):
-            load_config("invalid")
+def test_get_bigquery_config_dev(mock_config_file):
+    """Test BigQuery config getter with dev environment."""
+    with mock.patch("os.path.join", return_value=str(mock_config_file)):
+        config = get_bigquery_config("dev")
 
-def test_load_config_success(mock_config_file):
-    """Test successful config loading."""
-    with mock.patch("src.config.Path.parent", return_value=mock_config_file.parent.parent):
-        config = load_config("bigquery")
-        
         assert config["project"]["id"] == "test-project"
+        assert config["project"]["dataset"] == "test_dataset"
         assert config["project"]["location"] == "US"
         assert config["storage"]["bucket"] == "test-bucket"
 
-def test_load_config_env_override(mock_config_file):
-    """Test environment variable override."""
-    with mock.patch.dict(os.environ, {
-        "GCP_PROJECT_ID": "env-project",
-        "GCS_BUCKET": "env-bucket"
-    }):
-        with mock.patch("src.config.Path.parent", return_value=mock_config_file.parent.parent):
-            config = load_config("bigquery")
-            
-            assert config["project"]["id"] == "env-project"
-            assert config["storage"]["bucket"] == "env-bucket"
 
-def test_get_bigquery_config(mock_config_file):
-    """Test BigQuery config getter."""
-    with mock.patch("src.config.Path.parent", return_value=mock_config_file.parent.parent):
+def test_get_bigquery_config_prod(mock_config_file):
+    """Test BigQuery config getter with prod environment."""
+    with mock.patch("os.path.join", return_value=str(mock_config_file)):
+        config = get_bigquery_config("prod")
+
+        assert config["project"]["id"] == "test-project-prod"
+        assert config["project"]["dataset"] == "test_dataset_prod"
+        assert config["project"]["location"] == "US"
+
+
+def test_get_bigquery_config_env_override(mock_config_file):
+    """Test environment variable override."""
+    with (
+        mock.patch.dict(os.environ, {"ENVIRONMENT": "prod"}),
+        mock.patch("os.path.join", return_value=str(mock_config_file)),
+    ):
         config = get_bigquery_config()
-        
-        assert "project" in config
-        assert "storage" in config
+
+        assert config["project"]["id"] == "test-project-prod"
+        assert config["project"]["dataset"] == "test_dataset_prod"
