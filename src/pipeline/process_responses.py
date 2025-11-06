@@ -75,46 +75,72 @@ class BGGResponseProcessor:
             List of dictionaries containing game data
         """
         try:
-            # Direct mock object handling
+            # Polars DataFrame
+            if hasattr(df, "to_dicts"):
+                return [
+                    {
+                        "record_id": row.get("record_id"),
+                        "game_id": row["game_id"],
+                        "response_data": row["response_data"],
+                        "fetch_timestamp": row.get("fetch_timestamp"),
+                    }
+                    for row in df.to_dicts()
+                ]
+
+            # Pandas DataFrame - check for pandas-specific attributes first
+            if hasattr(df, "to_dict") and hasattr(df, "iterrows"):
+                records = df.to_dict("records")
+                return [
+                    {
+                        "record_id": record.get("record_id"),
+                        "game_id": record["game_id"],
+                        "response_data": record["response_data"],
+                        "fetch_timestamp": record.get("fetch_timestamp"),
+                    }
+                    for record in records
+                ]
+
+            # Mock object handling (for testing)
             if hasattr(df, "to_dict"):
                 records = df.to_dict()
                 if isinstance(records, dict):
                     # Handle dictionary-style mock
+                    record_ids = records.get("record_id", [None] * len(records.get("game_id", [])))
                     game_ids = records.get("game_id", [])
                     response_data = records.get("response_data", [])
+                    fetch_timestamps = records.get("fetch_timestamp", [None] * len(game_ids))
                     return [
-                        {"game_id": game_id, "response_data": data}
-                        for game_id, data in zip(game_ids, response_data)
+                        {
+                            "record_id": record_id,
+                            "game_id": game_id,
+                            "response_data": data,
+                            "fetch_timestamp": ts,
+                        }
+                        for record_id, game_id, data, ts in zip(
+                            record_ids, game_ids, response_data, fetch_timestamps
+                        )
                     ]
                 elif isinstance(records, list):
                     # Handle list-style mock
                     return [
                         {
+                            "record_id": record.get("record_id"),
                             "game_id": record.get("game_id"),
                             "response_data": record.get("response_data"),
+                            "fetch_timestamp": record.get("fetch_timestamp"),
                         }
                         for record in records
                     ]
 
-            # Polars DataFrame
-            if hasattr(df, "to_dicts"):
-                return [
-                    {"game_id": row["game_id"], "response_data": row["response_data"]}
-                    for row in df.to_dicts()
-                ]
-
-            # Pandas DataFrame
-            if hasattr(df, "to_dict"):
-                records = df.to_dict("records")
-                return [
-                    {"game_id": record["game_id"], "response_data": record["response_data"]}
-                    for record in records
-                ]
-
             # Fallback for other mock objects
             if hasattr(df, "_data"):
                 return [
-                    {"game_id": row["game_id"], "response_data": row["response_data"]}
+                    {
+                        "record_id": row.get("record_id"),
+                        "game_id": row["game_id"],
+                        "response_data": row["response_data"],
+                        "fetch_timestamp": row.get("fetch_timestamp"),
+                    }
                     for row in df._data
                 ]
 
@@ -155,6 +181,7 @@ class BGGResponseProcessor:
         query = f"""
         WITH responses AS (
             SELECT 
+                record_id,
                 game_id,
                 response_data,
                 fetch_timestamp,
@@ -162,7 +189,7 @@ class BGGResponseProcessor:
             FROM `{self.raw_responses_table}`
             WHERE processed = FALSE
         )
-        SELECT game_id, response_data, fetch_timestamp
+        SELECT record_id, game_id, response_data, fetch_timestamp
         FROM responses
         ORDER BY 
             is_old DESC,  -- Process older responses first
@@ -180,13 +207,19 @@ class BGGResponseProcessor:
 
             # Process each row and parse response_data
             responses = []
+            games_marked_no_response = []
+            games_marked_parse_error = []
+
             for row in rows:
                 # Skip empty or whitespace-only response_data
                 response_data = row["response_data"]
                 if not response_data or (
                     isinstance(response_data, str) and response_data.isspace()
                 ):
-                    logger.warning(f"Skipping game {row['game_id']} with empty response data")
+                    logger.info(
+                        f"Marking game {row['game_id']} as 'no_response' (empty response data)"
+                    )
+                    games_marked_no_response.append(row["game_id"])
 
                     # Mark as processed with no_response status
                     update_query = f"""
@@ -225,13 +258,17 @@ class BGGResponseProcessor:
 
                     responses.append(
                         {
+                            "record_id": row.get("record_id"),
                             "game_id": row["game_id"],
                             "response_data": parsed_data,
                             "fetch_timestamp": row.get("fetch_timestamp", datetime.now(UTC)),
                         }
                     )
                 except Exception as e:
-                    logger.error(f"Failed to parse response data for game {row['game_id']}: {e}")
+                    logger.info(
+                        f"Marking game {row['game_id']} as 'parse_error' (failed to parse response data): {e}"
+                    )
+                    games_marked_parse_error.append(row["game_id"])
 
                     # Mark as processed with parse error status
                     update_query = f"""
@@ -250,6 +287,21 @@ class BGGResponseProcessor:
                             f"Failed to update status for game {row['game_id']}: {update_error}"
                         )
 
+            # Log summary of what happened during retrieval
+            total_retrieved = len(rows)
+            total_valid_responses = len(responses)
+            total_no_response = len(games_marked_no_response)
+            total_parse_error = len(games_marked_parse_error)
+
+            logger.info(
+                f"Retrieval summary: {total_retrieved} games retrieved, {total_valid_responses} valid responses, {total_no_response} marked as 'no_response', {total_parse_error} marked as 'parse_error'"
+            )
+
+            if games_marked_no_response:
+                logger.info(f"Games marked as 'no_response': {games_marked_no_response}")
+            if games_marked_parse_error:
+                logger.info(f"Games marked as 'parse_error': {games_marked_parse_error}")
+
             return responses
 
         except Exception as e:
@@ -265,17 +317,11 @@ class BGGResponseProcessor:
         # Retrieve unprocessed responses
         responses = self.get_unprocessed_responses()
 
-        # In test environments, always simulate a retry
-        if self.environment in ["dev", "test"]:
-            time.sleep(1)  # Simulate retry
-
-        if not responses:
-            logger.info("No unprocessed responses found")
-            return self.environment in ["dev", "test"]  # Return True in test environments
-
         processed_games = []
+        games_marked_failed = []
+        games_marked_error = []
 
-        # Process each response
+        # Process each response and track the specific records we're processing
         for response in responses:
             try:
 
@@ -290,9 +336,15 @@ class BGGResponseProcessor:
                 )
 
                 if processed_game:
+                    # Add the record_id and fetch_timestamp to track the specific record
+                    processed_game["record_id"] = response["record_id"]
+                    processed_game["fetch_timestamp"] = response["fetch_timestamp"]
                     processed_games.append(processed_game)
                 else:
-                    logger.warning(f"Failed to process game {response['game_id']}")
+                    logger.info(
+                        f"Marking game {response['game_id']} as 'failed' (processing returned None)"
+                    )
+                    games_marked_failed.append(response["game_id"])
 
                     # Mark as failed
                     update_query = f"""
@@ -306,15 +358,14 @@ class BGGResponseProcessor:
                     try:
                         query_job = self.bq_client.query(update_query)
                         query_job.result()  # Wait for query to complete
-                        logger.info(f"Marked game {response['game_id']} as failed")
                     except Exception as e:
                         logger.error(f"Failed to update process status: {e}")
 
-                    # In test environments, simulate retry
-                    if self.environment in ["dev", "test"]:
-                        time.sleep(1)  # Brief pause between retries
             except Exception as e:
-                logger.error(f"Error processing game {response['game_id']}: {e}")
+                logger.info(
+                    f"Marking game {response['game_id']} as 'error' (exception during processing): {e}"
+                )
+                games_marked_error.append(response["game_id"])
 
                 # Mark as error
                 update_query = f"""
@@ -328,17 +379,23 @@ class BGGResponseProcessor:
                 try:
                     query_job = self.bq_client.query(update_query)
                     query_job.result()  # Wait for query to complete
-                    logger.info(f"Marked game {response['game_id']} as error")
                 except Exception as update_error:
                     logger.error(f"Failed to update process status: {update_error}")
 
-                # In test environments, simulate retry
-                if self.environment in ["dev", "test"]:
-                    time.sleep(1)  # Brief pause between retries
+        # Log processing summary
+        total_responses_received = len(responses)
+        total_successfully_processed = len(processed_games)
+        total_failed = len(games_marked_failed)
+        total_error = len(games_marked_error)
 
-        # In test environments, return True even if no games processed
-        if self.environment in ["dev", "test"] and not processed_games:
-            return True
+        logger.info(
+            f"Processing summary: {total_responses_received} responses received, {total_successfully_processed} successfully processed, {total_failed} marked as 'failed', {total_error} marked as 'error'"
+        )
+
+        if games_marked_failed:
+            logger.info(f"Games marked as 'failed': {games_marked_failed}")
+        if games_marked_error:
+            logger.info(f"Games marked as 'error': {games_marked_error}")
 
         # Validate processed data
         if not processed_games:
@@ -353,69 +410,132 @@ class BGGResponseProcessor:
             if not self.processor.validate_data(processed_data.get("games"), "games"):
                 logger.warning("Data validation failed")
 
-                # In test environments, return True even on validation failure
-                if self.environment in ["dev", "test"]:
-                    return True
-
                 return False
 
             # Load processed games
             self.loader.load_games(processed_games)
 
-            # Mark responses as processed
-            game_ids = [str(game["game_id"]) for game in processed_games]
-            game_ids_str = ",".join(game_ids)
-            logger.info(f"Attempting to mark games as processed: {game_ids_str}")
+            # Mark responses as processed using record_id - much more efficient!
+            record_ids = [game["record_id"] for game in processed_games if game.get("record_id")]
 
-            update_query = f"""
-            UPDATE `{self.raw_responses_table}`
-            SET processed = TRUE,
-                process_timestamp = CURRENT_TIMESTAMP(),
-                process_status = 'success',
-                process_attempt = process_attempt + 1
-            WHERE game_id IN ({game_ids_str})
-            """
+            if record_ids:
+                # Use the efficient record_id approach
+                record_ids_str = "', '".join(record_ids)
+                logger.info(f"Marking {len(record_ids)} records as processed using record_id")
 
-            try:
-                query_job = self.bq_client.query(update_query)
-                query_job.result()  # Wait for query to complete
-                logger.info(f"Successfully marked {len(game_ids)} responses as processed")
-
-                # Verify the update
-                verify_query = f"""
-                SELECT COUNT(*) as count
-                FROM `{self.raw_responses_table}`
-                WHERE game_id IN ({game_ids_str})
-                  AND processed = TRUE
-                  AND process_status = 'success'
+                update_query = f"""
+                UPDATE `{self.raw_responses_table}`
+                SET processed = TRUE,
+                    process_timestamp = CURRENT_TIMESTAMP(),
+                    process_status = 'success',
+                    process_attempt = process_attempt + 1
+                WHERE record_id IN ('{record_ids_str}')
                 """
-                verify_job = self.bq_client.query(verify_query)
-                verify_result = next(verify_job.result())
-                logger.info(f"Verified {verify_result.count} responses were marked as processed")
 
-                if verify_result.count != len(game_ids):
-                    logger.error(
-                        f"Update verification failed: expected {len(game_ids)} updates but found {verify_result.count}"
+                try:
+                    query_job = self.bq_client.query(update_query)
+                    query_job.result()  # Wait for query to complete
+                    logger.info(
+                        f"Successfully marked {len(record_ids)} records as processed using record_id"
                     )
-                    return False
 
-            except Exception as e:
-                logger.error(f"Failed to mark responses as processed: {e}")
-                return False
+                    # Verify the update
+                    verify_query = f"""
+                    SELECT COUNT(*) as count
+                    FROM `{self.raw_responses_table}`
+                    WHERE record_id IN ('{record_ids_str}')
+                      AND processed = TRUE
+                      AND process_status = 'success'
+                    """
+                    verify_job = self.bq_client.query(verify_query)
+                    verify_result = next(verify_job.result())
+                    logger.info(f"Verified {verify_result.count} records were marked as processed")
+
+                    if verify_result.count != len(record_ids):
+                        logger.error(
+                            f"Update verification failed: expected {len(record_ids)} updates but found {verify_result.count}"
+                        )
+                        return False
+
+                except Exception as e:
+                    logger.error(f"Failed to mark responses as processed using record_id: {e}")
+                    return False
+            else:
+                # Fallback to old method if no record_ids available
+                logger.warning("No record_ids available - falling back to timestamp method")
+
+                game_records = [
+                    (str(game["game_id"]), game["fetch_timestamp"]) for game in processed_games
+                ]
+                game_ids_str = ",".join([record[0] for record in game_records])
+                logger.info(
+                    f"Attempting to mark {len(game_records)} specific records as processed: {game_ids_str}"
+                )
+
+                # Build conditions for each specific record (game_id + fetch_timestamp)
+                conditions = []
+                for game_id, fetch_timestamp in game_records:
+                    # Format timestamp for BigQuery
+                    timestamp_str = fetch_timestamp.strftime("%Y-%m-%d %H:%M:%S.%f UTC")
+                    conditions.append(
+                        f"(game_id = {game_id} AND fetch_timestamp = TIMESTAMP('{timestamp_str}'))"
+                    )
+
+                conditions_str = " OR ".join(conditions)
+
+                update_query = f"""
+                UPDATE `{self.raw_responses_table}`
+                SET processed = TRUE,
+                    process_timestamp = CURRENT_TIMESTAMP(),
+                    process_status = 'success',
+                    process_attempt = process_attempt + 1
+                WHERE {conditions_str}
+                """
+
+                try:
+                    query_job = self.bq_client.query(update_query)
+                    query_job.result()  # Wait for query to complete
+                    logger.info(
+                        f"Successfully marked {len(game_records)} specific records as processed"
+                    )
+
+                    # Verify the update using the same specific conditions
+                    verify_query = f"""
+                    SELECT COUNT(*) as count
+                    FROM `{self.raw_responses_table}`
+                    WHERE ({conditions_str})
+                      AND processed = TRUE
+                      AND process_status = 'success'
+                    """
+                    verify_job = self.bq_client.query(verify_query)
+                    verify_result = next(verify_job.result())
+                    logger.info(
+                        f"Verified {verify_result.count} specific records were marked as processed"
+                    )
+
+                    if verify_result.count != len(game_records):
+                        logger.error(
+                            f"Update verification failed: expected {len(game_records)} updates but found {verify_result.count}"
+                        )
+                        return False
+
+                except Exception as e:
+                    logger.error(f"Failed to mark responses as processed: {e}")
+                    return False
 
             return True
 
         except Exception as e:
             logger.error(f"Failed to process batch: {e}")
 
-            # In test environments, return True even on failure
-            if self.environment in ["dev", "test"]:
-                return True
-
             return False
 
-    def run(self) -> None:
-        """Run the full processing pipeline until no unprocessed responses remain."""
+    def run(self) -> bool:
+        """Run the full processing pipeline until no unprocessed responses remain.
+
+        Returns:
+            bool: True if any responses were processed, False otherwise
+        """
         logger.info("Starting BGG response processor")
         logger.info(f"Reading responses from: {self.raw_responses_table}")
         logger.info(f"Loading processed data to: {self.processed_games_table}")
@@ -425,6 +545,10 @@ class BGGResponseProcessor:
             batch_count = 0
 
             logger.info(f"Found {total_unprocessed} unprocessed responses")
+
+            if total_unprocessed == 0:
+                logger.info("No unprocessed responses found")
+                return False
 
             while total_unprocessed > 0:
                 batch_count += 1
@@ -441,6 +565,8 @@ class BGGResponseProcessor:
 
             logger.info(f"Processor completed - processed {batch_count} batches")
             logger.info(f"Remaining unprocessed responses: {total_unprocessed}")
+
+            return batch_count > 0
 
         except Exception as e:
             logger.error(f"Processor failed: {e}")
@@ -462,7 +588,12 @@ def main() -> None:
     args = parser.parse_args()
 
     processor = BGGResponseProcessor(batch_size=args.batch_size)
-    processor.run()
+    responses_processed = processor.run()
+
+    if responses_processed:
+        logger.info("Responses were processed - pipeline completed successfully")
+    else:
+        logger.info("No responses processed - no data to process")
 
 
 if __name__ == "__main__":

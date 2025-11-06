@@ -45,9 +45,12 @@ raw_tables:
   raw_responses:
     name: raw_responses
     description: "Raw API responses before processing"
-    clustering_fields: [game_id]
+    clustering_fields: [record_id, game_id]
     time_partitioning: fetch_timestamp
     schema:
+      - name: record_id
+        type: STRING
+        mode: REQUIRED
       - name: game_id
         type: INTEGER
         mode: REQUIRED

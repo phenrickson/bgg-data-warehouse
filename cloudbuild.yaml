@@ -1,52 +1,70 @@
 # Cloud Build configuration for BGG processor
 steps:
-  # Build the processor image
+  # Build the processor image with environment tag
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/bgg-processor', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT', '.']
 
   # Push the image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor']
+    args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT']
+
+  # Deploy Fetch IDs Cloud Run Job
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'replace'
+      - 'bgg-fetch-ids-$_ENVIRONMENT'
+      - '--image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT'
+      - '--args=src.pipeline.fetch_ids'
+      - '--tasks=1'
+      - '--max-retries=2'
+      - '--task-timeout=30m'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--region=us-central1'
+      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT'
 
   # Deploy Fetch Responses Cloud Run Job
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'jobs'
-      - 'update'
-      - 'bgg-fetch-responses'
-      - '--image=gcr.io/$PROJECT_ID/bgg-processor'
-      - '--tasks=1'  # Fewer tasks for fetching
+      - 'replace'
+      - 'bgg-fetch-responses-$_ENVIRONMENT'
+      - '--image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT'
+      - '--args=src.pipeline.fetch_responses'
+      - '--tasks=1'
       - '--max-retries=3'
-      - '--task-timeout=1h'
+      - '--task-timeout=2h'
       - '--memory=2Gi'
       - '--cpu=1'
       - '--region=us-central1'
       - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN'
-      - '--command=uv,run,-m,src.pipeline.fetch_responses'
 
   # Deploy Process Responses Cloud Run Job
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'jobs'
-      - 'update'
-      - 'bgg-process-responses'
-      - '--image=gcr.io/$PROJECT_ID/bgg-processor'
-      - '--tasks=1'  # More tasks for processing
+      - 'replace'
+      - 'bgg-process-responses-$_ENVIRONMENT'
+      - '--image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT'
+      - '--args=src.pipeline.process_responses'
+      - '--tasks=1'
       - '--max-retries=3'
-      - '--task-timeout=1h'
-      - '--memory=2Gi'
-      - '--cpu=1'
+      - '--task-timeout=2h'
+      - '--memory=4Gi'
+      - '--cpu=2'
       - '--region=us-central1'
       - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN'
-      - '--command=uv,run,-m,src.pipeline.process_responses'
+      - '--set-env-vars=ENVIRONMENT=$_ENVIRONMENT'
 
 # Images to push to Container Registry
 images:
-  - 'gcr.io/$PROJECT_ID/bgg-processor'
+  - 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT'
 
 # Timeout for the entire build
 timeout: '1800s'  # 30 minutes

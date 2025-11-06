@@ -77,8 +77,16 @@ class BGGResponseFetcher:
                         SELECT 1 
                         FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
                         WHERE i.game_id = r.game_id
-                        AND r.process_status IS DISTINCT FROM 'no_response'
-                        AND r.process_status IS DISTINCT FROM 'parse_error'
+                        AND (
+                            -- Exclude successfully processed games
+                            (r.process_status IS NULL OR r.process_status NOT IN ('no_response', 'parse_error'))
+                            OR 
+                            -- Exclude games that have been retried too many times
+                            (r.process_status IN ('no_response', 'parse_error') AND r.process_attempt >= 3)
+                            OR
+                            -- Exclude games that were recently attempted (within 1 hour)
+                            (r.process_status IN ('no_response', 'parse_error') AND r.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                        )
                     )
                     AND NOT EXISTS (
                         SELECT 1
@@ -97,8 +105,16 @@ class BGGResponseFetcher:
                         SELECT 1 
                         FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
                         WHERE t.game_id = r.game_id
-                        AND r.process_status IS DISTINCT FROM 'no_response'
-                        AND r.process_status IS DISTINCT FROM 'parse_error'
+                        AND (
+                            -- Exclude successfully processed games
+                            (r.process_status IS NULL OR r.process_status NOT IN ('no_response', 'parse_error'))
+                            OR 
+                            -- Exclude games that have been retried too many times
+                            (r.process_status IN ('no_response', 'parse_error') AND r.process_attempt >= 3)
+                            OR
+                            -- Exclude games that were recently attempted (within 1 hour)
+                            (r.process_status IN ('no_response', 'parse_error') AND r.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                        )
                     )
                     AND NOT EXISTS (
                         SELECT 1
@@ -173,7 +189,26 @@ class BGGResponseFetcher:
         # Handle game IDs with no response
         if no_response_ids:
             logger.info(f"Processing {len(no_response_ids)} no-response game IDs")
+
+            # Check existing attempts for these game IDs
+            existing_attempts = {}
+            if no_response_ids:
+                game_ids_str = ",".join(str(gid) for gid in no_response_ids)
+                attempt_query = f"""
+                SELECT game_id, process_attempt
+                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
+                WHERE game_id IN ({game_ids_str})
+                """
+                try:
+                    attempt_results = self.bq_client.query(attempt_query).to_dataframe()
+                    existing_attempts = dict(
+                        zip(attempt_results["game_id"], attempt_results["process_attempt"])
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not fetch existing attempts: {e}")
+
             for game_id in no_response_ids:
+                current_attempt = existing_attempts.get(game_id, 0) + 1
                 row = {
                     "game_id": game_id,
                     "response_data": "",  # Use empty string instead of None
@@ -181,10 +216,12 @@ class BGGResponseFetcher:
                     "processed": True,
                     "process_timestamp": base_time.isoformat(),
                     "process_status": "no_response",
-                    "process_attempt": 1,
+                    "process_attempt": current_attempt,
                 }
                 rows.append(row)
-                logger.debug(f"No-response row for game_id {game_id}: {row}")
+                logger.debug(
+                    f"No-response row for game_id {game_id} (attempt {current_attempt}): {row}"
+                )
 
         # If response data is provided, process it
         if response_data:
@@ -231,7 +268,25 @@ class BGGResponseFetcher:
                 logger.error(f"Failed to parse response data: {parse_error}")
                 logger.error(f"Raw response data: {response_data}")
                 # If parsing fails, mark all game IDs as processed with an error status
+                # Check existing attempts for these game IDs
+                existing_attempts = {}
+                if game_ids:
+                    game_ids_str = ",".join(str(gid) for gid in game_ids)
+                    attempt_query = f"""
+                    SELECT game_id, process_attempt
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
+                    WHERE game_id IN ({game_ids_str})
+                    """
+                    try:
+                        attempt_results = self.bq_client.query(attempt_query).to_dataframe()
+                        existing_attempts = dict(
+                            zip(attempt_results["game_id"], attempt_results["process_attempt"])
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not fetch existing attempts for parse error: {e}")
+
                 for game_id in game_ids:
+                    current_attempt = existing_attempts.get(game_id, 0) + 1
                     row = {
                         "game_id": game_id,
                         "response_data": "",  # Use empty string instead of None
@@ -239,10 +294,12 @@ class BGGResponseFetcher:
                         "processed": True,
                         "process_timestamp": base_time.isoformat(),
                         "process_status": "parse_error",
-                        "process_attempt": 1,
+                        "process_attempt": current_attempt,
                     }
                     rows.append(row)
-                    logger.debug(f"Parse error row for game_id {game_id}: {row}")
+                    logger.debug(
+                        f"Parse error row for game_id {game_id} (attempt {current_attempt}): {row}"
+                    )
 
         # Log total number of rows to be inserted
         logger.info(f"Total rows to insert: {len(rows)}")
@@ -425,30 +482,30 @@ class BGGResponseFetcher:
 
         return True
 
-    def run(self, game_ids: Optional[List[int]] = None) -> None:
+    def run(self, game_ids: Optional[List[int]] = None) -> bool:
         """Run the fetcher pipeline.
 
         Args:
             game_ids: Optional list of specific game IDs to fetch
+
+        Returns:
+            bool: True if any responses were fetched, False otherwise
         """
         logger.info("Starting BGG response fetcher")
 
         try:
-            # Create temp directory for ID updates if needed
-            temp_dir = Path("temp")
-            if self.environment != "test":
-                self.id_fetcher.update_ids(temp_dir)
-            try:
-                while True:
-                    if not self.fetch_batch(game_ids):
-                        break
-                logger.info("Fetcher completed - all responses fetched")
-            finally:
-                # Cleanup
-                if temp_dir.exists():
-                    for file in temp_dir.glob("*"):
-                        file.unlink()
-                    temp_dir.rmdir()
+            responses_fetched = False
+            while True:
+                if not self.fetch_batch(game_ids):
+                    break
+                responses_fetched = True
+
+            if responses_fetched:
+                logger.info("Fetcher completed - responses fetched")
+            else:
+                logger.info("No responses to fetch")
+
+            return responses_fetched
 
         except Exception as e:
             logger.error(f"Fetcher failed: {e}")
@@ -459,7 +516,7 @@ def main() -> None:
     """Main entry point for the fetcher."""
     import os
 
-    environment = os.getenv("ENVIRONMENT", "dev")
+    environment = os.getenv("ENVIRONMENT", "test")
     logger.info(f"Starting fetcher in {environment} environment")
 
     fetcher = BGGResponseFetcher(
@@ -467,7 +524,12 @@ def main() -> None:
         chunk_size=20,
         environment=environment,
     )
-    fetcher.run()
+    responses_fetched = fetcher.run()
+
+    if responses_fetched:
+        logger.info("Responses were fetched - process_responses should be triggered")
+    else:
+        logger.info("No responses fetched - no further action needed")
 
 
 if __name__ == "__main__":
