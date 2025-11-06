@@ -2,8 +2,18 @@ name: Deploy BGG Data Warehouse
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, test ]
   workflow_dispatch:  # Allow manual triggers for testing
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - test
+        - prod
 
 jobs:
   deploy:
@@ -14,21 +24,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Determine Environment
+        id: env
+        run: |
+          # Set environment based on branch or manual input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ENVIRONMENT="prod"
+          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
+            ENVIRONMENT="test"
+          else
+            ENVIRONMENT="dev"
+          fi
+          
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "Deploying to environment: $ENVIRONMENT"
+
       - name: Setup Environment
         run: |
           mkdir -p credentials
           echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
 
-          # Set environment based on branch
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            ENVIRONMENT="prod"
-          else
-            ENVIRONMENT="dev"
-          fi
-
           cat << EOF > .env
           GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          ENVIRONMENT=$ENVIRONMENT
+          ENVIRONMENT=${{ steps.env.outputs.environment }}
           GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
           EOF
 
@@ -42,13 +62,6 @@ jobs:
 
       - name: Deploy
         run: |
-          # Set environment based on branch
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            ENVIRONMENT="prod"
-          else
-            ENVIRONMENT="dev"
-          fi
-
           # Build and update job configurations
           gcloud builds submit --config cloudbuild.yaml \
-            --substitutions=_ENVIRONMENT=$ENVIRONMENT
+            --substitutions=_ENVIRONMENT=${{ steps.env.outputs.environment }}

@@ -1,4 +1,9 @@
 environments:
+  test:
+    project_id: gcp-demos-411520
+    dataset: bgg_data_test
+    raw: bgg_raw_test
+    location: US
   dev:
     project_id: gcp-demos-411520
     dataset: bgg_data_dev
