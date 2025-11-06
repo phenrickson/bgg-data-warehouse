@@ -2,6 +2,9 @@
 
 This document outlines the BoardGameGeek XML API2 endpoints and usage guidelines used in this project.
 
+## Authentication
+The API requires authentication using a Bearer token. Set your API token in the BGG_API_TOKEN environment variable. This token is required for all API requests and is passed in the Authorization header.
+
 ## API Base URL
 ```
 https://boardgamegeek.com/xmlapi2/
