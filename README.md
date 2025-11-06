@@ -6,7 +6,12 @@ A data pipeline for collecting, processing, and analyzing BoardGameGeek game dat
 
 The BGG Data Pipeline is designed to efficiently collect, process, and analyze board game data from BoardGameGeek, with a robust architecture that ensures data integrity and performance.
 
-### Recent Improvements
+### Latest Features (v0.2.0)
+
+- **UV Package Manager Integration**
+  - Replaced pip with UV for faster, more reliable package management
+  - Improved dependency resolution and virtual environment handling
+  - Enhanced project setup and development workflow
 
 - **Enhanced Response Handling**
   - Intelligent processing of game IDs with no response
@@ -14,7 +19,25 @@ The BGG Data Pipeline is designed to efficiently collect, process, and analyze b
   - Detailed logging and status tracking for API interactions
   - Improved error handling and data integrity checks
 
+- **Cloud Run Integration**
+  - Automated pipeline runs via Cloud Run jobs
+  - Streamlined deployment process with Cloud Build
+  - Enhanced environment configuration handling
+  - Comprehensive GitHub Actions workflows
+
+### Upcoming Features (Unreleased)
+
+- New fetch_in_progress table for tracking and locking game fetches
+- Parallel fetching support with distributed locking mechanism
+- Automated cleanup of stale in-progress entries after 30 minutes
+- Pipeline now runs every 3 hours instead of hourly for better resource utilization
+
 ### Components
+
+#### ID Fetcher (`src/pipeline/fetch_ids.py`)
+- Retrieves universe of board game IDs from BoardGameGeek
+- Stores IDs in BigQuery's `thing_ids` table
+- Runs as a Cloud Run job in both prod and dev environments
 
 #### Response Fetcher (`src/pipeline/fetch_responses.py`)
 - Continuously fetches game data from the BGG API
@@ -33,7 +56,7 @@ The BGG Data Pipeline is designed to efficiently collect, process, and analyze b
 - Supports multiple parallel tasks (default 5 concurrent processing jobs)
 - Handles processing errors without disrupting overall data fetching
 - Automatically retries failed processing attempts
-- Scheduled to run every 10 minutes
+- Scheduled to run every 3 hours
 - Enhanced logging and status tracking
 
 ### Data Flow Diagram
@@ -47,7 +70,6 @@ graph TD
     D -->|Raw Game Data| E[Data Processor]
     E -->|Validate & Transform| F[Normalized Tables]
     F -->|Load| G[BigQuery Warehouse]
-    G -->|Monitor| H[Quality Monitor]
 ```
 
 ### Key Features
@@ -57,7 +79,6 @@ graph TD
 - BigQuery data warehouse integration
 - Robust error handling and retry mechanisms
 - Advanced tracking of API response processing
-- Data quality monitoring
 - Raw data archival to Cloud Storage
 
 ## Prerequisites
@@ -77,6 +98,7 @@ graph TD
 - GitHub repository secrets configured:
   - `SERVICE_ACCOUNT_KEY`: GCP service account key JSON
   - `GCP_PROJECT_ID`: Google Cloud project ID
+  - `BGG_API_TOKEN`: BoardGameGeek API authentication token
 - GitHub repository variables:
   - `ENVIRONMENT`: Deployment environment (e.g., 'prod', 'dev')
 
@@ -84,7 +106,7 @@ graph TD
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/bgg-data-warehouse.git
+git clone https://github.com/phenrickson/bgg-data-warehouse.git
 cd bgg-data-warehouse
 ```
 
@@ -122,7 +144,17 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 4. Install dependencies:
 ```bash
-uv pip install -e .
+# Create virtual environment
+uv venv
+
+# Activate virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On Unix/macOS:
+source .venv/bin/activate
+
+# Install dependencies
+uv sync
 ```
 
 5. Configure Google Cloud credentials:
@@ -130,10 +162,23 @@ uv pip install -e .
 export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account-key.json"
 ```
 
-6. Configure GitHub repository:
+6. Configure environment variables:
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit .env file with your configuration
+# Required variables:
+# - GCP_PROJECT_ID: Your Google Cloud project ID
+# - ENVIRONMENT: 'dev', 'test', or 'prod'
+# - BGG_API_TOKEN: Your BoardGameGeek API token
+```
+
+7. Configure GitHub repository:
    - Add required secrets in repository settings:
      - `SERVICE_ACCOUNT_KEY`: Your GCP service account key JSON
      - `GCP_PROJECT_ID`: Your Google Cloud project ID
+     - `BGG_API_TOKEN`: Your BoardGameGeek API token
    - Add repository variables:
      - `ENVIRONMENT`: Set to 'prod' or 'dev'
 
@@ -144,6 +189,9 @@ export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account-key.json"
 To run the pipeline components locally:
 
 ```bash
+# Fetch board game IDs
+uv run python -m src.pipeline.fetch_ids --environment=dev
+
 # Fetch new board game data
 uv run python -m src.pipeline.fetch_responses --environment=dev
 
@@ -155,19 +203,25 @@ uv run python -m src.pipeline.process_responses --environment=dev
 
 The pipeline runs automatically via Cloud Run jobs:
 
+- `bgg-fetch-ids`: Fetches game IDs from BoardGameGeek
 - `bgg-fetch-responses`: Fetches new game data every 3 hours
 - `bgg-process-responses`: Processes raw responses every 3 hours
 
 To manually trigger jobs:
 
 ```bash
+# Trigger fetch IDs job
+gcloud run jobs execute bgg-fetch-ids-dev \
+  --region us-central1 \
+  --wait
+
 # Trigger fetch responses job
-gcloud run jobs execute bgg-fetch-responses \
+gcloud run jobs execute bgg-fetch-responses-dev \
   --region us-central1 \
   --wait
 
 # Trigger process responses job
-gcloud run jobs execute bgg-process-responses \
+gcloud run jobs execute bgg-process-responses-dev \
   --region us-central1 \
   --wait
 ```
@@ -182,8 +236,8 @@ The project uses GitHub Actions for automated deployment and job execution:
    - Updates job configurations
 
 2. **Pipeline Workflow** (`pipeline.yml`):
-   - Runs every 3 hours via cron schedule
-   - Executes fetch and process jobs sequentially
+   - Runs every day at 6 AM UTC via cron schedule
+   - Executes fetch IDs, fetch responses, and process jobs sequentially
    - Monitors job completion status
 
 To manually trigger workflows:
@@ -191,38 +245,7 @@ To manually trigger workflows:
 - Select workflow
 - Click "Run workflow"
 
-## Monitoring
-
-### BigQuery Views
-
-Monitoring views are automatically created:
-
-```sql
--- Processing status view
-CREATE VIEW `monitoring.processing_status` AS
-SELECT
-  COUNT(*) as total_responses,
-  COUNTIF(processed) as processed_count,
-  COUNTIF(NOT processed) as unprocessed_count,
-  COUNTIF(process_status IS NOT NULL) as error_count
-FROM `raw.raw_responses`
-WHERE fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR);
-
--- Processing errors view
-CREATE VIEW `monitoring.processing_errors` AS
-SELECT
-  game_id,
-  process_attempt,
-  process_status as error,
-  fetch_timestamp,
-  process_timestamp
-FROM `raw.raw_responses`
-WHERE NOT processed
-AND process_status IS NOT NULL
-ORDER BY process_timestamp DESC;
-```
-
-### Error Handling
+## Error Handling
 
 1. API Errors:
    - Fetcher retries with exponential backoff
@@ -255,7 +278,10 @@ uv pip install -e ".[dev]"
 
 1. Test components:
 ```bash
-# Test fetcher
+# Test ID fetcher
+uv run python -m src.pipeline.fetch_ids --environment=dev
+
+# Test response fetcher
 uv run python -m src.pipeline.fetch_responses --environment=dev
 
 # Test processor
@@ -270,7 +296,7 @@ uv run pytest
 1. Modify processor:
    - Update `process_responses.py`
    - Build and test locally
-   - Run tests: `uv run pytest tests/test_process_responses.py`
+   - Run tests: `uv run pytest tests/test_processor.py`
    - Deploy new version:
      ```bash
      gcloud builds submit
@@ -278,8 +304,59 @@ uv run pytest
 
 2. Modify fetcher:
    - Update `fetch_responses.py`
-   - Run tests: `uv run pytest tests/test_fetch_responses.py`
+   - Run tests: `uv run pytest tests/test_api_integration.py`
    - Deploy new version via GitHub Actions
+
+## Dashboard
+
+The BGG Data Warehouse includes a Streamlit dashboard for monitoring the data pipeline and exploring the collected data.
+
+### Features
+
+- Overview of key metrics (total games, ranked games, etc.)
+- Game metadata statistics (categories, mechanics, designers, etc.)
+- Time series visualizations of fetch and processing activities
+- Game search functionality
+
+### Accessing the Dashboard
+
+The dashboard is automatically deployed to Google Cloud Run when changes are made to the visualization code. You can access it at:
+
+```
+https://bgg-dashboard-[hash].run.app
+```
+
+Where `[hash]` is a unique identifier assigned by Google Cloud Run. The exact URL will be output at the end of the GitHub Actions workflow run.
+
+### Local Development
+
+To run the dashboard locally:
+
+```bash
+# Install dependencies
+uv pip install -e .
+
+# Run the dashboard
+streamlit run src/visualization/dashboard.py
+
+# Run the game search dashboard
+streamlit run src/visualization/game_search_dashboard.py
+
+# Run the combined dashboard
+streamlit run src/visualization/combined_dashboard.py
+```
+
+This will start the dashboard on http://localhost:8501
+
+### Deployment
+
+The dashboard is automatically deployed via GitHub Actions when changes are pushed to the `main` branch that affect files in the `src/visualization/` directory. You can also manually trigger the deployment from the GitHub Actions tab.
+
+The deployment workflow:
+1. Builds a Docker image for the dashboard using `Dockerfile.dashboard`
+2. Pushes the image to Google Container Registry
+3. Deploys the image to Google Cloud Run
+4. Outputs the URL where the dashboard can be accessed
 
 ## Contributing
 
@@ -310,51 +387,13 @@ Your pull request will trigger:
 4. Manual review process
 5. Automated deployment to production (when merged)
 
-## Dashboard
+## Documentation
 
-The BGG Data Warehouse includes a Streamlit dashboard for monitoring the data pipeline and exploring the collected data.
+Additional documentation is available in the `docs/` directory:
 
-### Features
-
-- Real-time monitoring of data pipeline status
-- Overview of key metrics (total games, ranked games, etc.)
-- Game metadata statistics (categories, mechanics, designers, etc.)
-- Time series visualizations of fetch and processing activities
-- Error monitoring and tracking
-
-### Accessing the Dashboard
-
-The dashboard is automatically deployed to Google Cloud Run when changes are made to the visualization code. You can access it at:
-
-```
-https://bgg-dashboard-[hash].run.app
-```
-
-Where `[hash]` is a unique identifier assigned by Google Cloud Run. The exact URL will be output at the end of the GitHub Actions workflow run.
-
-### Local Development
-
-To run the dashboard locally:
-
-```bash
-# Install dependencies
-uv pip install -e .
-
-# Run the dashboard
-streamlit run src/visualization/dashboard.py
-```
-
-This will start the dashboard on http://localhost:8501
-
-### Deployment
-
-The dashboard is automatically deployed via GitHub Actions when changes are pushed to the `main` branch that affect files in the `src/visualization/` directory. You can also manually trigger the deployment from the GitHub Actions tab.
-
-The deployment workflow:
-1. Builds a Docker image for the dashboard
-2. Pushes the image to Google Container Registry
-3. Deploys the image to Google Cloud Run
-4. Outputs the URL where the dashboard can be accessed
+- [Architecture Overview](docs/architecture.md)
+- [BGG API Documentation](docs/bgg_api.md)
+- [Dashboard Deployment Guide](docs/dashboard_deployment.md)
 
 ## License
 

@@ -2,11 +2,22 @@ name: Run BGG Data Warehouse Jobs
 
 on:
   schedule:
-    - cron: '0 */12 * * *'  # Run every 12 hours (reducing runs due to BigQuery Usage)
-  workflow_dispatch:      # Allow manual triggers for testing
+    - cron: '0 6 * * *'  # Run daily at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run pipeline in'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+        - prod
+        - dev
+        - test
 
 jobs:
-  update-warehouse:
+  fetch-ids:
+    name: Fetch Game IDs
     runs-on: ubuntu-latest
     
     steps:
@@ -20,7 +31,8 @@ jobs:
 
           cat << EOF > .env
           GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
           GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
           EOF
 
@@ -32,14 +44,88 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Run Jobs
+      - name: Execute Fetch IDs Job
         run: |
-          # Run fetch-responses job and wait for completion
-          gcloud run jobs execute bgg-fetch-responses \
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          echo "Fetching game IDs in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-fetch-ids-$ENVIRONMENT \
             --region us-central1 \
+            --update-env-vars ENVIRONMENT=$ENVIRONMENT \
             --wait
-          
-          # Run process-responses job and wait for completion
-          gcloud run jobs execute bgg-process-responses \
+
+  fetch-responses:
+    name: Fetch API Responses
+    runs-on: ubuntu-latest
+    needs: fetch-ids
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Fetch Responses Job
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          echo "Fetching API responses in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-fetch-responses-$ENVIRONMENT \
             --region us-central1 \
+            --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
+            --wait
+
+  process-responses:
+    name: Process API Responses
+    runs-on: ubuntu-latest
+    needs: fetch-responses
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Process Responses Job
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          echo "Processing responses in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-process-responses-$ENVIRONMENT \
+            --region us-central1 \
+            --update-env-vars ENVIRONMENT=$ENVIRONMENT \
             --wait
