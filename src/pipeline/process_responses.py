@@ -265,14 +265,6 @@ class BGGResponseProcessor:
         # Retrieve unprocessed responses
         responses = self.get_unprocessed_responses()
 
-        # In test environments, always simulate a retry
-        if self.environment in ["dev", "test"]:
-            time.sleep(1)  # Simulate retry
-
-        if not responses:
-            logger.info("No unprocessed responses found")
-            return self.environment in ["dev", "test"]  # Return True in test environments
-
         processed_games = []
 
         # Process each response
@@ -310,9 +302,6 @@ class BGGResponseProcessor:
                     except Exception as e:
                         logger.error(f"Failed to update process status: {e}")
 
-                    # In test environments, simulate retry
-                    if self.environment in ["dev", "test"]:
-                        time.sleep(1)  # Brief pause between retries
             except Exception as e:
                 logger.error(f"Error processing game {response['game_id']}: {e}")
 
@@ -332,14 +321,6 @@ class BGGResponseProcessor:
                 except Exception as update_error:
                     logger.error(f"Failed to update process status: {update_error}")
 
-                # In test environments, simulate retry
-                if self.environment in ["dev", "test"]:
-                    time.sleep(1)  # Brief pause between retries
-
-        # In test environments, return True even if no games processed
-        if self.environment in ["dev", "test"] and not processed_games:
-            return True
-
         # Validate processed data
         if not processed_games:
             logger.warning("No games processed in this batch")
@@ -352,10 +333,6 @@ class BGGResponseProcessor:
             # Validate data before loading
             if not self.processor.validate_data(processed_data.get("games"), "games"):
                 logger.warning("Data validation failed")
-
-                # In test environments, return True even on validation failure
-                if self.environment in ["dev", "test"]:
-                    return True
 
                 return False
 
@@ -408,14 +385,14 @@ class BGGResponseProcessor:
         except Exception as e:
             logger.error(f"Failed to process batch: {e}")
 
-            # In test environments, return True even on failure
-            if self.environment in ["dev", "test"]:
-                return True
-
             return False
 
-    def run(self) -> None:
-        """Run the full processing pipeline until no unprocessed responses remain."""
+    def run(self) -> bool:
+        """Run the full processing pipeline until no unprocessed responses remain.
+
+        Returns:
+            bool: True if any responses were processed, False otherwise
+        """
         logger.info("Starting BGG response processor")
         logger.info(f"Reading responses from: {self.raw_responses_table}")
         logger.info(f"Loading processed data to: {self.processed_games_table}")
@@ -425,6 +402,10 @@ class BGGResponseProcessor:
             batch_count = 0
 
             logger.info(f"Found {total_unprocessed} unprocessed responses")
+
+            if total_unprocessed == 0:
+                logger.info("No unprocessed responses found")
+                return False
 
             while total_unprocessed > 0:
                 batch_count += 1
@@ -441,6 +422,8 @@ class BGGResponseProcessor:
 
             logger.info(f"Processor completed - processed {batch_count} batches")
             logger.info(f"Remaining unprocessed responses: {total_unprocessed}")
+
+            return batch_count > 0
 
         except Exception as e:
             logger.error(f"Processor failed: {e}")
@@ -462,7 +445,12 @@ def main() -> None:
     args = parser.parse_args()
 
     processor = BGGResponseProcessor(batch_size=args.batch_size)
-    processor.run()
+    responses_processed = processor.run()
+
+    if responses_processed:
+        logger.info("Responses were processed - pipeline completed successfully")
+    else:
+        logger.info("No responses processed - no data to process")
 
 
 if __name__ == "__main__":

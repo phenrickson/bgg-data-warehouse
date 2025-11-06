@@ -8,9 +8,13 @@ from urllib.error import URLError
 from urllib.request import urlretrieve
 
 import polars as pl
+from dotenv import load_dotenv
 from google.cloud import bigquery
 
 from ..config import get_bigquery_config
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
