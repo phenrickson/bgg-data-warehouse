@@ -8,7 +8,7 @@ on:
       environment:
         description: 'Environment to run pipeline in'
         required: true
-        default: 'dev'
+        default: 'prod'
         type: choice
         options:
         - prod
