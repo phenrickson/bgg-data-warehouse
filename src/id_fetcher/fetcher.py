@@ -4,11 +4,12 @@ import datetime
 import logging
 from pathlib import Path
 from typing import List, Set, Dict, Optional
+from urllib.error import URLError
+from urllib.request import urlretrieve
 
 import polars as pl
 from google.cloud import bigquery
 
-from ..api_client.client import BGGAPIClient
 from ..config import get_bigquery_config
 
 # Configure logging
@@ -18,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 class BGGIDFetcher:
     """Fetches and manages BoardGameGeek IDs."""
+
+    BGG_IDS_URL = "http://bgg.activityclub.org/bggdata/thingids.txt"
 
     def __init__(self, config: Optional[Dict] = None) -> None:
         """Initialize the fetcher with BigQuery configuration.
@@ -29,38 +32,55 @@ class BGGIDFetcher:
         self.client = bigquery.Client(project=self.config["project"]["id"])
         self.dataset_id = self.config["datasets"]["raw"]
         self.table_id = self.config["raw_tables"]["thing_ids"]["name"]
-        self.api_client = BGGAPIClient()
 
-    def fetch_ids(self) -> List[dict]:
-        """Fetch game IDs from the BGG API.
+    def download_ids(self, output_dir: Path) -> Path:
+        """Download the BGG IDs file.
+
+        Args:
+            output_dir: Directory to save the downloaded file
+
+        Returns:
+            Path to the downloaded file
+
+        Raises:
+            URLError: If the download fails
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "thingids.txt"
+
+        try:
+            logger.info("Downloading BGG IDs from %s", self.BGG_IDS_URL)
+            urlretrieve(self.BGG_IDS_URL, output_path)
+            logger.info("Downloaded BGG IDs to %s", output_path)
+            return output_path
+        except URLError as e:
+            logger.error("Failed to download BGG IDs: %s", e)
+            raise
+
+    def parse_ids(self, file_path: Path) -> List[dict]:
+        """Parse game IDs and types from the downloaded file.
+
+        Args:
+            file_path: Path to the IDs file
 
         Returns:
             List of dictionaries containing game IDs and their types
         """
-        logger.info("Fetching game IDs from BGG API")
-
-        try:
-            # Get list of games from API
-            response = self.api_client.get_thing([1])  # Start with first game to test connection
-            if not response:
-                logger.error("Failed to connect to BGG API")
-                return []
-
-            # Parse game IDs from response
-            games = []
-            items = response["items"]["item"]
-            if not isinstance(items, list):
-                items = [items]
-
-            for item in items:
-                games.append({"game_id": int(item["@id"]), "type": item["@type"]})
-
-            logger.info("Found %d game IDs", len(games))
-            return games
-
-        except Exception as e:
-            logger.error("Failed to fetch game IDs: %s", e)
-            return []
+        logger.info("Parsing game IDs from %s", file_path)
+        games = []
+        with open(file_path, "r") as f:
+            content = f.read()
+            logger.debug(
+                "File content: %s", content[:1000]
+            )  # Print first 1000 chars only in debug mode
+            # File contains "ID type" per line (e.g., "12345 boardgame" or "67890 boardgameexpansion")
+            for line in content.splitlines():
+                if line.strip() and len(line.split()) >= 2:
+                    parts = line.split()
+                    if parts[0].isdigit():
+                        games.append({"game_id": int(parts[0]), "type": parts[1]})
+        logger.info("Found %d game IDs", len(games))
+        return games
 
     def get_existing_ids(self) -> Set[tuple]:
         """Get existing game IDs and types from BigQuery.
@@ -158,10 +178,15 @@ class BGGIDFetcher:
             # Clean up temp table
             self.client.delete_table(temp_table, not_found_ok=True)
 
-    def update_ids(self) -> None:
-        """Update game IDs in BigQuery with new IDs from BGG."""
-        # Fetch IDs from API
-        all_games = self.fetch_ids()
+    def update_ids(self, temp_dir: Path) -> None:
+        """Update game IDs in BigQuery with new IDs from BGG.
+
+        Args:
+            temp_dir: Directory for temporary files
+        """
+        # Download and parse IDs
+        ids_file = self.download_ids(temp_dir)
+        all_games = self.parse_ids(ids_file)
 
         # Get existing IDs and find new ones
         existing_ids = self.get_existing_ids()
@@ -177,7 +202,7 @@ class BGGIDFetcher:
 
     def fetch_game_ids(self, config: Optional[Dict] = None) -> List[int]:
         """
-        Fetch game IDs from the BGG API.
+        Fetch game IDs from the downloaded file.
 
         Args:
             config: Optional configuration dictionary with parameters:
@@ -192,9 +217,14 @@ class BGGIDFetcher:
         if config:
             merged_config.update(config)
 
+        # Create a temporary directory for downloading
+        temp_dir = Path("temp")
+        temp_dir.mkdir(exist_ok=True)
+
         try:
-            # Get IDs from API
-            all_games = self.fetch_ids()
+            # Download and parse IDs
+            ids_file = self.download_ids(temp_dir)
+            all_games = self.parse_ids(ids_file)
 
             # Filter by game type
             filtered_games = [
@@ -204,23 +234,38 @@ class BGGIDFetcher:
             # Limit number of games
             filtered_games = filtered_games[: merged_config["max_games_to_fetch"]]
 
-            logger.info(f"Fetched {len(filtered_games)} {merged_config['game_type']} game IDs")
+            logger.info(
+                f"Downloaded and filtered {len(filtered_games)} {merged_config['game_type']} game IDs from BGG"
+            )
             return filtered_games
 
         except Exception as e:
             logger.error(f"Failed to fetch game IDs: {e}")
             return []
+        finally:
+            # Cleanup temporary directory
+            if temp_dir.exists():
+                for file in temp_dir.glob("*"):
+                    file.unlink()
+                temp_dir.rmdir()
 
 
 def main() -> None:
     """Main function to update game IDs."""
+    temp_dir = Path("temp")
     fetcher = BGGIDFetcher()
 
     try:
-        fetcher.update_ids()
+        fetcher.update_ids(temp_dir)
     except Exception as e:
         logger.error("Failed to update game IDs: %s", e)
         raise
+    finally:
+        # Cleanup
+        if temp_dir.exists():
+            for file in temp_dir.glob("*"):
+                file.unlink()
+            temp_dir.rmdir()
 
 
 if __name__ == "__main__":
