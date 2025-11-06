@@ -26,6 +26,8 @@ RUN uv sync
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Default pipeline stage to run
-# Can be set via PIPELINE_STAGE environment variable
-CMD uv run python -m "src.pipeline.${PIPELINE_STAGE:-process_responses}"
+# Use ENTRYPOINT to allow passing the module as an argument
+ENTRYPOINT ["uv", "run", "python", "-m"]
+
+# Default command if none provided
+CMD ["src.pipeline.process_responses"]
