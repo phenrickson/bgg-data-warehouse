@@ -49,9 +49,11 @@ class BGGIDFetcher:
         output_path = output_dir / "thingids.txt"
 
         try:
-            logger.info("Downloading BGG IDs from %s", self.BGG_IDS_URL)
+            logger.info(
+                "Downloading BGG IDs from %s to %s", self.BGG_IDS_URL, output_path.absolute()
+            )
             urlretrieve(self.BGG_IDS_URL, output_path)
-            logger.info("Downloaded BGG IDs to %s", output_path)
+            logger.info("Successfully downloaded BGG IDs to %s", output_path.absolute())
             return output_path
         except URLError as e:
             logger.error("Failed to download BGG IDs: %s", e)
@@ -200,23 +202,13 @@ class BGGIDFetcher:
         else:
             logger.info("No new game IDs found")
 
-    def fetch_game_ids(self, config: Optional[Dict] = None) -> List[int]:
+    def fetch_game_ids(self) -> List[int]:
         """
-        Fetch game IDs from the downloaded file.
-
-        Args:
-            config: Optional configuration dictionary with parameters:
-                - max_games_to_fetch (int): Maximum number of games to return
-                - game_type (str): Type of game to filter (default: boardgame)
+        Fetch boardgame IDs from BGG.
 
         Returns:
-            List of game IDs
+            List of boardgame IDs
         """
-        # Merge config with default configuration
-        merged_config = {"max_games_to_fetch": 50, "game_type": "boardgame"}
-        if config:
-            merged_config.update(config)
-
         # Create a temporary directory for downloading
         temp_dir = Path("temp")
         temp_dir.mkdir(exist_ok=True)
@@ -226,21 +218,50 @@ class BGGIDFetcher:
             ids_file = self.download_ids(temp_dir)
             all_games = self.parse_ids(ids_file)
 
-            # Filter by game type
-            filtered_games = [
-                game["game_id"] for game in all_games if game["type"] == merged_config["game_type"]
-            ]
+            # Filter to boardgames only
+            game_ids = [game["game_id"] for game in all_games if game["type"] == "boardgame"]
 
-            # Limit number of games
-            filtered_games = filtered_games[: merged_config["max_games_to_fetch"]]
-
-            logger.info(
-                f"Downloaded and filtered {len(filtered_games)} {merged_config['game_type']} game IDs from BGG"
-            )
-            return filtered_games
+            logger.info(f"Downloaded and filtered {len(game_ids)} boardgame IDs from BGG")
+            return game_ids
 
         except Exception as e:
             logger.error(f"Failed to fetch game IDs: {e}")
+            return []
+        finally:
+            # Cleanup temporary directory
+            if temp_dir.exists():
+                for file in temp_dir.glob("*"):
+                    file.unlink()
+                temp_dir.rmdir()
+
+    def fetch_expansion_ids(self) -> List[int]:
+        """
+        Fetch boardgame expansion IDs from BGG.
+
+        Returns:
+            List of boardgame expansion IDs
+        """
+        # Create a temporary directory for downloading
+        temp_dir = Path("temp")
+        temp_dir.mkdir(exist_ok=True)
+
+        try:
+            # Download and parse IDs
+            ids_file = self.download_ids(temp_dir)
+            all_games = self.parse_ids(ids_file)
+
+            # Filter to expansions only
+            expansion_ids = [
+                game["game_id"] for game in all_games if game["type"] == "boardgameexpansion"
+            ]
+
+            logger.info(
+                f"Downloaded and filtered {len(expansion_ids)} boardgame expansion IDs from BGG"
+            )
+            return expansion_ids
+
+        except Exception as e:
+            logger.error(f"Failed to fetch expansion IDs: {e}")
             return []
         finally:
             # Cleanup temporary directory
