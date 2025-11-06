@@ -45,7 +45,9 @@ def get_bigquery_config(environment: Optional[str] = None) -> Dict:
             "location": env_config["location"],
         },
         "storage": config["storage"],
-        "datasets": config.get("datasets", {}),
+        "datasets": {
+            "raw": env_config["raw"],  # Use environment-specific raw dataset
+        },
         "tables": config["tables"],
         "raw_tables": config.get("raw_tables", {}),
         "environments": config["environments"],  # Include environments in config

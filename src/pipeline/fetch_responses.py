@@ -37,12 +37,12 @@ class BGGResponseFetcher:
             environment: Environment to use (prod/dev/test)
             max_retries: Maximum number of retry attempts for failed requests
         """
-        self.config = get_bigquery_config()
+        self.config = get_bigquery_config(environment)
         self.batch_size = batch_size
         self.chunk_size = chunk_size
         self.environment = environment
         self.max_retries = max_retries
-        self.id_fetcher = BGGIDFetcher()
+        self.id_fetcher = BGGIDFetcher(self.config)
         self.api_client = BGGAPIClient()
         self.bq_client = bigquery.Client()
 

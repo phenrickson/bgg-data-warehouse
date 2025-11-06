@@ -34,42 +34,54 @@ def fetcher(mock_config):
         yield fetcher
 
 
-def test_fetch_ids(fetcher):
-    """Test fetching IDs from API."""
-    mock_response = {
-        "items": {
-            "item": [
-                {"@type": "boardgame", "@id": "13"},
-                {"@type": "boardgame", "@id": "14"},
-                {"@type": "boardgame", "@id": "15"},
-            ]
-        }
-    }
+def test_fetch_game_ids(fetcher):
+    """Test fetching boardgame IDs."""
+    mock_file_content = "13 boardgame\n14 boardgame\n15 boardgameexpansion\n"
 
-    with mock.patch.object(fetcher.api_client, "get_thing", return_value=mock_response):
-        ids = fetcher.fetch_ids()
+    with mock.patch.object(fetcher, "download_ids") as mock_download:
+        with mock.patch("builtins.open", mock.mock_open(read_data=mock_file_content)):
+            mock_download.return_value = Path("temp/thingids.txt")
 
-        assert len(ids) == 3
-        assert ids[0]["game_id"] == 13
-        assert ids[1]["game_id"] == 14
-        assert ids[2]["game_id"] == 15
-        assert all(game["type"] == "boardgame" for game in ids)
+            ids = fetcher.fetch_game_ids()
+
+            assert len(ids) == 2  # Only boardgames
+            assert 13 in ids
+            assert 14 in ids
+            assert 15 not in ids  # This is an expansion
+
+
+def test_fetch_expansion_ids(fetcher):
+    """Test fetching expansion IDs."""
+    mock_file_content = "13 boardgame\n14 boardgame\n15 boardgameexpansion\n"
+
+    with mock.patch.object(fetcher, "download_ids") as mock_download:
+        with mock.patch("builtins.open", mock.mock_open(read_data=mock_file_content)):
+            mock_download.return_value = Path("temp/thingids.txt")
+
+            ids = fetcher.fetch_expansion_ids()
+
+            assert len(ids) == 1  # Only expansions
+            assert 15 in ids
+            assert 13 not in ids  # This is a boardgame
 
 
 def test_fetch_ids_error(fetcher):
-    """Test handling API errors when fetching IDs."""
-    with mock.patch.object(fetcher.api_client, "get_thing", return_value=None):
-        ids = fetcher.fetch_ids()
+    """Test handling download errors when fetching IDs."""
+    with mock.patch.object(fetcher, "download_ids", side_effect=Exception("Download failed")):
+        ids = fetcher.fetch_game_ids()
         assert len(ids) == 0
 
 
-def test_fetch_ids_empty_response(fetcher):
-    """Test handling empty API response."""
-    mock_response = {"items": {"item": []}}
+def test_fetch_ids_empty_file(fetcher):
+    """Test handling empty file."""
+    mock_file_content = ""
 
-    with mock.patch.object(fetcher.api_client, "get_thing", return_value=mock_response):
-        ids = fetcher.fetch_ids()
-        assert len(ids) == 0  # Should return empty list for empty response
+    with mock.patch.object(fetcher, "download_ids") as mock_download:
+        with mock.patch("builtins.open", mock.mock_open(read_data=mock_file_content)):
+            mock_download.return_value = Path("temp/thingids.txt")
+
+            ids = fetcher.fetch_game_ids()
+            assert len(ids) == 0
 
 
 def test_get_existing_ids(fetcher):
@@ -159,16 +171,8 @@ def test_upload_new_ids_error(fetcher):
 
 def test_update_ids_integration(fetcher):
     """Test the complete ID update process."""
-    # Mock API response
-    mock_api_response = {
-        "items": {
-            "item": [
-                {"@type": "boardgame", "@id": "13"},
-                {"@type": "boardgame", "@id": "14"},
-                {"@type": "boardgame", "@id": "15"},
-            ]
-        }
-    }
+    # Mock file content with IDs
+    mock_file_content = "13 boardgame\n14 boardgame\n15 boardgame\n"
 
     # Mock existing IDs in BigQuery
     mock_query_result = mock.Mock()
@@ -179,29 +183,36 @@ def test_update_ids_integration(fetcher):
     # Mock BigQuery operations
     mock_job = mock.Mock()
     mock_job.result = mock.Mock()
+    mock_query_job = mock.Mock()
+    mock_query_job.result = mock.Mock()
 
-    with mock.patch.object(fetcher.api_client, "get_thing", return_value=mock_api_response):
-        with mock.patch.object(fetcher.client, "query", return_value=mock_query_result):
-            with mock.patch.object(fetcher.client, "load_table_from_dataframe") as mock_load:
-                with mock.patch.object(fetcher.client, "delete_table") as mock_delete:
-                    mock_load.return_value = mock_job
-                    fetcher.update_ids()
+    with mock.patch.object(fetcher, "download_ids") as mock_download:
+        with mock.patch("builtins.open", mock.mock_open(read_data=mock_file_content)):
+            with mock.patch.object(fetcher.client, "query", return_value=mock_query_result):
+                with mock.patch.object(fetcher.client, "load_table_from_dataframe") as mock_load:
+                    with mock.patch.object(fetcher.client, "delete_table") as mock_delete:
+                        mock_download.return_value = Path("temp/thingids.txt")
+                        mock_load.return_value = mock_job
+                        mock_query_job.return_value = mock_query_job
 
-                    # Should attempt to upload new IDs (14, 15)
-                    mock_load.assert_called_once()
-                    df = mock_load.call_args[0][0]
-                    assert len(df) == 2
-                    assert df["game_id"].tolist() == [14, 15]
-                    assert all(t == "boardgame" for t in df["type"])
+                        temp_dir = Path("temp")
+                        fetcher.update_ids(temp_dir)
 
-                    # Should clean up temp table
-                    mock_delete.assert_called_once()
+                        # Should attempt to upload new IDs (14, 15)
+                        mock_load.assert_called_once()
+                        df = mock_load.call_args[0][0]
+                        assert len(df) == 2
+                        assert df["game_id"].tolist() == [14, 15]
+                        assert all(t == "boardgame" for t in df["type"])
+
+                        # Should clean up temp table
+                        mock_delete.assert_called_once()
 
 
 def test_update_ids_no_new_ids(fetcher):
     """Test update process when no new IDs are found."""
-    # Mock API response with one game
-    mock_api_response = {"items": {"item": [{"@type": "boardgame", "@id": "1"}]}}
+    # Mock file content with one game
+    mock_file_content = "1 boardgame\n"
 
     # Mock existing IDs in BigQuery with same game
     mock_query_result = mock.Mock()
@@ -209,10 +220,14 @@ def test_update_ids_no_new_ids(fetcher):
         {"game_id": [1], "type": ["boardgame"]}
     )
 
-    with mock.patch.object(fetcher.api_client, "get_thing", return_value=mock_api_response):
-        with mock.patch.object(fetcher.client, "query", return_value=mock_query_result):
-            with mock.patch.object(fetcher.client, "load_table_from_dataframe") as mock_load:
-                fetcher.update_ids()
+    with mock.patch.object(fetcher, "download_ids") as mock_download:
+        with mock.patch("builtins.open", mock.mock_open(read_data=mock_file_content)):
+            with mock.patch.object(fetcher.client, "query", return_value=mock_query_result):
+                with mock.patch.object(fetcher.client, "load_table_from_dataframe") as mock_load:
+                    mock_download.return_value = Path("temp/thingids.txt")
 
-                # Should not attempt to upload when no new IDs
-                mock_load.assert_not_called()
+                    temp_dir = Path("temp")
+                    fetcher.update_ids(temp_dir)
+
+                    # Should not attempt to upload when no new IDs
+                    mock_load.assert_not_called()
