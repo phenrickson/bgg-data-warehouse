@@ -64,4 +64,4 @@ jobs:
         run: |
           # Build and update job configurations
           gcloud builds submit --config cloudbuild.yaml \
-            --substitutions=_ENVIRONMENT=${{ steps.env.outputs.environment }}
+            --substitutions=_ENVIRONMENT=${{ steps.env.outputs.environment }},_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}

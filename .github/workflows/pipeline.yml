@@ -21,6 +21,7 @@ jobs:
           cat << EOF > .env
           GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
           ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
           GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
           EOF
 
