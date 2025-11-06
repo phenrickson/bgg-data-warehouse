@@ -77,6 +77,8 @@ class BGGResponseFetcher:
                         SELECT 1 
                         FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
                         WHERE i.game_id = r.game_id
+                        AND r.process_status IS DISTINCT FROM 'no_response'
+                        AND r.process_status IS DISTINCT FROM 'parse_error'
                     )
                     AND NOT EXISTS (
                         SELECT 1
@@ -95,6 +97,8 @@ class BGGResponseFetcher:
                         SELECT 1 
                         FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
                         WHERE t.game_id = r.game_id
+                        AND r.process_status IS DISTINCT FROM 'no_response'
+                        AND r.process_status IS DISTINCT FROM 'parse_error'
                     )
                     AND NOT EXISTS (
                         SELECT 1
