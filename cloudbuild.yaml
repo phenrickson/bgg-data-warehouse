@@ -23,7 +23,7 @@ steps:
       - '--cpu=1'
       - '--region=us-central1'
       - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=dev,PIPELINE_STAGE=fetch_responses'
+      - '--set-env-vars=ENVIRONMENT=$ENVIRONMENT,PIPELINE_STAGE=fetch_responses'
 
   # Deploy Process Responses Cloud Run Job
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -40,7 +40,7 @@ steps:
       - '--cpu=1'
       - '--region=us-central1'
       - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--set-env-vars=ENVIRONMENT=dev,PIPELINE_STAGE=process_responses'
+      - '--set-env-vars=ENVIRONMENT=$ENVIRONMENT,PIPELINE_STAGE=process_responses'
 
 # Images to push to Container Registry
 images:
