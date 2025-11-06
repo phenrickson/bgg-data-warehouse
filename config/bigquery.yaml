@@ -1,22 +1,22 @@
 environments:
+  test:
+    project_id: gcp-demos-411520
+    dataset: bgg_data_test
+    raw: bgg_raw_test
+    location: US
   dev:
     project_id: gcp-demos-411520
     dataset: bgg_data_dev
+    raw: bgg_raw_dev
     location: US
   prod:
     project_id: gcp-demos-411520
-    dataset: bgg_data
+    dataset: bgg_data_prod
+    raw: bgg_raw_prod
     location: US
 
 # Default to dev environment unless specified
 default_environment: dev
-
-# Dataset configuration
-datasets:
-  raw: bgg_raw_dev
-  transformed: bgg_transformed_dev
-  reporting: bgg_reporting_dev
-  monitoring: bgg_monitoring_dev
 
 storage:
   bucket: bgg-data-warehouse
@@ -45,9 +45,12 @@ raw_tables:
   raw_responses:
     name: raw_responses
     description: "Raw API responses before processing"
-    clustering_fields: [game_id]
+    clustering_fields: [record_id, game_id]
     time_partitioning: fetch_timestamp
     schema:
+      - name: record_id
+        type: STRING
+        mode: REQUIRED
       - name: game_id
         type: INTEGER
         mode: REQUIRED

@@ -1,6 +1,7 @@
 """BoardGameGeek XML API2 client with rate limiting and request tracking."""
 
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timedelta, UTC
@@ -10,12 +11,17 @@ from urllib.parse import urljoin
 import pandas as pd
 import requests
 import xmltodict
+from dotenv import load_dotenv
 from google.cloud import bigquery
 
 from ..config import get_bigquery_config
 
+# Load environment variables
+load_dotenv()
+
 # Get logger
 logger = logging.getLogger(__name__)
+
 
 class BGGAPIClient:
     """Client for the BoardGameGeek XML API2."""
@@ -30,6 +36,9 @@ class BGGAPIClient:
         """Initialize the API client."""
         self.last_request_time = datetime.min.replace(tzinfo=UTC)
         self.session = requests.Session()
+        self.api_token = os.getenv("BGG_API_TOKEN")
+        if not self.api_token:
+            logger.warning("BGG_API_TOKEN not found in environment variables")
 
     def _wait_for_rate_limit(self) -> None:
         """Wait to respect the rate limit."""
@@ -51,7 +60,7 @@ class BGGAPIClient:
         retry_count: int,
     ) -> None:
         """Log request details to BigQuery and console.
-        
+
         Args:
             request_id: Unique identifier for the request
             game_ids: ID or list of IDs of the requested games
@@ -64,7 +73,7 @@ class BGGAPIClient:
         """
         duration = (end_time - start_time).total_seconds()
         status = "SUCCESS" if success else "FAILED"
-        
+
         # Log to console
         logger.info(
             f"API Request {request_id} for games {game_ids}: {status} "
@@ -72,40 +81,42 @@ class BGGAPIClient:
         )
         if error_message:
             logger.error(f"Error details: {error_message}")
-            
+
         # Log to BigQuery
         try:
             config = get_bigquery_config()
             client = bigquery.Client()
-            
+
             # Prepare request log entry
             table_id = f"{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}"
-            rows_to_insert = [{
-                "request_id": request_id,
-                "url": f"{self.BASE_URL}thing",
-                "method": "GET",
-                "game_ids": str(game_ids) if game_ids else None,
-                "status_code": status_code,
-                "response_time": duration,
-                "error": error_message,
-                "request_timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S.%f")
-            }]
-            
+            rows_to_insert = [
+                {
+                    "request_id": request_id,
+                    "url": f"{self.BASE_URL}thing",
+                    "method": "GET",
+                    "game_ids": str(game_ids) if game_ids else None,
+                    "status_code": status_code,
+                    "response_time": duration,
+                    "error": error_message,
+                    "request_timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                }
+            ]
+
             # Insert into BigQuery
             errors = client.insert_rows_json(table_id, rows_to_insert)
             if errors:
                 logger.error(f"Failed to log request to BigQuery: {errors}")
-                
+
         except Exception as e:
             logger.error(f"Failed to log request to BigQuery: {e}")
 
     def get_thing(self, game_ids: Union[int, List[int]], stats: bool = True) -> Optional[Dict]:
         """Get details for one or more games.
-        
+
         Args:
             game_ids: Single game ID or list of game IDs to fetch
             stats: Whether to include statistics
-            
+
         Returns:
             Dictionary containing game details or None if request fails
         """
@@ -114,25 +125,30 @@ class BGGAPIClient:
         # Convert single ID to list
         if isinstance(game_ids, int):
             game_ids = [game_ids]
-            
+
         # Convert IDs to comma-separated string
         ids_str = ",".join(str(id) for id in game_ids)
-        
+
         params = {
             "id": ids_str,
             "stats": int(stats),
             "type": "boardgame",
         }
 
+        # Add API token to headers
+        headers = {}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+
         retry_count = 0
         while retry_count <= self.MAX_RETRIES:
             self._wait_for_rate_limit()
             start_time = datetime.now(UTC)
-            
+
             try:
-                response = self.session.get(endpoint, params=params)
+                response = self.session.get(endpoint, params=params, headers=headers)
                 end_time = datetime.now(UTC)
-                
+
                 # Handle response
                 if response.status_code == 200:
                     try:
@@ -161,6 +177,21 @@ class BGGAPIClient:
                             retry_count=retry_count,
                         )
                         return None
+
+                # Handle unauthorized
+                elif response.status_code == 401:
+                    logger.error("Unauthorized: Invalid or missing API token")
+                    self._log_request(
+                        request_id=request_id,
+                        game_ids=game_ids,
+                        start_time=start_time,
+                        end_time=end_time,
+                        status_code=response.status_code,
+                        success=False,
+                        error_message="Unauthorized: Invalid or missing API token",
+                        retry_count=retry_count,
+                    )
+                    return None
 
                 # Handle rate limiting
                 elif response.status_code == 429:
@@ -214,22 +245,19 @@ class BGGAPIClient:
 
         return None
 
-    def get_request_stats(
-        self, 
-        minutes: int = 60
-    ) -> Dict[str, Union[int, float]]:
+    def get_request_stats(self, minutes: int = 60) -> Dict[str, Union[int, float]]:
         """Get statistics about API requests from BigQuery.
-        
+
         Args:
             minutes: Number of minutes to look back
-            
+
         Returns:
             Dictionary containing request statistics
         """
         try:
             config = get_bigquery_config()
             client = bigquery.Client()
-            
+
             # Query request log table
             query = f"""
             WITH recent_requests AS (
@@ -245,7 +273,7 @@ class BGGAPIClient:
                 AVG(CAST(REGEXP_EXTRACT(error, r'retries=([0-9]+)') AS INT64)) as avg_retries
             FROM recent_requests
             """
-            
+
             df = client.query(query).to_dataframe()
             if len(df) == 0:
                 return {
@@ -255,12 +283,12 @@ class BGGAPIClient:
                     "avg_response_time": 0,
                     "avg_retries": 0,
                 }
-                
+
             stats = df.iloc[0].to_dict()
             # Convert NaN to 0
             stats = {k: 0 if pd.isna(v) else v for k, v in stats.items()}
             return stats
-            
+
         except Exception as e:
             logger.error(f"Failed to get request stats: {e}")
             return {
