@@ -49,4 +49,8 @@ create-views:
 	uv run -m src.warehouse.create_views \
 	--environment $(TARGET_ENV)
 
+add-record-id:
+	uv run -m src.warehouse.migration_scripts.add_record_id \
+	--environment $(TARGET_ENV)
+
 migrate-data: migrate-bgg-data migrate-bgg-raw create-views

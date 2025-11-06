@@ -3,6 +3,11 @@ name: Deploy BGG Data Warehouse
 on:
   push:
     branches: [ main, develop, test ]
+    paths:
+      - 'Dockerfile'
+      - 'cloudbuild.yaml'
+      - 'src/pipeline/**'
+      - 'config/bigquery.yaml'
   workflow_dispatch:  # Allow manual triggers for testing
     inputs:
       environment:
