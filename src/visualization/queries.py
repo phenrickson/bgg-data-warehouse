@@ -15,7 +15,7 @@ WHERE bayes_average IS NOT NULL
 
 UNPROCESSED_RESPONSES_QUERY = """
 SELECT COUNT(*) as unprocessed_count
-FROM `${project_id}.bgg_raw_dev.raw_responses`
+FROM `${project_id}.${raw}.raw_responses`
 WHERE processed = FALSE;
 """
 
@@ -35,7 +35,7 @@ RECENT_FETCH_ACTIVITY = """
 SELECT 
     DATE(fetch_timestamp) as date,
     COUNT(*) as responses_fetched
-FROM `${project_id}.bgg_raw_dev.raw_responses`
+FROM `${project_id}.${raw}.raw_responses`
 WHERE fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 GROUP BY date
 ORDER BY date;
@@ -47,7 +47,7 @@ SELECT
     COUNTIF(processed) as processed_count,
     COUNTIF(NOT processed) as unprocessed_count,
     ROUND(COUNTIF(processed) / COUNT(*) * 100, 2) as success_rate
-FROM `${project_id}.bgg_raw_dev.raw_responses`
+FROM `${project_id}.${raw}.raw_responses`
 WHERE fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY);
 """
 
@@ -58,7 +58,7 @@ SELECT
     process_attempt,
     fetch_timestamp,
     process_timestamp
-FROM `${project_id}.bgg_raw_dev.raw_responses`
+FROM `${project_id}.${raw}.raw_responses`
 WHERE NOT processed
 AND process_status IS NOT NULL
 ORDER BY process_timestamp DESC
@@ -82,7 +82,7 @@ DAILY_PROCESSING_COUNTS = """
 SELECT
     DATE(process_timestamp) as date,
     COUNT(*) as processed_count
-FROM `${project_id}.bgg_raw_dev.raw_responses`
+FROM `${project_id}.${raw}.raw_responses`
 WHERE process_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 AND processed = TRUE
 GROUP BY date
@@ -93,7 +93,7 @@ PROCESSING_ERROR_TRENDS = """
 SELECT
     DATE(process_timestamp) as date,
     COUNT(*) as error_count
-FROM `${project_id}.bgg_raw_dev.raw_responses`
+FROM `${project_id}.${raw}.raw_responses`
 WHERE process_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 AND NOT processed
 AND process_status IS NOT NULL
