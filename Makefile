@@ -28,10 +28,10 @@ search:
 
 # migrate
 source-dataset ?= bgg_data_dev
-target-dataset ?= bgg_data_prod
+target-dataset ?= bgg_data_test
 source-raw ?= bgg_raw_dev
-target-raw ?= bgg_raw_prod
-TARGET_ENV ?= prod
+target-raw ?= bgg_raw_test
+TARGET_ENV ?= test
 
 migrate-bgg-data:
 	uv run -m src.warehouse.migrate_datasets \
@@ -50,21 +50,7 @@ create-views:
 	--environment $(TARGET_ENV)
 
 add-record-id:
-	uv run -m src.warehouse.migration_scripts.add_record_id_to_raw_responses \
+	uv run -m src.warehouse.migration_scripts.add_record_id \
 	--environment $(TARGET_ENV)
 
 migrate-data: migrate-bgg-data migrate-bgg-raw create-views
-
-# run steps of pipeline
-.PHONY: fetch-ids fetch-responses process-responses
-fetch-ids:
-	uv run -m src.pipeline.fetch_ids
-
-fetch-responses:
-	uv run -m src.pipeline.fetch_responses
-
-process-responses:
-	uv run -m src.pipeline.process_responses
-
-pipeline:
-	fetch-ids fetch-responses process-responses
