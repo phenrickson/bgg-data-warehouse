@@ -7,8 +7,6 @@ on:
         - develop
     paths:
       - 'src/visualization/**'
-      - 'src/config.py
-      - 'config/bigquery.yaml'
   workflow_dispatch:  # Allow manual triggers for testing
 
 jobs:
