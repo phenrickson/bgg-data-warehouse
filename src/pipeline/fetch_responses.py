@@ -3,6 +3,7 @@
 import logging
 import random
 import inspect
+import uuid
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Union
@@ -210,6 +211,7 @@ class BGGResponseFetcher:
             for game_id in no_response_ids:
                 current_attempt = existing_attempts.get(game_id, 0) + 1
                 row = {
+                    "record_id": str(uuid.uuid4()),  # Generate a UUID for record_id
                     "game_id": game_id,
                     "response_data": "",  # Use empty string instead of None
                     "fetch_timestamp": base_time.isoformat(),
@@ -253,6 +255,7 @@ class BGGResponseFetcher:
                 for game_id in game_ids:
                     if game_id in game_responses:
                         row = {
+                            "record_id": str(uuid.uuid4()),  # Generate a UUID for record_id
                             "game_id": game_id,
                             "response_data": game_responses[game_id],
                             "fetch_timestamp": base_time.isoformat(),
@@ -288,6 +291,7 @@ class BGGResponseFetcher:
                 for game_id in game_ids:
                     current_attempt = existing_attempts.get(game_id, 0) + 1
                     row = {
+                        "record_id": str(uuid.uuid4()),  # Generate a UUID for record_id
                         "game_id": game_id,
                         "response_data": "",  # Use empty string instead of None
                         "fetch_timestamp": base_time.isoformat(),
