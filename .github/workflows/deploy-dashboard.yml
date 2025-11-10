@@ -74,7 +74,7 @@ jobs:
         run: |
           # Get the project ID from the environment
           PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT || 'prod' }}
           
           gcloud run deploy bgg-dashboard \
             --image gcr.io/${PROJECT_ID}/bgg-dashboard:latest \
