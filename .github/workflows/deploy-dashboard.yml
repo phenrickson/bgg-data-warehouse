@@ -9,6 +9,7 @@ on:
       - 'src/visualization/**'
       - 'src/config.py'
       - 'config/bigquery.yaml'
+      - '.github/workflows/deploy-dashboard.yml'
   workflow_dispatch:  # Allow manual triggers for testing
 
 jobs:
@@ -39,7 +40,7 @@ jobs:
 
           cat << EOF > .env
           GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT || 'dev' }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT || 'prod' }}
           GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
           EOF
 
