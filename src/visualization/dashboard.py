@@ -63,7 +63,7 @@ def get_bigquery_config():
         config = yaml.safe_load(f)
 
     # Get environment from .env
-    env = os.getenv("ENVIRONMENT", "dev")
+    env = os.getenv("ENVIRONMENT", "prod")
     logger.debug(f"Loading config for environment: {env}")
 
     # Build config with environment-specific values
@@ -104,8 +104,8 @@ def format_project_dataset(query: str) -> str:
     project_id = config["project"]["id"]
     dataset = config["project"]["dataset"]
     raw_dataset = config["project"].get(
-        "raw", "bgg_raw_dev"
-    )  # Get raw dataset or default to bgg_raw_dev
+        "raw", "bgg_raw_prod"
+    )  # Get raw dataset or default to bgg_raw_prod
 
     logger.debug(
         f"Formatting query with: project_id={project_id}, dataset={dataset}, raw_dataset={raw_dataset}"
