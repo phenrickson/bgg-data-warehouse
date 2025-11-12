@@ -1,46 +1,7 @@
 -- BGG Data Warehouse Views
--- Most recent game data with per-game timestamp tracking
-CREATE OR REPLACE VIEW `${project_id}.${dataset}.games_active` AS
-WITH game_latest_timestamps AS (
-  SELECT 
-    game_id,
-    MAX(load_timestamp) AS latest_game_timestamp
-  FROM `${project_id}.${dataset}.games`
-  GROUP BY game_id
-),
-latest_game_data AS (
-  SELECT g.*
-  FROM `${project_id}.${dataset}.games` g
-  JOIN game_latest_timestamps lt 
-    ON g.game_id = lt.game_id 
-    AND g.load_timestamp = lt.latest_game_timestamp
-)
-SELECT DISTINCT
-    game_id,
-    type,
-    primary_name AS name,
-    year_published,
-    average_rating,
-    average_weight,
-    bayes_average,
-    users_rated,
-    owned_count,
-    trading_count,
-    wanting_count,
-    wishing_count,
-    num_comments,
-    num_weights,
-    min_players,
-    max_players,
-    playing_time,
-    min_playtime,
-    max_playtime,
-    min_age,
-    description,
-    thumbnail,
-    image,
-    load_timestamp
-FROM latest_game_data;
+-- Note: The games_active view has been replaced by the games_active_table
+-- which is refreshed daily via a scheduled query for better performance and lower query costs.
+-- See src/warehouse/create_scheduled_tables.py for implementation details.
 
 -- Player count recommendations with total votes and filtering
 CREATE OR REPLACE VIEW `${project_id}.${dataset}.player_count_recommendations` AS
@@ -74,7 +35,7 @@ SELECT
     pc.total_votes,
     pc.best_percentage,
     pc.recommended_percentage
-FROM `${project_id}.${dataset}.games_active` g
+FROM `${project_id}.${dataset}.games_active_table` g
 JOIN player_count_stats pc ON g.game_id = pc.game_id
 WHERE pc.best_votes IS NOT NULL 
   AND pc.recommended_votes IS NOT NULL 
