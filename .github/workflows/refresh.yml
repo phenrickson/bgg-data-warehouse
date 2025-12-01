@@ -1,0 +1,93 @@
+name: Refresh BGG Game Data
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Run daily at 8 AM UTC (2 hours after new game pipeline)
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run refresh in'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+        - prod
+        - dev
+        - test
+
+jobs:
+  refresh-games:
+    name: Refresh Game Data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Refresh Games Job
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          echo "Refreshing games in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-refresh-games-$ENVIRONMENT \
+            --region us-central1 \
+            --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
+            --wait
+
+  process-responses:
+    name: Process Refresh Responses
+    runs-on: ubuntu-latest
+    needs: refresh-games
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
+
+          cat << EOF > .env
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+          EOF
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Process Responses Job
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
+          echo "Processing refresh responses in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-process-responses-$ENVIRONMENT \
+            --region us-central1 \
+            --update-env-vars ENVIRONMENT=$ENVIRONMENT \
+            --wait
