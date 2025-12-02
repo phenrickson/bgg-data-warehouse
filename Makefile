@@ -27,9 +27,10 @@ search:
 	uv run streamlit run src/visualization/game_search_dashboard.py --server.port 8502
 
 # migrate
-source-dataset ?= bgg_data_dev
+project-id ?= gcp-demos-411520
+source-dataset ?= bgg_data_prod
 target-dataset ?= bgg_data_test
-source-raw ?= bgg_raw_dev
+source-raw ?= bgg_raw_prod
 target-raw ?= bgg_raw_test
 TARGET_ENV ?= test
 
@@ -46,11 +47,13 @@ migrate-bgg-raw:
 	--project-id gcp-demos-411520
 
 create-views:
-	uv run -m src.warehouse.create_views \
-	--environment $(TARGET_ENV)
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.create_views
+
+create-scheduled-tables:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.create_scheduled_tables
 
 add-record-id:
-	uv run -m src.warehouse.migration_scripts.add_record_id \
-	--environment $(TARGET_ENV)
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.add_record_id
 
-migrate-data: migrate-bgg-data migrate-bgg-raw create-views
+.PHONY: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id
+migrate-dataset: migrate-bgg-data migrate-bgg-raw create-views

@@ -26,6 +26,11 @@ def get_bigquery_config(environment: Optional[str] = None) -> Dict:
 
         load_dotenv()
         environment = os.getenv("ENVIRONMENT")
+
+    # Strip whitespace from environment name (Windows cmd can add trailing spaces)
+    if environment:
+        environment = environment.strip()
+
     config_path = os.path.join("config", "bigquery.yaml")
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -50,5 +55,6 @@ def get_bigquery_config(environment: Optional[str] = None) -> Dict:
         },
         "tables": config["tables"],
         "raw_tables": config.get("raw_tables", {}),
+        "refresh_policy": config.get("refresh_policy", {}),  # Include refresh policy
         "environments": config["environments"],  # Include environments in config
     }
