@@ -47,7 +47,14 @@ class BGGGameRefresher:
         if self.dry_run:
             logger.info("*** DRY RUN MODE - No data will be fetched or written ***")
         logger.info(f"Initialized refresher with batch size {self.batch_size}")
-        logger.info(f"Refresh intervals: {self.refresh_intervals}")
+        logger.info("Refresh intervals:")
+        for interval in self.refresh_intervals:
+            age_range = f"{interval.get('min_age_years', 0)}-{interval.get('max_age_years', '∞')} years"
+            if interval.get('max_age_years') is None:
+                age_range = f"{interval.get('min_age_years', 0)}+ years"
+            elif interval.get('min_age_years', 0) == 0:
+                age_range = f"0-{interval.get('max_age_years')} years"
+            logger.info(f"  {interval['name']:12} | Age: {age_range:12} | Refresh every {interval['refresh_days']:3} days")
 
     def count_games_needing_refresh(self) -> Dict[str, int]:
         """Count how many games need refresh by category without fetching data.
