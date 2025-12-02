@@ -10,6 +10,7 @@ from google.cloud import bigquery
 from ..api_client.client import BGGAPIClient
 from ..config import get_bigquery_config
 from ..utils.logging_config import setup_logging
+from .process_responses import BGGResponseProcessor
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -573,7 +574,10 @@ def main() -> None:
     games_refreshed = refresher.run()
 
     if games_refreshed:
-        logger.info("Games were refreshed - process_responses should be triggered")
+        logger.info("Games were refreshed - now processing responses")
+        processor = BGGResponseProcessor(environment=environment)
+        processor.run()
+        logger.info("Refresh cycle complete")
     else:
         logger.info("No games refreshed - no further action needed")
 
