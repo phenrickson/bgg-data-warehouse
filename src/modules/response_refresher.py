@@ -1,4 +1,4 @@
-"""Pipeline module for refreshing previously loaded games based on publication year."""
+"""Module for refreshing previously loaded games based on publication year."""
 
 import logging
 import os
@@ -10,15 +10,14 @@ from google.cloud import bigquery
 from ..api_client.client import BGGAPIClient
 from ..config import get_bigquery_config
 from ..utils.logging_config import setup_logging
-from .process_responses import BGGResponseProcessor
-from .fetch_responses import BGGResponseFetcher
+from .response_fetcher import ResponseFetcher
 
 # Set up logging
 logger = logging.getLogger(__name__)
 setup_logging()
 
 
-class BGGGameRefresher:
+class ResponseRefresher:
     """Refreshes previously loaded games with priority for recently published games."""
 
     def __init__(
@@ -40,7 +39,7 @@ class BGGGameRefresher:
         self.dry_run = dry_run
         self.api_client = BGGAPIClient()
         self.bq_client = bigquery.Client()
-        self.response_fetcher = BGGResponseFetcher(
+        self.response_fetcher = ResponseFetcher(
             chunk_size=chunk_size,
             environment=environment
         )
@@ -359,7 +358,7 @@ class BGGGameRefresher:
         Returns:
             bool: True if any games were refreshed, False otherwise
         """
-        logger.info("Starting BGG game refresher")
+        logger.info(f"Starting response refresher in {self.environment} environment")
 
         try:
             # First, check how many games need refreshing (cheap count query)
@@ -394,44 +393,3 @@ class BGGGameRefresher:
         except Exception as e:
             logger.error(f"Refresher failed: {e}")
             raise
-
-
-def main() -> None:
-    """Main entry point for the refresher."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Refresh BGG game data")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run in dry-run mode (no data will be fetched or written)",
-    )
-    parser.add_argument(
-        "--environment",
-        type=str,
-        default=None,
-        help="Environment to use (test/dev/prod). Defaults to ENVIRONMENT env var or 'test'",
-    )
-    args = parser.parse_args()
-
-    environment = args.environment or os.getenv("ENVIRONMENT", "test")
-    logger.info(f"Starting refresher in {environment} environment")
-
-    refresher = BGGGameRefresher(
-        chunk_size=20,
-        environment=environment,
-        dry_run=args.dry_run,
-    )
-    games_refreshed = refresher.run()
-
-    if games_refreshed:
-        logger.info("Games were refreshed - now processing responses")
-        processor = BGGResponseProcessor(environment=environment)
-        processor.run()
-        logger.info("Refresh cycle complete")
-    else:
-        logger.info("No games refreshed - no further action needed")
-
-
-if __name__ == "__main__":
-    main()
