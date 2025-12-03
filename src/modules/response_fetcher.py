@@ -315,7 +315,7 @@ class ResponseFetcher:
                 logger.info(f"Load job input rows: {load_job_result.input_file_bytes}")
                 logger.info(f"Load job output rows: {load_job_result.output_rows}")
 
-            logger.info(f"Successfully processed responses for {len(rows)} games")
+            logger.info(f"Successfully fetched responses for {len(rows)} games")
 
             # Insert into fetched_responses tracking table
             try:
