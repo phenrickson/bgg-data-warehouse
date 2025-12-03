@@ -81,16 +81,25 @@ def migrate_dataset(
         source_table = f"{source_ref}.{table_name}"
         dest_table = f"{dest_ref}.{table_name}"
 
-        # Copy entire table
-        query = f"""
-        CREATE OR REPLACE TABLE `{dest_table}` AS
-        SELECT * 
-        FROM `{source_table}`
-        """
+        # Get source table metadata to preserve partitioning and clustering
+        source_table_obj = client.get_table(source_table)
 
-        job = client.query(query)
-        job.result()
-        logger.info(f"Migrated table: {table_name}")
+        # Check if destination table exists and drop it if it does
+        try:
+            client.get_table(dest_table)
+            logger.info(f"Dropping existing table: {table_name}")
+            client.delete_table(dest_table)
+        except Exception:
+            pass  # Table doesn't exist, that's fine
+
+        # Copy table with proper configuration
+        job_config = bigquery.CopyJobConfig()
+
+        # Copy the table
+        copy_job = client.copy_table(source_table, dest_table, job_config=job_config)
+        copy_job.result()
+
+        logger.info(f"Migrated table: {table_name} (preserved partitioning/clustering)")
 
     # Handle views
     if views:

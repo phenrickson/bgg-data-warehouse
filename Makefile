@@ -29,10 +29,10 @@ search:
 # migrate
 project-id ?= gcp-demos-411520
 source-dataset ?= bgg_data_prod
-target-dataset ?= bgg_data_test
+target-dataset ?= bgg_data_dev
 source-raw ?= bgg_raw_prod
-target-raw ?= bgg_raw_test
-TARGET_ENV ?= test
+target-raw ?= bgg_raw_dev
+TARGET_ENV ?= dev
 
 migrate-bgg-data:
 	uv run -m src.warehouse.migrate_datasets \
@@ -53,7 +53,19 @@ create-scheduled-tables:
 	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.create_scheduled_tables
 
 add-record-id:
-	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.add_record_id
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.add_record_id_to_raw_responses
 
-.PHONY: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id
+create-tracking-tables:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.create_tracking_tables
+
+backfill-tracking-tables:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.backfill_tracking_tables
+
+remove-processed-columns:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.remove_processed_columns
+
+.PHONY: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id create-tracking-tables backfill-tracking-tables remove-processed-columns
 migrate-dataset: migrate-bgg-data migrate-bgg-raw create-views
+
+# Complete migration workflow: copy prod to target env and apply all migrations
+migrate-full: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id create-tracking-tables backfill-tracking-tables remove-processed-columns
