@@ -1,6 +1,6 @@
 [project]
 name = "bgg-data-warehouse"
-version = "0.1.0"
+version = "0.3.0"
 description = "BoardGameGeek Data Warehouse using BigQuery"
 readme = "README.md"
 requires-python = ">=3.12"
