@@ -16,10 +16,10 @@ on:
         - test
 
 jobs:
-  fetch-ids:
-    name: Fetch Game IDs
+  fetch-new-games:
+    name: Fetch and Process New Games
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,59 +44,21 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Execute Fetch IDs Job
-        run: |
-          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
-          echo "Fetching game IDs in $ENVIRONMENT environment..."
-          gcloud run jobs execute bgg-fetch-ids-$ENVIRONMENT \
-            --region us-central1 \
-            --update-env-vars ENVIRONMENT=$ENVIRONMENT \
-            --wait
-
-  fetch-responses:
-    name: Fetch API Responses
-    runs-on: ubuntu-latest
-    needs: fetch-ids
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Environment
-        run: |
-          mkdir -p credentials
-          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
-
-          cat << EOF > .env
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
-          BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
-          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
-          EOF
-
-      - name: Google Cloud Auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Execute Fetch Responses Job
+      - name: Execute Fetch New Games Job
         run: |
           ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
           API_TOKEN=${{ secrets.BGG_API_TOKEN }}
-          echo "Fetching API responses in $ENVIRONMENT environment..."
-          gcloud run jobs execute bgg-fetch-responses-$ENVIRONMENT \
+          echo "Fetching new games in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-fetch-new-games-$ENVIRONMENT \
             --region us-central1 \
             --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
             --wait
 
-  process-responses:
-    name: Process API Responses
+  refresh-old-games:
+    name: Refresh and Process Old Games
     runs-on: ubuntu-latest
-    needs: fetch-responses
-    
+    needs: fetch-new-games
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -121,11 +83,12 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Execute Process Responses Job
+      - name: Execute Refresh Old Games Job
         run: |
           ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
-          echo "Processing responses in $ENVIRONMENT environment..."
-          gcloud run jobs execute bgg-process-responses-$ENVIRONMENT \
+          API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+          echo "Refreshing old games in $ENVIRONMENT environment..."
+          gcloud run jobs execute bgg-refresh-old-games-$ENVIRONMENT \
             --region us-central1 \
-            --update-env-vars ENVIRONMENT=$ENVIRONMENT \
+            --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
             --wait

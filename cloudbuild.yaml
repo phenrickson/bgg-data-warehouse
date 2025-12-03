@@ -8,109 +8,78 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT']
 
-  # Deploy Fetch IDs Cloud Run Job - Create if not exists, otherwise update
+  # Deploy Fetch New Games Cloud Run Job - Create if not exists, otherwise update
+  # This pipeline fetches new game IDs, fetches their responses, and processes them
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        if gcloud run jobs describe bgg-fetch-ids-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-fetch-ids-$_ENVIRONMENT"
-          gcloud run jobs update bgg-fetch-ids-$_ENVIRONMENT \
+        if gcloud run jobs describe bgg-fetch-new-games-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
+          echo "Updating existing job: bgg-fetch-new-games-$_ENVIRONMENT"
+          gcloud run jobs update bgg-fetch-new-games-$_ENVIRONMENT \
             --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.fetch_ids \
-            --tasks=1 \
-            --max-retries=2 \
-            --task-timeout=30m \
-            --memory=1Gi \
-            --cpu=1 \
-            --region=us-central1 \
-            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
-        else
-          echo "Creating new job: bgg-fetch-ids-$_ENVIRONMENT"
-          gcloud run jobs create bgg-fetch-ids-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.fetch_ids \
-            --tasks=1 \
-            --max-retries=2 \
-            --task-timeout=30m \
-            --memory=1Gi \
-            --cpu=1 \
-            --region=us-central1 \
-            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
-        fi
-
-  # Deploy Fetch Responses Cloud Run Job - Create if not exists, otherwise update
-  - name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        if gcloud run jobs describe bgg-fetch-responses-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-fetch-responses-$_ENVIRONMENT"
-          gcloud run jobs update bgg-fetch-responses-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.fetch_responses \
+            --args=src.pipeline.fetch_new_games \
             --tasks=1 \
             --max-retries=3 \
-            --task-timeout=2h \
-            --memory=2Gi \
-            --cpu=1 \
+            --task-timeout=3h \
+            --memory=4Gi \
+            --cpu=2 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
         else
-          echo "Creating new job: bgg-fetch-responses-$_ENVIRONMENT"
-          gcloud run jobs create bgg-fetch-responses-$_ENVIRONMENT \
+          echo "Creating new job: bgg-fetch-new-games-$_ENVIRONMENT"
+          gcloud run jobs create bgg-fetch-new-games-$_ENVIRONMENT \
             --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.fetch_responses \
+            --args=src.pipeline.fetch_new_games \
             --tasks=1 \
             --max-retries=3 \
-            --task-timeout=2h \
-            --memory=2Gi \
-            --cpu=1 \
+            --task-timeout=3h \
+            --memory=4Gi \
+            --cpu=2 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
-  # Deploy Refresh Games Cloud Run Job - Create if not exists, otherwise update
+  # Deploy Refresh Old Games Cloud Run Job - Create if not exists, otherwise update
+  # This pipeline refreshes stale game data and processes the responses
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        if gcloud run jobs describe bgg-refresh-games-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-refresh-games-$_ENVIRONMENT"
-          gcloud run jobs update bgg-refresh-games-$_ENVIRONMENT \
+        if gcloud run jobs describe bgg-refresh-old-games-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
+          echo "Updating existing job: bgg-refresh-old-games-$_ENVIRONMENT"
+          gcloud run jobs update bgg-refresh-old-games-$_ENVIRONMENT \
             --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.refresh_games \
+            --args=src.pipeline.refresh_old_games \
             --tasks=1 \
             --max-retries=3 \
-            --task-timeout=2h \
-            --memory=2Gi \
-            --cpu=1 \
+            --task-timeout=3h \
+            --memory=4Gi \
+            --cpu=2 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
         else
-          echo "Creating new job: bgg-refresh-games-$_ENVIRONMENT"
-          gcloud run jobs create bgg-refresh-games-$_ENVIRONMENT \
+          echo "Creating new job: bgg-refresh-old-games-$_ENVIRONMENT"
+          gcloud run jobs create bgg-refresh-old-games-$_ENVIRONMENT \
             --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.refresh_games \
+            --args=src.pipeline.refresh_old_games \
             --tasks=1 \
             --max-retries=3 \
-            --task-timeout=2h \
-            --memory=2Gi \
-            --cpu=1 \
+            --task-timeout=3h \
+            --memory=4Gi \
+            --cpu=2 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
   # Deploy Process Responses Cloud Run Job - Create if not exists, otherwise update
+  # Standalone processor for reprocessing or catch-up scenarios
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
