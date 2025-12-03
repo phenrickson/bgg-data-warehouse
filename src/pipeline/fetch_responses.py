@@ -74,24 +74,25 @@ class BGGResponseFetcher:
                     SELECT i.game_id, 'boardgame' as type
                     FROM input_ids i
                     WHERE NOT EXISTS (
-                        SELECT 1 
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
-                        WHERE i.game_id = r.game_id
+                        SELECT 1
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
+                        WHERE i.game_id = f.game_id
                         AND (
-                            -- Exclude successfully processed games
-                            (r.process_status IS NULL OR r.process_status NOT IN ('no_response', 'parse_error'))
-                            OR 
+                            -- Exclude successful fetches
+                            f.fetch_status = 'success'
+                            OR
                             -- Exclude games that have been retried too many times
-                            (r.process_status IN ('no_response', 'parse_error') AND r.process_attempt >= 3)
+                            (f.fetch_status IN ('no_response', 'parse_error')
+                             AND (SELECT COUNT(*) FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` WHERE game_id = i.game_id) >= 3)
                             OR
                             -- Exclude games that were recently attempted (within 1 hour)
-                            (r.process_status IN ('no_response', 'parse_error') AND r.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                            (f.fetch_status IN ('no_response', 'parse_error') AND f.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
                         )
                     )
                     AND NOT EXISTS (
                         SELECT 1
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
-                        WHERE i.game_id = f.game_id
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` p
+                        WHERE i.game_id = p.game_id
                     )
                     LIMIT {self.batch_size}
                 )
@@ -102,24 +103,25 @@ class BGGResponseFetcher:
                     SELECT t.game_id, t.type
                     FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}` t
                     WHERE NOT EXISTS (
-                        SELECT 1 
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
-                        WHERE t.game_id = r.game_id
+                        SELECT 1
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
+                        WHERE t.game_id = f.game_id
                         AND (
-                            -- Exclude successfully processed games
-                            (r.process_status IS NULL OR r.process_status NOT IN ('no_response', 'parse_error'))
-                            OR 
+                            -- Exclude successful fetches
+                            f.fetch_status = 'success'
+                            OR
                             -- Exclude games that have been retried too many times
-                            (r.process_status IN ('no_response', 'parse_error') AND r.process_attempt >= 3)
+                            (f.fetch_status IN ('no_response', 'parse_error')
+                             AND (SELECT COUNT(*) FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` WHERE game_id = t.game_id) >= 3)
                             OR
                             -- Exclude games that were recently attempted (within 1 hour)
-                            (r.process_status IN ('no_response', 'parse_error') AND r.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                            (f.fetch_status IN ('no_response', 'parse_error') AND f.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
                         )
                     )
                     AND NOT EXISTS (
                         SELECT 1
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
-                        WHERE t.game_id = f.game_id
+                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` p
+                        WHERE t.game_id = p.game_id
                     )
                     AND t.type = 'boardgame'
                     ORDER BY t.game_id
@@ -355,6 +357,49 @@ class BGGResponseFetcher:
                 logger.info(f"Load job output rows: {load_job_result.output_rows}")
 
             logger.info(f"Successfully processed responses for {len(rows)} games")
+
+            # Insert into fetched_responses tracking table
+            try:
+                fetched_tracking_rows = []
+                for row in rows:
+                    # Determine fetch status based on process_status
+                    if row.get("process_status") == "no_response":
+                        fetch_status = "no_response"
+                    elif row.get("process_status") == "parse_error":
+                        fetch_status = "parse_error"
+                    else:
+                        fetch_status = "success"
+
+                    # Query to get the record_id that was just inserted
+                    # We match on game_id and fetch_timestamp since they're unique for this batch
+                    record_id_query = f"""
+                    SELECT record_id
+                    FROM `{table_id}`
+                    WHERE game_id = {row['game_id']}
+                        AND fetch_timestamp = TIMESTAMP('{row['fetch_timestamp']}')
+                    ORDER BY fetch_timestamp DESC
+                    LIMIT 1
+                    """
+                    result = self.bq_client.query(record_id_query).result()
+                    record_row = next(result, None)
+
+                    if record_row:
+                        fetched_tracking_rows.append({
+                            "record_id": record_row.record_id,
+                            "game_id": row["game_id"],
+                            "fetch_timestamp": row["fetch_timestamp"],
+                            "fetch_status": fetch_status
+                        })
+
+                if fetched_tracking_rows:
+                    fetched_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses"
+                    errors = self.bq_client.insert_rows_json(fetched_table_id, fetched_tracking_rows)
+                    if errors:
+                        logger.error(f"Failed to insert into fetched_responses: {errors}")
+                    else:
+                        logger.info(f"Successfully inserted {len(fetched_tracking_rows)} records into fetched_responses")
+            except Exception as tracking_error:
+                logger.error(f"Failed to insert into fetched_responses tracking table: {tracking_error}")
 
             # Clean up fetch_in_progress entries for these games
             try:

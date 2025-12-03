@@ -11,6 +11,7 @@ from ..api_client.client import BGGAPIClient
 from ..config import get_bigquery_config
 from ..utils.logging_config import setup_logging
 from .process_responses import BGGResponseProcessor
+from .fetch_responses import BGGResponseFetcher
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -39,6 +40,10 @@ class BGGGameRefresher:
         self.dry_run = dry_run
         self.api_client = BGGAPIClient()
         self.bq_client = bigquery.Client()
+        self.response_fetcher = BGGResponseFetcher(
+            chunk_size=chunk_size,
+            environment=environment
+        )
 
         # Load refresh policy from config
         refresh_config = self.config.get("refresh_policy", {})
@@ -94,13 +99,13 @@ class BGGGameRefresher:
                 LEFT JOIN (
                     SELECT
                         game_id,
-                        MAX(load_timestamp) as last_load_timestamp
-                    FROM `{self.config['project']['id']}.{self.config['project']['dataset']}.{self.config['tables']['games']['name']}`
+                        MAX(fetch_timestamp) as last_fetch_timestamp
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
                     GROUP BY game_id
-                ) last_refresh ON game_data.game_id = last_refresh.game_id
+                ) last_fetch ON game_data.game_id = last_fetch.game_id
                 WHERE
-                    (last_refresh.last_load_timestamp IS NULL
-                     OR last_refresh.last_load_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {refresh_days} DAY))
+                    (last_fetch.last_fetch_timestamp IS NULL
+                     OR last_fetch.last_fetch_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {refresh_days} DAY))
                 """
 
                 result = self.bq_client.query(count_query).result()
@@ -161,7 +166,7 @@ class BGGGameRefresher:
                 SELECT
                     game_data.game_id,
                     game_data.year_published,
-                    last_refresh.last_load_timestamp,
+                    last_fetch.last_fetch_timestamp,
                     '{name}' as refresh_category,
                     {refresh_days} as refresh_days
                 FROM (
@@ -173,14 +178,14 @@ class BGGGameRefresher:
                 LEFT JOIN (
                     SELECT
                         game_id,
-                        MAX(load_timestamp) as last_load_timestamp
-                    FROM `{self.config['project']['id']}.{self.config['project']['dataset']}.{self.config['tables']['games']['name']}`
+                        MAX(fetch_timestamp) as last_fetch_timestamp
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
                     GROUP BY game_id
-                ) last_refresh ON game_data.game_id = last_refresh.game_id
+                ) last_fetch ON game_data.game_id = last_fetch.game_id
                 WHERE
-                    -- Include games never loaded or loaded more than refresh_days ago
-                    (last_refresh.last_load_timestamp IS NULL
-                     OR last_refresh.last_load_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {refresh_days} DAY))
+                    -- Include games never fetched or fetched more than refresh_days ago
+                    (last_fetch.last_fetch_timestamp IS NULL
+                     OR last_fetch.last_fetch_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {refresh_days} DAY))
                     -- Exclude games currently being fetched
                     AND NOT EXISTS (
                         SELECT 1
@@ -206,15 +211,15 @@ class BGGGameRefresher:
             SELECT
                 game_id,
                 year_published,
-                last_load_timestamp,
+                last_fetch_timestamp,
                 refresh_category,
                 refresh_days
             FROM all_candidates
             ORDER BY
                 -- Prioritize by publication year (newer games first)
                 year_published DESC,
-                -- Then by staleness (older refresh times first)
-                COALESCE(last_load_timestamp, TIMESTAMP('1970-01-01')) ASC
+                -- Then by staleness (older fetch times first)
+                COALESCE(last_fetch_timestamp, TIMESTAMP('1970-01-01')) ASC
             LIMIT {self.batch_size}
             """
 
@@ -248,7 +253,7 @@ class BGGGameRefresher:
                     sample_size = min(10, len(candidates_df))
                     logger.info(f"Sample of first {sample_size} games:")
                     for idx, row in candidates_df.head(sample_size).iterrows():
-                        logger.info(f"  Game ID {row['game_id']}: {row['year_published']} ({row['refresh_category']}) - Last refresh: {row['last_load_timestamp']}")
+                        logger.info(f"  Game ID {row['game_id']}: {row['year_published']} ({row['refresh_category']}) - Last fetch: {row['last_fetch_timestamp']}")
             else:
                 logger.info("No games found that need refreshing")
 
@@ -257,7 +262,7 @@ class BGGGameRefresher:
                 {
                     "game_id": row["game_id"],
                     "year_published": row["year_published"],
-                    "last_load_timestamp": row["last_load_timestamp"],
+                    "last_fetch_timestamp": row["last_fetch_timestamp"],
                     "refresh_category": row["refresh_category"],
                 }
                 for _, row in candidates_df.iterrows()
@@ -265,160 +270,6 @@ class BGGGameRefresher:
 
         except Exception as e:
             logger.error(f"Failed to get games to refresh: {e}")
-            raise
-
-    def store_response(
-        self, game_ids: List[int], response_data: str, no_response_ids: Optional[List[int]] = None
-    ) -> None:
-        """Store raw API response in BigQuery.
-
-        Args:
-            game_ids: List of game IDs in the response
-            response_data: Raw API response data
-            no_response_ids: List of game IDs with no response
-        """
-        import ast
-
-        base_time = datetime.now(UTC)
-        rows = []
-
-        logger.info(
-            f"store_response called with: game_ids={game_ids}, no_response_ids={no_response_ids}"
-        )
-
-        # Handle game IDs with no response
-        if no_response_ids:
-            logger.info(f"Processing {len(no_response_ids)} no-response game IDs")
-
-            # Check existing attempts for these game IDs
-            existing_attempts = {}
-            if no_response_ids:
-                game_ids_str = ",".join(str(gid) for gid in no_response_ids)
-                attempt_query = f"""
-                SELECT game_id, process_attempt
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
-                WHERE game_id IN ({game_ids_str})
-                """
-                try:
-                    attempt_results = self.bq_client.query(attempt_query).to_dataframe()
-                    existing_attempts = dict(
-                        zip(attempt_results["game_id"], attempt_results["process_attempt"])
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not fetch existing attempts: {e}")
-
-            for game_id in no_response_ids:
-                current_attempt = existing_attempts.get(game_id, 0) + 1
-                row = {
-                    "game_id": game_id,
-                    "response_data": "",
-                    "fetch_timestamp": base_time.isoformat(),
-                    "processed": True,
-                    "process_timestamp": base_time.isoformat(),
-                    "process_status": "no_response",
-                    "process_attempt": int(current_attempt),  # Convert numpy int64 to Python int
-                }
-                rows.append(row)
-
-        # If response data is provided, process it
-        if response_data:
-            logger.info(f"Processing response data for {len(game_ids)} game IDs")
-
-            try:
-                # Parse the response data
-                parsed_response = ast.literal_eval(response_data)
-
-                # Extract items from the response
-                items = parsed_response.get("items", {}).get("item", [])
-
-                # Ensure items is a list
-                if not isinstance(items, list):
-                    items = [items] if items else []
-
-                logger.info(f"Found {len(items)} items in the response")
-
-                # Create a mapping of game IDs to their specific response
-                game_responses = {}
-                for item in items:
-                    game_id = int(item.get("@id", 0))
-                    if game_id in game_ids:
-                        game_responses[game_id] = str({"items": {"item": item}})
-
-                # Create rows for each game with its specific response
-                for game_id in game_ids:
-                    if game_id in game_responses:
-                        row = {
-                            "game_id": game_id,
-                            "response_data": game_responses[game_id],
-                            "fetch_timestamp": base_time.isoformat(),
-                            "processed": False,
-                            "process_timestamp": None,
-                            "process_status": None,
-                            "process_attempt": 0,
-                        }
-                        rows.append(row)
-
-            except Exception as parse_error:
-                logger.error(f"Failed to parse response data: {parse_error}")
-                # Mark all game IDs as processed with error status
-                existing_attempts = {}
-                if game_ids:
-                    game_ids_str = ",".join(str(gid) for gid in game_ids)
-                    attempt_query = f"""
-                    SELECT game_id, process_attempt
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
-                    WHERE game_id IN ({game_ids_str})
-                    """
-                    try:
-                        attempt_results = self.bq_client.query(attempt_query).to_dataframe()
-                        existing_attempts = dict(
-                            zip(attempt_results["game_id"], attempt_results["process_attempt"])
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not fetch existing attempts for parse error: {e}")
-
-                for game_id in game_ids:
-                    current_attempt = existing_attempts.get(game_id, 0) + 1
-                    row = {
-                        "game_id": game_id,
-                        "response_data": "",
-                        "fetch_timestamp": base_time.isoformat(),
-                        "processed": True,
-                        "process_timestamp": base_time.isoformat(),
-                        "process_status": "parse_error",
-                        "process_attempt": int(current_attempt),  # Convert numpy int64 to Python int
-                    }
-                    rows.append(row)
-
-        logger.info(f"Total rows to insert: {len(rows)}")
-
-        table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}"
-
-        try:
-            # Use insert_rows_json for simplicity
-            errors = self.bq_client.insert_rows_json(table_id, rows)
-            if errors:
-                logger.error(f"Failed to insert rows: {errors}")
-                raise Exception(f"BigQuery insert errors: {errors}")
-
-            logger.info(f"Successfully stored responses for {len(rows)} games")
-
-            # Clean up fetch_in_progress entries for these games
-            try:
-                game_ids_str = ",".join(str(row["game_id"]) for row in rows)
-                cleanup_query = f"""
-                DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
-                WHERE game_id IN ({game_ids_str})
-                """
-                self.bq_client.query(cleanup_query).result()
-                logger.info(f"Cleaned up fetch_in_progress entries for {len(rows)} games")
-            except Exception as cleanup_error:
-                logger.error(f"Failed to clean up fetch_in_progress entries: {cleanup_error}")
-
-        except Exception as e:
-            logger.error(f"Failed to store responses: {e}")
-            for row in rows:
-                logger.error(f"Problematic row: {row}")
             raise
 
     def fetch_batch(self, games_to_refresh: List[Dict]) -> bool:
@@ -475,7 +326,7 @@ class BGGGameRefresher:
 
                             # Store the response for found games
                             if response_game_ids:
-                                self.store_response(response_game_ids, str(response))
+                                self.response_fetcher.store_response(response_game_ids, str(response))
 
                             # Mark games not found in the response
                             not_found_ids = [
@@ -483,14 +334,14 @@ class BGGGameRefresher:
                             ]
                             if not_found_ids:
                                 logger.warning(f"No data found for games: {not_found_ids}")
-                                self.store_response([], None, not_found_ids)
+                                self.response_fetcher.store_response([], None, not_found_ids)
 
                         except Exception as parse_error:
                             logger.error(f"Failed to parse response for {chunk_ids}: {parse_error}")
-                            self.store_response([], None, chunk_ids)
+                            self.response_fetcher.store_response([], None, chunk_ids)
                     else:
                         logger.warning(f"No data returned for games {chunk_ids}")
-                        self.store_response([], None, chunk_ids)
+                        self.response_fetcher.store_response([], None, chunk_ids)
 
                 except Exception as e:
                     logger.error(f"Failed to fetch chunk {chunk_ids}: {e}")

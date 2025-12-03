@@ -159,8 +159,13 @@ class BGGResponseProcessor:
         """
         query = f"""
         SELECT COUNT(*) as count
-        FROM `{self.raw_responses_table}`
-        WHERE processed = FALSE
+        FROM `{self.raw_responses_table}` r
+        INNER JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
+            ON r.record_id = f.record_id
+        LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses` p
+            ON r.record_id = p.record_id
+        WHERE p.record_id IS NULL
+            AND f.fetch_status = 'success'
         """
 
         try:
@@ -180,18 +185,23 @@ class BGGResponseProcessor:
         """
         query = f"""
         WITH responses AS (
-            SELECT 
-                record_id,
-                game_id,
-                response_data,
-                fetch_timestamp,
-                TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), fetch_timestamp, MINUTE) >= 30 as is_old
-            FROM `{self.raw_responses_table}`
-            WHERE processed = FALSE
+            SELECT
+                r.record_id,
+                r.game_id,
+                r.response_data,
+                r.fetch_timestamp,
+                TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), r.fetch_timestamp, MINUTE) >= 30 as is_old
+            FROM `{self.raw_responses_table}` r
+            INNER JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
+                ON r.record_id = f.record_id
+            LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses` p
+                ON r.record_id = p.record_id
+            WHERE p.record_id IS NULL  -- Not yet processed
+                AND f.fetch_status = 'success'  -- Only process successful fetches
         )
         SELECT record_id, game_id, response_data, fetch_timestamp
         FROM responses
-        ORDER BY 
+        ORDER BY
             is_old DESC,  -- Process older responses first
             fetch_timestamp ASC  -- Then oldest to newest within each group
         LIMIT {self.batch_size}
@@ -221,18 +231,19 @@ class BGGResponseProcessor:
                     )
                     games_marked_no_response.append(row["game_id"])
 
-                    # Mark as processed with no_response status
-                    update_query = f"""
-                    UPDATE `{self.raw_responses_table}`
-                    SET processed = TRUE,
-                        process_status = 'no_response',
-                        process_timestamp = CURRENT_TIMESTAMP(),
-                        process_attempt = process_attempt + 1
-                    WHERE game_id = {row['game_id']}
-                    """
+                    # Mark as no_response in processed_responses
                     try:
-                        query_job = self.bq_client.query(update_query)
-                        query_job.result()  # Wait for query to complete
+                        processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                        no_response_row = [{
+                            "record_id": row.get("record_id"),
+                            "process_timestamp": datetime.now(UTC).isoformat(),
+                            "process_status": "no_response",
+                            "process_attempt": 1,
+                            "error_message": "Empty response data"
+                        }]
+                        errors = self.bq_client.insert_rows_json(processed_table_id, no_response_row)
+                        if errors:
+                            logger.error(f"Failed to insert no_response status: {errors}")
                     except Exception as update_error:
                         logger.error(
                             f"Failed to update status for game {row['game_id']}: {update_error}"
@@ -270,18 +281,19 @@ class BGGResponseProcessor:
                     )
                     games_marked_parse_error.append(row["game_id"])
 
-                    # Mark as processed with parse error status
-                    update_query = f"""
-                    UPDATE `{self.raw_responses_table}`
-                    SET processed = TRUE,
-                        process_status = 'parse_error',
-                        process_timestamp = CURRENT_TIMESTAMP(),
-                        process_attempt = process_attempt + 1
-                    WHERE game_id = {row['game_id']}
-                    """
+                    # Mark as parse_error in processed_responses
                     try:
-                        query_job = self.bq_client.query(update_query)
-                        query_job.result()  # Wait for query to complete
+                        processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                        parse_error_row = [{
+                            "record_id": row.get("record_id"),
+                            "process_timestamp": datetime.now(UTC).isoformat(),
+                            "process_status": "parse_error",
+                            "process_attempt": 1,
+                            "error_message": str(e)[:500]
+                        }]
+                        errors = self.bq_client.insert_rows_json(processed_table_id, parse_error_row)
+                        if errors:
+                            logger.error(f"Failed to insert parse_error status: {errors}")
                     except Exception as update_error:
                         logger.error(
                             f"Failed to update status for game {row['game_id']}: {update_error}"
@@ -346,18 +358,19 @@ class BGGResponseProcessor:
                     )
                     games_marked_failed.append(response["game_id"])
 
-                    # Mark as failed
-                    update_query = f"""
-                    UPDATE `{self.raw_responses_table}`
-                    SET processed = TRUE,
-                        process_status = 'failed',
-                        process_timestamp = CURRENT_TIMESTAMP(),
-                        process_attempt = process_attempt + 1
-                    WHERE game_id = {response['game_id']}
-                    """
+                    # Mark as failed in processed_responses
                     try:
-                        query_job = self.bq_client.query(update_query)
-                        query_job.result()  # Wait for query to complete
+                        processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                        failed_row = [{
+                            "record_id": response["record_id"],
+                            "process_timestamp": datetime.now(UTC).isoformat(),
+                            "process_status": "failed",
+                            "process_attempt": 1,
+                            "error_message": "Processing returned None"
+                        }]
+                        errors = self.bq_client.insert_rows_json(processed_table_id, failed_row)
+                        if errors:
+                            logger.error(f"Failed to insert failed status: {errors}")
                     except Exception as e:
                         logger.error(f"Failed to update process status: {e}")
 
@@ -367,18 +380,19 @@ class BGGResponseProcessor:
                 )
                 games_marked_error.append(response["game_id"])
 
-                # Mark as error
-                update_query = f"""
-                UPDATE `{self.raw_responses_table}`
-                SET processed = TRUE,
-                    process_status = 'error',
-                    process_timestamp = CURRENT_TIMESTAMP(),
-                    process_attempt = process_attempt + 1
-                WHERE game_id = {response['game_id']}
-                """
+                # Mark as error in processed_responses
                 try:
-                    query_job = self.bq_client.query(update_query)
-                    query_job.result()  # Wait for query to complete
+                    processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                    error_row = [{
+                        "record_id": response["record_id"],
+                        "process_timestamp": datetime.now(UTC).isoformat(),
+                        "process_status": "error",
+                        "process_attempt": 1,
+                        "error_message": str(e)[:500]  # Limit error message length
+                    }]
+                    errors = self.bq_client.insert_rows_json(processed_table_id, error_row)
+                    if errors:
+                        logger.error(f"Failed to insert error status: {errors}")
                 except Exception as update_error:
                     logger.error(f"Failed to update process status: {update_error}")
 
@@ -415,37 +429,40 @@ class BGGResponseProcessor:
             # Load processed games
             self.loader.load_games(processed_games)
 
-            # Mark responses as processed using record_id - much more efficient!
+            # Mark responses as processed by inserting into processed_responses tracking table
             record_ids = [game["record_id"] for game in processed_games if game.get("record_id")]
 
             if record_ids:
-                # Use the efficient record_id approach
-                record_ids_str = "', '".join(record_ids)
-                logger.info(f"Marking {len(record_ids)} records as processed using record_id")
+                logger.info(f"Marking {len(record_ids)} records as processed using processed_responses")
 
-                update_query = f"""
-                UPDATE `{self.raw_responses_table}`
-                SET processed = TRUE,
-                    process_timestamp = CURRENT_TIMESTAMP(),
-                    process_status = 'success',
-                    process_attempt = process_attempt + 1
-                WHERE record_id IN ('{record_ids_str}')
-                """
+                # Build insert rows for processed_responses
+                processed_tracking_rows = []
+                for record_id in record_ids:
+                    processed_tracking_rows.append({
+                        "record_id": record_id,
+                        "process_timestamp": datetime.now(UTC).isoformat(),
+                        "process_status": "success",
+                        "process_attempt": 1,
+                        "error_message": None
+                    })
 
                 try:
-                    query_job = self.bq_client.query(update_query)
-                    query_job.result()  # Wait for query to complete
-                    logger.info(
-                        f"Successfully marked {len(record_ids)} records as processed using record_id"
-                    )
+                    # Insert into processed_responses tracking table
+                    processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                    errors = self.bq_client.insert_rows_json(processed_table_id, processed_tracking_rows)
 
-                    # Verify the update
+                    if errors:
+                        logger.error(f"Failed to insert into processed_responses: {errors}")
+                        return False
+
+                    logger.info(f"Successfully marked {len(record_ids)} records as processed")
+
+                    # Verify the insert
+                    record_ids_str = "', '".join(record_ids)
                     verify_query = f"""
                     SELECT COUNT(*) as count
-                    FROM `{self.raw_responses_table}`
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses`
                     WHERE record_id IN ('{record_ids_str}')
-                      AND processed = TRUE
-                      AND process_status = 'success'
                     """
                     verify_job = self.bq_client.query(verify_query)
                     verify_result = next(verify_job.result())
@@ -453,12 +470,12 @@ class BGGResponseProcessor:
 
                     if verify_result.count != len(record_ids):
                         logger.error(
-                            f"Update verification failed: expected {len(record_ids)} updates but found {verify_result.count}"
+                            f"Insert verification failed: expected {len(record_ids)} inserts but found {verify_result.count}"
                         )
                         return False
 
                 except Exception as e:
-                    logger.error(f"Failed to mark responses as processed using record_id: {e}")
+                    logger.error(f"Failed to mark responses as processed: {e}")
                     return False
             else:
                 # Fallback to old method if no record_ids available
