@@ -316,7 +316,7 @@ class BGGGameRefresher:
                     "processed": True,
                     "process_timestamp": base_time.isoformat(),
                     "process_status": "no_response",
-                    "process_attempt": current_attempt,
+                    "process_attempt": int(current_attempt),  # Convert numpy int64 to Python int
                 }
                 rows.append(row)
 
@@ -386,7 +386,7 @@ class BGGGameRefresher:
                         "processed": True,
                         "process_timestamp": base_time.isoformat(),
                         "process_status": "parse_error",
-                        "process_attempt": current_attempt,
+                        "process_attempt": int(current_attempt),  # Convert numpy int64 to Python int
                     }
                     rows.append(row)
 
