@@ -36,7 +36,8 @@ def create_error_table(df: pd.DataFrame) -> None:
         df,
         column_config={
             "game_id": "Game ID",
-            "error": "Error Message",
+            "error": "Error Status",
+            "error_message": "Error Details",
             "process_attempt": "Attempt #",
             "fetch_timestamp": st.column_config.DatetimeColumn(
                 "Fetch Time",

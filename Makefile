@@ -20,7 +20,10 @@ clean:
 	rm -rf dist/
 	rm -rf *.egg-info
 
-monitor:
+dashboard:
+	uv run streamlit run src/visualization/Home.py --server.port 8501
+
+dashboard-old:
 	uv run streamlit run src/visualization/dashboard.py --server.port 8501
 
 search:
@@ -69,3 +72,10 @@ migrate-dataset: migrate-bgg-data migrate-bgg-raw create-views
 
 # Complete migration workflow: copy prod to target env and apply all migrations
 migrate-full: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id create-tracking-tables backfill-tracking-tables remove-processed-columns
+
+# pipeline
+fetch-new-games:
+	uv run -m src.pipeline.fetch_new_games
+
+refresh-old-games:
+	uv run -m src.pipeline.refresh_old_games
