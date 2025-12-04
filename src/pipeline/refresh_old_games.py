@@ -6,6 +6,7 @@ This script runs the complete refresh pipeline:
 3. Processes those refreshed responses into normalized tables (games, categories, mechanics, etc.)
 """
 
+import argparse
 import logging
 import os
 
@@ -25,8 +26,24 @@ setup_logging()
 
 def main() -> None:
     """Main entry point for refreshing and processing old games."""
-    environment = os.getenv("ENVIRONMENT", "test")
-    dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
+    parser = argparse.ArgumentParser(
+        description="Refresh and process stale game data from BoardGameGeek"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in dry-run mode without fetching or processing data",
+    )
+    parser.add_argument(
+        "--environment",
+        default=os.getenv("ENVIRONMENT", "test"),
+        choices=["test", "prod"],
+        help="Environment to run in (default: test)",
+    )
+    args = parser.parse_args()
+
+    environment = args.environment
+    dry_run = args.dry_run
 
     logger.info(f"Starting refresh_old_games pipeline in {environment} environment")
     if dry_run:
