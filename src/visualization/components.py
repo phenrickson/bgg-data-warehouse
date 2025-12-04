@@ -104,6 +104,58 @@ def create_latest_games_table(df: pd.DataFrame) -> None:
     )
 
 
+def create_latest_refreshed_games_table(df: pd.DataFrame) -> None:
+    """Create a styled table for latest refreshed games."""
+    # Select and prepare columns for display
+    display_df = df.copy()
+
+    # Convert game_id to string for centered display
+    display_df['game_id'] = display_df['game_id'].astype(str)
+
+    # Create BGG link column
+    display_df['bgg_link'] = display_df['game_id'].apply(
+        lambda x: f"https://boardgamegeek.com/boardgame/{x}/"
+    )
+
+    # Reorder columns
+    display_df = display_df[['game_id', 'bgg_link', 'name', 'year_published', 'users_rated', 'last_refresh_timestamp']]
+
+    # Display with Streamlit dataframe
+    st.dataframe(
+        display_df,
+        column_config={
+            "game_id": st.column_config.TextColumn(
+                "Game ID",
+                help="BoardGameGeek Game ID"
+            ),
+            "bgg_link": st.column_config.LinkColumn(
+                "Link",
+                help="Link to BoardGameGeek page",
+                display_text="BGG"
+            ),
+            "name": st.column_config.TextColumn(
+                "Name",
+                help="Game name"
+            ),
+            "year_published": st.column_config.NumberColumn(
+                "Year Published",
+                help="Year the game was published"
+            ),
+            "users_rated": st.column_config.NumberColumn(
+                "Ratings",
+                help="Number of user ratings"
+            ),
+            "last_refresh_timestamp": st.column_config.DatetimeColumn(
+                "Refreshed",
+                format="MM/DD/YY HH:mm:ss",
+                help="When the game was last refreshed"
+            )
+        },
+        hide_index=True,
+        height=900
+    )
+
+
 def create_processing_gauge(success_rate: float) -> None:
     """Create a gauge chart for processing success rate."""
     fig = go.Figure(go.Indicator(

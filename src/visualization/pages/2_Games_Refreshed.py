@@ -155,6 +155,14 @@ def main():
     else:
         st.info("No games refreshed in the last 7 days")
 
+    # Latest refreshed games table
+    st.subheader("Latest Games Refreshed")
+    latest_refreshed_games = run_query(queries.LATEST_REFRESHED_GAMES)
+    if not latest_refreshed_games.empty:
+        components.create_latest_refreshed_games_table(latest_refreshed_games)
+    else:
+        st.info("No refreshed games found")
+
 
 if __name__ == "__main__":
     main()

@@ -112,6 +112,36 @@ GROUP BY DATE(fetch_timestamp)
 ORDER BY date;
 """
 
+LATEST_REFRESHED_GAMES = """
+WITH refresh_fetches AS (
+    SELECT
+        f.game_id,
+        f.fetch_timestamp,
+        ROW_NUMBER() OVER (PARTITION BY f.game_id ORDER BY f.fetch_timestamp DESC) as fetch_rank
+    FROM `${project_id}.${raw_dataset}.fetched_responses` f
+    WHERE f.fetch_status = 'success'
+      AND EXISTS (
+          SELECT 1
+          FROM `${project_id}.${raw_dataset}.fetched_responses` f2
+          WHERE f2.game_id = f.game_id
+            AND f2.fetch_status = 'success'
+            AND f2.fetch_timestamp < f.fetch_timestamp
+      )
+)
+SELECT
+    g.game_id,
+    g.name,
+    g.year_published,
+    g.users_rated,
+    g.load_timestamp,
+    rf.fetch_timestamp as last_refresh_timestamp
+FROM `${project_id}.${dataset}.games_active` g
+INNER JOIN refresh_fetches rf ON g.game_id = rf.game_id
+WHERE rf.fetch_rank = 1
+ORDER BY rf.fetch_timestamp DESC
+LIMIT 25;
+"""
+
 TOTAL_GAMES_QUERY = """
 SELECT COUNT(DISTINCT game_id) as total_games
 FROM `${project_id}.${dataset}.games_active`;
@@ -183,6 +213,7 @@ SELECT
 FROM `${project_id}.${raw_dataset}.processed_responses` p
 INNER JOIN `${project_id}.${raw_dataset}.fetched_responses` f ON p.record_id = f.record_id
 WHERE p.process_status IN ('failed', 'error')
+  AND p.process_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
 ORDER BY p.process_timestamp DESC
 LIMIT 10;
 """
