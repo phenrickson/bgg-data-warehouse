@@ -54,64 +54,53 @@ def create_error_table(df: pd.DataFrame) -> None:
 
 def create_latest_games_table(df: pd.DataFrame) -> None:
     """Create a styled table for latest games."""
-    # Create a new column with BGG URLs
-    df["bgg_url"] = df["game_id"].apply(lambda x: f"https://boardgamegeek.com/boardgame/{x}/")
-    
-    # Use HTML to create clickable links
-    html = "<table>"
-    html += "<tr><th>Game ID</th><th>Game Name</th><th>Year</th><th>Avg Rating</th><th># Ratings</th><th>Added</th></tr>"
-    
-    for _, row in df.iterrows():
-        html += f"""
-        <tr>
-            <td>{row['game_id']}</td>
-            <td><a href="{row['bgg_url']}" target="_blank">{row['name']}</a></td>
-            <td>{row['year_published']}</td>
-            <td>{row['average_rating']:.2f}</td>
-            <td>{row['users_rated']}</td>
-            <td>{row['load_timestamp'].strftime('%m/%d/%y %H:%M:%S')}</td>
-        </tr>
-        """
-    
-    html += "</table>"
-    
-    # Apply some CSS to make it look like a Streamlit table
-    st.markdown(
-        f"""
-        <style>
-        .stMarkdown {{
-            margin-top: -20px;  /* Remove top margin from markdown container */
-            padding-top: 0;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 0;
-            padding-top: 0;
-        }}
-        th, td {{
-            padding: 8px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }}
-        th {{
-            background-color: #0e1117;  /* Match Streamlit dark theme */
-            color: white;
-        }}
-        tr:hover {{
-            background-color: #1e1e1e;  /* Darker hover for dark theme */
-        }}
-        a {{
-            color: #4da6ff;  /* Brighter blue for dark theme */
-            text-decoration: none;
-        }}
-        a:hover {{
-            text-decoration: underline;
-        }}
-        </style>
-        {html}
-        """, 
-        unsafe_allow_html=True
+    # Select and prepare columns for display
+    display_df = df.copy()
+
+    # Convert game_id to string for centered display
+    display_df['game_id'] = display_df['game_id'].astype(str)
+
+    # Create BGG link column
+    display_df['bgg_link'] = display_df['game_id'].apply(
+        lambda x: f"https://boardgamegeek.com/boardgame/{x}/"
+    )
+
+    # Reorder columns
+    display_df = display_df[['game_id', 'bgg_link', 'name', 'year_published', 'users_rated', 'load_timestamp']]
+
+    # Display with Streamlit dataframe
+    st.dataframe(
+        display_df,
+        column_config={
+            "game_id": st.column_config.TextColumn(
+                "Game ID",
+                help="BoardGameGeek Game ID"
+            ),
+            "bgg_link": st.column_config.LinkColumn(
+                "Link",
+                help="Link to BoardGameGeek page",
+                display_text="BGG"
+            ),
+            "name": st.column_config.TextColumn(
+                "Name",
+                help="Game name"
+            ),
+            "year_published": st.column_config.NumberColumn(
+                "Year Published",
+                help="Year the game was published"
+            ),
+            "users_rated": st.column_config.NumberColumn(
+                "Ratings",
+                help="Number of user ratings"
+            ),
+            "load_timestamp": st.column_config.DatetimeColumn(
+                "Added",
+                format="MM/DD/YY HH:mm:ss",
+                help="When the game was added to the warehouse"
+            )
+        },
+        hide_index=True,
+        height=900
     )
 
 

@@ -1,4 +1,4 @@
-"""New Games Added - Monitoring Page."""
+"""Games Refreshed - Monitoring Page."""
 
 import os
 import sys
@@ -16,8 +16,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 
 # Page config
 st.set_page_config(
-    page_title="New Games Added",
-    page_icon="📥",
+    page_title="Games Refreshed",
     layout="wide"
 )
 
@@ -55,6 +54,7 @@ def get_bigquery_config():
             "location": env_config["location"],
         },
         "datasets": config.get("datasets", {}),
+        "refresh_policy": config.get("refresh_policy", {}),
     }
     return result
 
@@ -88,56 +88,72 @@ def run_query(query: str) -> pd.DataFrame:
 
 
 def main():
-    """Main new games page function."""
-    st.title("📥 New Games Added")
-    st.write("Monitoring new games added to the warehouse")
+    """Main games refreshed page function."""
+    st.title("Games Refreshed")
+    st.write("Monitoring refresh activity for existing games")
 
     # Current timestamp
     current_time = datetime.now(timezone.utc)
     st.write(f"Last updated: {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
 
     # Load metrics
-    with st.spinner("Loading new games metrics..."):
-        new_games_fetched = run_query(queries.NEW_GAMES_FETCHED_QUERY)
-        new_games_processed = run_query(queries.NEW_GAMES_PROCESSED_QUERY)
+    with st.spinner("Loading refresh metrics..."):
+        refreshed_games_fetched = run_query(queries.REFRESHED_GAMES_FETCHED_QUERY)
+        refreshed_games_processed = run_query(queries.REFRESHED_GAMES_PROCESSED_QUERY)
 
     # Metrics row
-    st.subheader("New Games Activity (Last 7 Days)")
+    st.subheader("Refresh Activity (Last 7 Days)")
     col1, col2 = st.columns(2)
 
     with col1:
         components.create_metric_card(
-            "New Games Fetched",
-            new_games_fetched.iloc[0]["new_games_count"]
+            "Games Refreshed (Fetched)",
+            refreshed_games_fetched.iloc[0]["refreshed_games_count"]
         )
 
     with col2:
         components.create_metric_card(
-            "New Games Processed",
-            new_games_processed.iloc[0]["new_games_processed"]
+            "Games Refreshed (Processed)",
+            refreshed_games_processed.iloc[0]["refreshed_games_processed"]
         )
+
+    # Show refresh policy
+    st.subheader("Refresh Policy")
+    refresh_policy = config.get("refresh_policy", {})
+
+    if refresh_policy:
+        st.write(f"**Batch Size:** {refresh_policy.get('batch_size', 'N/A')} games per run")
+
+        intervals = refresh_policy.get("intervals", [])
+        if intervals:
+            st.write("**Refresh Intervals:**")
+
+            policy_data = []
+            for interval in intervals:
+                policy_data.append({
+                    "Age Group": interval.get("name", "").title(),
+                    "Game Age": f"{interval.get('min_age_years', 0)}-{interval.get('max_age_years', 'N/A')} years"
+                               if "min_age_years" in interval
+                               else f"< {interval.get('max_age_years', 'N/A')} years",
+                    "Refresh Every": f"{interval.get('refresh_days', 'N/A')} days",
+                    "Description": interval.get("description", "")
+                })
+
+            st.table(pd.DataFrame(policy_data))
 
     # Daily trend chart
-    st.subheader("Daily New Games Fetched")
-    new_games_data = run_query(queries.DAILY_NEW_GAMES_FETCHED)
-    if not new_games_data.empty:
+    st.subheader("Daily Games Refreshed")
+    refreshed_games_data = run_query(queries.DAILY_REFRESHED_GAMES_FETCHED)
+    if not refreshed_games_data.empty:
         components.create_time_series(
-            new_games_data,
+            refreshed_games_data,
             "date",
-            "new_games_count",
-            "Daily New Games Fetched",
-            color="#1f77b4"
+            "refreshed_games_count",
+            "Daily Games Refreshed",
+            color="#ff7f0e"
         )
     else:
-        st.info("No new games fetched in the last 7 days")
-
-    # Latest new games table
-    st.subheader("Latest New Games Added")
-    latest_games = run_query(queries.LATEST_GAMES)
-    if not latest_games.empty:
-        components.create_latest_games_table(latest_games)
-    else:
-        st.info("No new games found")
+        st.info("No games refreshed in the last 7 days")
 
 
 if __name__ == "__main__":

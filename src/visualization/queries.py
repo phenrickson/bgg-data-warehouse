@@ -207,7 +207,7 @@ SELECT
 FROM `${project_id}.${dataset}.games_active` g
 INNER JOIN first_fetches f ON g.game_id = f.game_id
 ORDER BY f.first_fetch_timestamp DESC
-LIMIT 100;
+LIMIT 25;
 """
 
 DAILY_PROCESSING_COUNTS = """

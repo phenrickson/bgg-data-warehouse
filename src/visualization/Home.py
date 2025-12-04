@@ -17,7 +17,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 # Page config must be the first Streamlit command
 st.set_page_config(
     page_title="BGG Data Warehouse",
-    page_icon="🎲",
     layout="wide"
 )
 
@@ -98,7 +97,7 @@ def run_query(query: str) -> pd.DataFrame:
 
 def main():
     """Main home page function."""
-    st.title("🎲 BGG Data Warehouse")
+    st.title("BGG Data Warehouse")
     st.write("Monitoring and analytics for the BoardGameGeek data warehouse")
 
     # Current timestamp
