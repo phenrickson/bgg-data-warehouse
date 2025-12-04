@@ -23,7 +23,7 @@ storage:
 
 # Refresh policy for previously loaded games
 refresh_policy:
-  batch_size: 1000  # Maximum games to refresh per run
+  batch_size: 5000 # Maximum games to refresh per run
   intervals:
     - name: recent
       max_age_years: 2
