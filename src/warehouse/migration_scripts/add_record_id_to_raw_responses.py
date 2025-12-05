@@ -34,6 +34,17 @@ def add_record_id_column(environment=None):
         query_job.result()
         logger.info("Successfully added record_id column")
 
+        # Step 1.5: Set default value for future inserts
+        set_default_sql = f"""
+        ALTER TABLE `{table_id}`
+        ALTER COLUMN record_id SET DEFAULT GENERATE_UUID()
+        """
+
+        logger.info("Setting default value for record_id column...")
+        query_job = client.query(set_default_sql)
+        query_job.result()
+        logger.info("Successfully set default value for record_id")
+
         # Step 2: Check if we need to populate existing records
         check_null_sql = f"""
         SELECT COUNT(*) as null_count

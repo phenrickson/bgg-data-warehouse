@@ -1,6 +1,6 @@
 [project]
 name = "bgg-data-warehouse"
-version = "0.1.0"
+version = "0.3.1"
 description = "BoardGameGeek Data Warehouse using BigQuery"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -39,6 +39,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
 pythonpath = ["src"]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
 
 [tool.black]
 line-length = 100

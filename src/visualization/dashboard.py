@@ -174,6 +174,12 @@ def main():
         processing_status = run_query(queries.PROCESSING_STATUS)
         unprocessed = run_query(queries.UNPROCESSED_RESPONSES_QUERY)
 
+        # Get new games vs refreshed games metrics
+        new_games_fetched = run_query(queries.NEW_GAMES_FETCHED_QUERY)
+        new_games_processed = run_query(queries.NEW_GAMES_PROCESSED_QUERY)
+        refreshed_games_fetched = run_query(queries.REFRESHED_GAMES_FETCHED_QUERY)
+        refreshed_games_processed = run_query(queries.REFRESHED_GAMES_PROCESSED_QUERY)
+
         # Get all entity counts with a single query
         entity_counts = run_query(queries.ALL_ENTITY_COUNTS_QUERY)
 
@@ -203,6 +209,30 @@ def main():
             "Unprocessed Responses", unprocessed.iloc[0]["unprocessed_count"]
         )
 
+    # New Games vs Refreshed Games row
+    st.subheader("Pipeline Activity (Last 7 Days)")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        components.create_metric_card(
+            "New Games Fetched", new_games_fetched.iloc[0]["new_games_count"]
+        )
+
+    with col2:
+        components.create_metric_card(
+            "New Games Processed", new_games_processed.iloc[0]["new_games_processed"]
+        )
+
+    with col3:
+        components.create_metric_card(
+            "Games Refreshed (Fetched)", refreshed_games_fetched.iloc[0]["refreshed_games_count"]
+        )
+
+    with col4:
+        components.create_metric_card(
+            "Games Refreshed (Processed)", refreshed_games_processed.iloc[0]["refreshed_games_processed"]
+        )
+
     # Entity counts row
     st.subheader("Game Metadata Counts")
     col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -225,23 +255,29 @@ def main():
     with col6:
         components.create_metric_card("Publishers", entity_counts.iloc[0]["publisher_count"])
 
-    # Time series charts
+    # Time series charts for new vs refreshed games
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Fetch Activity")
-        fetch_data = run_query(queries.RECENT_FETCH_ACTIVITY)
-        components.create_time_series(fetch_data, "date", "responses_fetched", "Daily Fetch Counts")
+        st.subheader("New Games Activity")
+        new_games_data = run_query(queries.DAILY_NEW_GAMES_FETCHED)
+        if not new_games_data.empty:
+            components.create_time_series(new_games_data, "date", "new_games_count", "Daily New Games Fetched", color="#1f77b4")
+        else:
+            st.info("No new games fetched in the last 7 days")
 
     with col2:
-        st.subheader("Processing Activity")
-        processing_data = run_query(queries.DAILY_PROCESSING_COUNTS)
-        components.create_time_series(
-            processing_data, "date", "processed_count", "Daily Processing Counts", color="#2ca02c"
-        )
+        st.subheader("Refreshed Games Activity")
+        refreshed_games_data = run_query(queries.DAILY_REFRESHED_GAMES_FETCHED)
+        if not refreshed_games_data.empty:
+            components.create_time_series(
+                refreshed_games_data, "date", "refreshed_games_count", "Daily Games Refreshed", color="#ff7f0e"
+            )
+        else:
+            st.info("No games refreshed in the last 7 days")
 
-    # Latest games
-    st.subheader("Latest Games Added")
+    # Latest new games added
+    st.subheader("Latest New Games Added")
     latest_games = run_query(queries.LATEST_GAMES)
     components.create_latest_games_table(latest_games)
 

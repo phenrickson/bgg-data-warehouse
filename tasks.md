@@ -24,3 +24,12 @@
 ## architecture
 - fetch and store raw responses from BoardGameGeek API
 - process raw responses and load to cloud data warehouse
+
+## enhancements
+
+- ~~add process for incremental refreshes for games already in the data warehouse~~ ✓ COMPLETED
+  - Added refresh_games pipeline with intelligent prioritization based on publication year
+  - Refresh intervals: recent (0-2y: 7 days), established (2-5y: 30 days), classic (5-10y: 90 days), vintage (10+y: 180 days)
+  - Separate Cloud Run job (bgg-refresh-games) runs daily at 8 AM UTC
+  - Configurable via refresh_policy in bigquery.yaml
+- add process for migrating and rebuilding data warehouse between environments
