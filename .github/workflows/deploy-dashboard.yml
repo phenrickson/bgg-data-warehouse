@@ -9,6 +9,7 @@ on:
       - 'src/visualization/**'
       - 'src/config.py'
       - 'config/bigquery.yaml'
+      - 'docker/Dockerfile.dashboard'
       - '.github/workflows/deploy-dashboard.yml'
   workflow_dispatch:  # Allow manual triggers for testing
 
@@ -66,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.dashboard
+          file: ./docker/Dockerfile.dashboard
           push: true
           tags: gcr.io/${{ vars.GCP_PROJECT_ID }}/bgg-dashboard:latest
 

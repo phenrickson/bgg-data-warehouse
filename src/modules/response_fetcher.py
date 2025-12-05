@@ -1,15 +1,11 @@
-"""Pipeline module for fetching and storing raw BGG API responses."""
+"""Module for fetching and storing raw BGG API responses."""
 
 import logging
-import random
-import inspect
-from datetime import datetime, UTC, timedelta
-from pathlib import Path
-from typing import List, Dict, Optional, Union
+from datetime import datetime, UTC
+from typing import List, Dict, Optional
 
 from google.cloud import bigquery
 
-from ..id_fetcher.fetcher import BGGIDFetcher
 from ..api_client.client import BGGAPIClient
 from ..config import get_bigquery_config
 from ..utils.logging_config import setup_logging
@@ -19,7 +15,7 @@ logger = logging.getLogger(__name__)
 setup_logging()
 
 
-class BGGResponseFetcher:
+class ResponseFetcher:
     """Fetches and stores raw BGG API responses."""
 
     def __init__(
@@ -42,7 +38,6 @@ class BGGResponseFetcher:
         self.chunk_size = chunk_size
         self.environment = environment
         self.max_retries = max_retries
-        self.id_fetcher = BGGIDFetcher(self.config)
         self.api_client = BGGAPIClient()
         self.bq_client = bigquery.Client()
 
@@ -70,58 +65,72 @@ class BGGResponseFetcher:
                     SELECT game_id
                     FROM UNNEST({game_ids}) AS game_id
                 ),
+                retry_counts AS (
+                    SELECT
+                        game_id,
+                        COUNT(*) as attempt_count,
+                        MAX(fetch_timestamp) as last_attempt_time
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    WHERE fetch_status IN ('no_response', 'parse_error')
+                    GROUP BY game_id
+                ),
+                successful_fetches AS (
+                    SELECT DISTINCT game_id
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    WHERE fetch_status = 'success'
+                ),
                 candidates AS (
                     SELECT i.game_id, 'boardgame' as type
                     FROM input_ids i
-                    WHERE NOT EXISTS (
-                        SELECT 1 
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
-                        WHERE i.game_id = r.game_id
-                        AND (
-                            -- Exclude successfully processed games
-                            (r.process_status IS NULL OR r.process_status NOT IN ('no_response', 'parse_error'))
-                            OR 
-                            -- Exclude games that have been retried too many times
-                            (r.process_status IN ('no_response', 'parse_error') AND r.process_attempt >= 3)
-                            OR
-                            -- Exclude games that were recently attempted (within 1 hour)
-                            (r.process_status IN ('no_response', 'parse_error') AND r.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
-                        )
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
-                        WHERE i.game_id = f.game_id
-                    )
+                    LEFT JOIN successful_fetches sf ON i.game_id = sf.game_id
+                    LEFT JOIN retry_counts rc ON i.game_id = rc.game_id
+                    LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` p
+                        ON i.game_id = p.game_id
+                    WHERE
+                        -- Exclude successful fetches
+                        sf.game_id IS NULL
+                        -- Exclude games that have been retried too many times
+                        AND (rc.attempt_count IS NULL OR rc.attempt_count < 3)
+                        -- Exclude games that were recently attempted (within 1 hour)
+                        AND (rc.last_attempt_time IS NULL OR rc.last_attempt_time <= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                        -- Exclude games currently being fetched
+                        AND p.game_id IS NULL
                     LIMIT {self.batch_size}
                 )
                 """
             else:
                 base_query = f"""
-                WITH candidates AS (
+                WITH retry_counts AS (
+                    SELECT
+                        game_id,
+                        COUNT(*) as attempt_count,
+                        MAX(fetch_timestamp) as last_attempt_time
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    WHERE fetch_status IN ('no_response', 'parse_error')
+                    GROUP BY game_id
+                ),
+                successful_fetches AS (
+                    SELECT DISTINCT game_id
+                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    WHERE fetch_status = 'success'
+                ),
+                candidates AS (
                     SELECT t.game_id, t.type
                     FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}` t
-                    WHERE NOT EXISTS (
-                        SELECT 1 
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}` r
-                        WHERE t.game_id = r.game_id
-                        AND (
-                            -- Exclude successfully processed games
-                            (r.process_status IS NULL OR r.process_status NOT IN ('no_response', 'parse_error'))
-                            OR 
-                            -- Exclude games that have been retried too many times
-                            (r.process_status IN ('no_response', 'parse_error') AND r.process_attempt >= 3)
-                            OR
-                            -- Exclude games that were recently attempted (within 1 hour)
-                            (r.process_status IN ('no_response', 'parse_error') AND r.fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
-                        )
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
-                        WHERE t.game_id = f.game_id
-                    )
-                    AND t.type = 'boardgame'
+                    LEFT JOIN successful_fetches sf ON t.game_id = sf.game_id
+                    LEFT JOIN retry_counts rc ON t.game_id = rc.game_id
+                    LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` p
+                        ON t.game_id = p.game_id
+                    WHERE
+                        t.type = 'boardgame'
+                        -- Exclude successful fetches
+                        AND sf.game_id IS NULL
+                        -- Exclude games that have been retried too many times
+                        AND (rc.attempt_count IS NULL OR rc.attempt_count < 3)
+                        -- Exclude games that were recently attempted (within 1 hour)
+                        AND (rc.last_attempt_time IS NULL OR rc.last_attempt_time <= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                        -- Exclude games currently being fetched
+                        AND p.game_id IS NULL
                     ORDER BY t.game_id
                     LIMIT {self.batch_size}
                 )
@@ -131,7 +140,7 @@ class BGGResponseFetcher:
             candidates_query = (
                 base_query
                 + """
-            SELECT game_id, type 
+            SELECT game_id, type
             FROM candidates;
             """
             )
@@ -146,7 +155,7 @@ class BGGResponseFetcher:
                 SELECT c.game_id, CURRENT_TIMESTAMP()
                 FROM (
                     {base_query}
-                    SELECT game_id, type 
+                    SELECT game_id, type
                     FROM candidates
                 ) c
                 WHERE c.game_id IN ({game_ids_str})
@@ -180,6 +189,7 @@ class BGGResponseFetcher:
 
         base_time = datetime.now(UTC)
         rows = []
+        fetch_statuses = {}  # Track fetch status for each game_id
 
         # Logging input parameters for debugging
         logger.info(
@@ -190,38 +200,15 @@ class BGGResponseFetcher:
         if no_response_ids:
             logger.info(f"Processing {len(no_response_ids)} no-response game IDs")
 
-            # Check existing attempts for these game IDs
-            existing_attempts = {}
-            if no_response_ids:
-                game_ids_str = ",".join(str(gid) for gid in no_response_ids)
-                attempt_query = f"""
-                SELECT game_id, process_attempt
-                FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
-                WHERE game_id IN ({game_ids_str})
-                """
-                try:
-                    attempt_results = self.bq_client.query(attempt_query).to_dataframe()
-                    existing_attempts = dict(
-                        zip(attempt_results["game_id"], attempt_results["process_attempt"])
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not fetch existing attempts: {e}")
-
             for game_id in no_response_ids:
-                current_attempt = existing_attempts.get(game_id, 0) + 1
                 row = {
                     "game_id": game_id,
                     "response_data": "",  # Use empty string instead of None
                     "fetch_timestamp": base_time.isoformat(),
-                    "processed": True,
-                    "process_timestamp": base_time.isoformat(),
-                    "process_status": "no_response",
-                    "process_attempt": current_attempt,
                 }
                 rows.append(row)
-                logger.debug(
-                    f"No-response row for game_id {game_id} (attempt {current_attempt}): {row}"
-                )
+                fetch_statuses[game_id] = "no_response"
+                logger.debug(f"No-response row for game_id {game_id}: {row}")
 
         # If response data is provided, process it
         if response_data:
@@ -256,50 +243,24 @@ class BGGResponseFetcher:
                             "game_id": game_id,
                             "response_data": game_responses[game_id],
                             "fetch_timestamp": base_time.isoformat(),
-                            "processed": False,
-                            "process_timestamp": None,
-                            "process_status": None,
-                            "process_attempt": 0,
                         }
                         rows.append(row)
+                        fetch_statuses[game_id] = "success"
                         logger.debug(f"Created row for game_id {game_id}: {row}")
 
             except Exception as parse_error:
                 logger.error(f"Failed to parse response data: {parse_error}")
                 logger.error(f"Raw response data: {response_data}")
-                # If parsing fails, mark all game IDs as processed with an error status
-                # Check existing attempts for these game IDs
-                existing_attempts = {}
-                if game_ids:
-                    game_ids_str = ",".join(str(gid) for gid in game_ids)
-                    attempt_query = f"""
-                    SELECT game_id, process_attempt
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}`
-                    WHERE game_id IN ({game_ids_str})
-                    """
-                    try:
-                        attempt_results = self.bq_client.query(attempt_query).to_dataframe()
-                        existing_attempts = dict(
-                            zip(attempt_results["game_id"], attempt_results["process_attempt"])
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not fetch existing attempts for parse error: {e}")
-
+                # If parsing fails, store empty responses for these game IDs
                 for game_id in game_ids:
-                    current_attempt = existing_attempts.get(game_id, 0) + 1
                     row = {
                         "game_id": game_id,
                         "response_data": "",  # Use empty string instead of None
                         "fetch_timestamp": base_time.isoformat(),
-                        "processed": True,
-                        "process_timestamp": base_time.isoformat(),
-                        "process_status": "parse_error",
-                        "process_attempt": current_attempt,
                     }
                     rows.append(row)
-                    logger.debug(
-                        f"Parse error row for game_id {game_id} (attempt {current_attempt}): {row}"
-                    )
+                    fetch_statuses[game_id] = "parse_error"
+                    logger.debug(f"Parse error row for game_id {game_id}: {row}")
 
         # Log total number of rows to be inserted
         logger.info(f"Total rows to insert: {len(rows)}")
@@ -354,7 +315,45 @@ class BGGResponseFetcher:
                 logger.info(f"Load job input rows: {load_job_result.input_file_bytes}")
                 logger.info(f"Load job output rows: {load_job_result.output_rows}")
 
-            logger.info(f"Successfully processed responses for {len(rows)} games")
+            logger.info(f"Successfully fetched responses for {len(rows)} games")
+
+            # Insert into fetched_responses tracking table
+            try:
+                fetched_tracking_rows = []
+                for row in rows:
+                    # Get fetch status from our tracking dictionary
+                    fetch_status = fetch_statuses.get(row["game_id"], "success")
+
+                    # Query to get the record_id that was just inserted
+                    # We match on game_id and fetch_timestamp since they're unique for this batch
+                    record_id_query = f"""
+                    SELECT record_id
+                    FROM `{table_id}`
+                    WHERE game_id = {row['game_id']}
+                        AND fetch_timestamp = TIMESTAMP('{row['fetch_timestamp']}')
+                    ORDER BY fetch_timestamp DESC
+                    LIMIT 1
+                    """
+                    result = self.bq_client.query(record_id_query).result()
+                    record_row = next(result, None)
+
+                    if record_row:
+                        fetched_tracking_rows.append({
+                            "record_id": record_row.record_id,
+                            "game_id": row["game_id"],
+                            "fetch_timestamp": row["fetch_timestamp"],
+                            "fetch_status": fetch_status
+                        })
+
+                if fetched_tracking_rows:
+                    fetched_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses"
+                    errors = self.bq_client.insert_rows_json(fetched_table_id, fetched_tracking_rows)
+                    if errors:
+                        logger.error(f"Failed to insert into fetched_responses: {errors}")
+                    else:
+                        logger.info(f"Successfully inserted {len(fetched_tracking_rows)} records into fetched_responses")
+            except Exception as tracking_error:
+                logger.error(f"Failed to insert into fetched_responses tracking table: {tracking_error}")
 
             # Clean up fetch_in_progress entries for these games
             try:
@@ -491,7 +490,7 @@ class BGGResponseFetcher:
         Returns:
             bool: True if any responses were fetched, False otherwise
         """
-        logger.info("Starting BGG response fetcher")
+        logger.info(f"Starting response fetcher in {self.environment} environment")
 
         try:
             responses_fetched = False
@@ -510,27 +509,3 @@ class BGGResponseFetcher:
         except Exception as e:
             logger.error(f"Fetcher failed: {e}")
             raise
-
-
-def main() -> None:
-    """Main entry point for the fetcher."""
-    import os
-
-    environment = os.getenv("ENVIRONMENT", "test")
-    logger.info(f"Starting fetcher in {environment} environment")
-
-    fetcher = BGGResponseFetcher(
-        batch_size=1000,
-        chunk_size=20,
-        environment=environment,
-    )
-    responses_fetched = fetcher.run()
-
-    if responses_fetched:
-        logger.info("Responses were fetched - process_responses should be triggered")
-    else:
-        logger.info("No responses fetched - no further action needed")
-
-
-if __name__ == "__main__":
-    main()

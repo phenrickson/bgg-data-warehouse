@@ -4,9 +4,10 @@ on:
   push:
     branches: [ main, develop, test ]
     paths:
-      - 'Dockerfile'
+      - 'docker/Dockerfile.pipeline'
       - 'cloudbuild.yaml'
       - 'src/pipeline/**'
+      - 'src/modules/**'
       - 'config/bigquery.yaml'
   workflow_dispatch:  # Allow manual triggers for testing
     inputs:

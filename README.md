@@ -6,7 +6,19 @@ A data pipeline for collecting, processing, and analyzing BoardGameGeek game dat
 
 The BGG Data Pipeline is designed to efficiently collect, process, and analyze board game data from BoardGameGeek, with a robust architecture that ensures data integrity and performance.
 
-### Latest Features (v0.2.0)
+### Latest Features (v0.3.0)
+
+- **Tracking Tables Architecture** ✨ NEW
+  - Resolved BigQuery streaming buffer limitations with append-only tracking tables
+  - Separate `fetched_responses` and `processed_responses` tables for better audit trails
+  - INSERT-only operations eliminate UPDATE errors on streaming data
+  - Improved refresh logic based on fetch timestamps instead of process timestamps
+  - Comprehensive migration documentation in `docs/MIGRATION_TRACKING_TABLES.md`
+
+- **Code Consolidation**
+  - Eliminated duplicate response storage logic across modules
+  - Unified response handling through `BGGResponseFetcher`
+  - Cleaner separation of concerns between fetching and processing
 
 - **UV Package Manager Integration**
   - Replaced pip with UV for faster, more reliable package management
@@ -25,13 +37,6 @@ The BGG Data Pipeline is designed to efficiently collect, process, and analyze b
   - Enhanced environment configuration handling
   - Comprehensive GitHub Actions workflows
 
-### Upcoming Features (Unreleased)
-
-- New fetch_in_progress table for tracking and locking game fetches
-- Parallel fetching support with distributed locking mechanism
-- Automated cleanup of stale in-progress entries after 30 minutes
-- Pipeline now runs every 3 hours instead of hourly for better resource utilization
-
 ### Components
 
 #### ID Fetcher (`src/pipeline/fetch_ids.py`)
@@ -42,16 +47,18 @@ The BGG Data Pipeline is designed to efficiently collect, process, and analyze b
 #### Response Fetcher (`src/pipeline/fetch_responses.py`)
 - Continuously fetches game data from the BGG API
 - Stores raw XML responses in BigQuery's `raw_responses` table
+- Tracks fetch operations in `fetched_responses` tracking table
 - Advanced error handling for various API response scenarios
 - Handles API rate limiting and retries
 - Runs as a Cloud Run job in both prod and dev environments
 - Fetches games in chunks (default 20 games per API call)
-- Tracks processing status and timestamps
 - Automatically marks game IDs with no response or parsing errors
 
 #### Response Processor (`src/pipeline/process_responses.py`)
 - Processes raw responses into normalized tables
+- Tracks processing operations in `processed_responses` tracking table
 - Robust handling of incomplete or problematic game data
+- Uses INSERT-only operations to avoid BigQuery streaming buffer conflicts
 - Runs as a Cloud Run Job
 - Supports multiple parallel tasks (default 5 concurrent processing jobs)
 - Handles processing errors without disrupting overall data fetching
@@ -59,26 +66,39 @@ The BGG Data Pipeline is designed to efficiently collect, process, and analyze b
 - Scheduled to run every 3 hours
 - Enhanced logging and status tracking
 
+#### Game Refresher (`src/pipeline/refresh_games.py`)
+- Refreshes previously loaded games based on publication year and age
+- Prioritizes recently published games for more frequent updates
+- Uses `fetched_responses` tracking to prevent duplicate fetches
+- Automatically triggers processor after fetching new data
+- Configurable refresh intervals for different game age categories
+
 ### Data Flow Diagram
 
 ```mermaid
 graph TD
     A[BGG XML API2] -->|Fetch Game IDs| B[ID Fetcher]
-    B -->|Store Raw IDs| C[Raw Responses Table]
-    B -->|Unprocessed IDs| D[API Client]
+    B -->|Store IDs| C[thing_ids Table]
+    C -->|Unfetched IDs| D[Response Fetcher]
     D -->|Rate-Limited Requests| A
-    D -->|Raw Game Data| E[Data Processor]
-    E -->|Validate & Transform| F[Normalized Tables]
-    F -->|Load| G[BigQuery Warehouse]
+    D -->|Store Raw Data| E[raw_responses Table]
+    D -->|Track Fetch| F[fetched_responses Table]
+    F -->|Unprocessed Records| G[Response Processor]
+    E -->|Raw XML/JSON| G
+    G -->|Validate & Transform| H[Normalized Tables]
+    G -->|Track Processing| I[processed_responses Table]
+    H -->|Load| J[BigQuery Warehouse]
 ```
 
 ### Key Features
 - Automated BGG game data collection
 - Intelligent rate-limited API client
+- Append-only tracking tables for BigQuery streaming compatibility
 - Comprehensive data validation
 - BigQuery data warehouse integration
 - Robust error handling and retry mechanisms
-- Advanced tracking of API response processing
+- Separate tracking of fetch and process operations
+- Detailed audit trails for all pipeline operations
 - Raw data archival to Cloud Storage
 
 ## Prerequisites
@@ -250,13 +270,19 @@ To manually trigger workflows:
 1. API Errors:
    - Fetcher retries with exponential backoff
    - Failed requests logged in `request_log` table
-   - Automatic marking of game IDs with no response
+   - Automatic marking of game IDs with no response in `fetched_responses`
 
 2. Processing Errors:
    - Each response can be retried up to 3 times
-   - Errors stored in `process_status` field
+   - Errors tracked in `processed_responses` table with detailed error messages
    - Failed items do not block other processing
    - Detailed logging of processing challenges
+   - No streaming buffer conflicts due to INSERT-only operations
+
+3. BigQuery Streaming Buffer:
+   - All status tracking uses INSERT-only operations
+   - Separate tracking tables eliminate UPDATE/DELETE conflicts
+   - See `docs/MIGRATION_TRACKING_TABLES.md` for architecture details
 
 ## Development
 
@@ -394,6 +420,7 @@ Additional documentation is available in the `docs/` directory:
 - [Architecture Overview](docs/architecture.md)
 - [BGG API Documentation](docs/bgg_api.md)
 - [Dashboard Deployment Guide](docs/dashboard_deployment.md)
+- [Tracking Tables Migration](docs/MIGRATION_TRACKING_TABLES.md) - Details on BigQuery streaming buffer solution
 
 ## License
 

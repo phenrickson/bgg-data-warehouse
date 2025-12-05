@@ -102,9 +102,8 @@ def setup_games_active_scheduled_query(project_id, dataset, location):
 
         # SQL query to refresh the table
         query = f"""
-        CREATE OR REPLACE TABLE `{project_id}.{dataset}.games_active_table` AS
         WITH game_latest_timestamps AS (
-          SELECT 
+          SELECT
             game_id,
             MAX(load_timestamp) AS latest_game_timestamp
           FROM `{project_id}.{dataset}.games`
@@ -113,8 +112,8 @@ def setup_games_active_scheduled_query(project_id, dataset, location):
         latest_game_data AS (
           SELECT g.*
           FROM `{project_id}.{dataset}.games` g
-          JOIN game_latest_timestamps lt 
-            ON g.game_id = lt.game_id 
+          JOIN game_latest_timestamps lt
+            ON g.game_id = lt.game_id
             AND g.load_timestamp = lt.latest_game_timestamp
         )
         SELECT DISTINCT
@@ -312,9 +311,8 @@ def setup_scheduled_query(project_id, dataset, location):
 
         # SQL query to refresh the table
         query = f"""
-        CREATE OR REPLACE TABLE `{project_id}.{dataset}.best_player_counts_table` AS
         WITH normalized_player_counts AS (
-          SELECT 
+          SELECT
             game_id,
             -- Only include exact player counts 1-8
             player_count,
@@ -326,7 +324,7 @@ def setup_scheduled_query(project_id, dataset, location):
           FROM `{project_id}.{dataset}.player_counts`
         ),
         player_count_thresholds AS (
-          SELECT 
+          SELECT
             game_id,
             player_count,
             player_count_int,
@@ -334,15 +332,15 @@ def setup_scheduled_query(project_id, dataset, location):
             recommended_votes,
             not_recommended_votes,
             best_votes + recommended_votes + not_recommended_votes AS total_votes,
-            CASE 
-                WHEN (best_votes + recommended_votes + not_recommended_votes) = 0 
-                THEN 0 
-                ELSE ROUND(best_votes / (best_votes + recommended_votes + not_recommended_votes) * 100, 2) 
+            CASE
+                WHEN (best_votes + recommended_votes + not_recommended_votes) = 0
+                THEN 0
+                ELSE ROUND(best_votes / (best_votes + recommended_votes + not_recommended_votes) * 100, 2)
             END as best_percentage,
-            CASE 
-                WHEN (best_votes + recommended_votes + not_recommended_votes) = 0 
-                THEN 0 
-                ELSE ROUND((best_votes + recommended_votes) / (best_votes + recommended_votes + not_recommended_votes) * 100, 2) 
+            CASE
+                WHEN (best_votes + recommended_votes + not_recommended_votes) = 0
+                THEN 0
+                ELSE ROUND((best_votes + recommended_votes) / (best_votes + recommended_votes + not_recommended_votes) * 100, 2)
             END as positive_percentage
           FROM normalized_player_counts
           WHERE (best_votes + recommended_votes + not_recommended_votes) > 5  -- Minimum number of votes to consider reliable
@@ -370,14 +368,14 @@ def setup_scheduled_query(project_id, dataset, location):
           g.max_players,
           -- Best player counts (top 3)
           STRING_AGG(
-            CASE WHEN best_rank <= 3 AND best_percentage >= 40 THEN player_count END, 
-            ', ' 
+            CASE WHEN best_rank <= 3 AND best_percentage >= 40 THEN player_count END,
+            ', '
             ORDER BY best_rank
           ) AS best_player_counts,
           -- Recommended player counts (top 5)
           STRING_AGG(
-            CASE WHEN recommended_rank <= 5 AND positive_percentage >= 70 THEN player_count END, 
-            ', ' 
+            CASE WHEN recommended_rank <= 5 AND positive_percentage >= 70 THEN player_count END,
+            ', '
             ORDER BY recommended_rank
           ) AS recommended_player_counts,
           -- Min/Max best player count
@@ -434,18 +432,17 @@ def setup_scheduled_query(project_id, dataset, location):
 def get_filter_publishers_query(project_id, dataset):
     """Get the SQL query for filter_publishers table."""
     return f"""
-    CREATE OR REPLACE TABLE `{project_id}.{dataset}.filter_publishers` AS
-    SELECT 
+    SELECT
         p.publisher_id,
         p.name,
         COUNT(DISTINCT gp.game_id) as game_count
     FROM `{project_id}.{dataset}.publishers` p
-    JOIN `{project_id}.{dataset}.game_publishers` gp 
+    JOIN `{project_id}.{dataset}.game_publishers` gp
         ON p.publisher_id = gp.publisher_id
     -- Only include publishers with games in the active games table
-    JOIN `{project_id}.{dataset}.games_active_table` g 
+    JOIN `{project_id}.{dataset}.games_active_table` g
         ON gp.game_id = g.game_id
-    WHERE g.bayes_average IS NOT NULL 
+    WHERE g.bayes_average IS NOT NULL
         AND g.bayes_average > 0
     GROUP BY p.publisher_id, p.name
     ORDER BY game_count DESC, p.name ASC
@@ -529,17 +526,16 @@ def setup_filter_publishers_scheduled_query(project_id, dataset, location):
 def get_filter_categories_query(project_id, dataset):
     """Get the SQL query for filter_categories table."""
     return f"""
-    CREATE OR REPLACE TABLE `{project_id}.{dataset}.filter_categories` AS
-    SELECT 
+    SELECT
         c.category_id,
         c.name,
         COUNT(DISTINCT gc.game_id) as game_count
     FROM `{project_id}.{dataset}.categories` c
-    JOIN `{project_id}.{dataset}.game_categories` gc 
+    JOIN `{project_id}.{dataset}.game_categories` gc
         ON c.category_id = gc.category_id
-    JOIN `{project_id}.{dataset}.games_active_table` g 
+    JOIN `{project_id}.{dataset}.games_active_table` g
         ON gc.game_id = g.game_id
-    WHERE g.bayes_average IS NOT NULL 
+    WHERE g.bayes_average IS NOT NULL
         AND g.bayes_average > 0
     GROUP BY c.category_id, c.name
     ORDER BY game_count DESC, c.name ASC
@@ -623,17 +619,16 @@ def setup_filter_categories_scheduled_query(project_id, dataset, location):
 def get_filter_mechanics_query(project_id, dataset):
     """Get the SQL query for filter_mechanics table."""
     return f"""
-    CREATE OR REPLACE TABLE `{project_id}.{dataset}.filter_mechanics` AS
-    SELECT 
+    SELECT
         m.mechanic_id,
         m.name,
         COUNT(DISTINCT gm.game_id) as game_count
     FROM `{project_id}.{dataset}.mechanics` m
-    JOIN `{project_id}.{dataset}.game_mechanics` gm 
+    JOIN `{project_id}.{dataset}.game_mechanics` gm
         ON m.mechanic_id = gm.mechanic_id
-    JOIN `{project_id}.{dataset}.games_active_table` g 
+    JOIN `{project_id}.{dataset}.games_active_table` g
         ON gm.game_id = g.game_id
-    WHERE g.bayes_average IS NOT NULL 
+    WHERE g.bayes_average IS NOT NULL
         AND g.bayes_average > 0
     GROUP BY m.mechanic_id, m.name
     ORDER BY game_count DESC, m.name ASC
@@ -644,17 +639,16 @@ def get_filter_mechanics_query(project_id, dataset):
 def get_filter_designers_query(project_id, dataset):
     """Get the SQL query for filter_designers table."""
     return f"""
-    CREATE OR REPLACE TABLE `{project_id}.{dataset}.filter_designers` AS
-    SELECT 
+    SELECT
         d.designer_id,
         d.name,
         COUNT(DISTINCT gd.game_id) as game_count
     FROM `{project_id}.{dataset}.designers` d
-    JOIN `{project_id}.{dataset}.game_designers` gd 
+    JOIN `{project_id}.{dataset}.game_designers` gd
         ON d.designer_id = gd.designer_id
-    JOIN `{project_id}.{dataset}.games_active_table` g 
+    JOIN `{project_id}.{dataset}.games_active_table` g
         ON gd.game_id = g.game_id
-    WHERE g.bayes_average IS NOT NULL 
+    WHERE g.bayes_average IS NOT NULL
         AND g.bayes_average > 0
     GROUP BY d.designer_id, d.name
     ORDER BY game_count DESC, d.name ASC
@@ -665,29 +659,28 @@ def get_filter_designers_query(project_id, dataset):
 def get_filter_options_combined_query(project_id, dataset):
     """Get the SQL query for filter_options_combined table."""
     return f"""
-    CREATE OR REPLACE TABLE `{project_id}.{dataset}.filter_options_combined` AS
-    SELECT 
+    SELECT
         'publisher' as entity_type,
         publisher_id as entity_id,
         name,
         game_count
     FROM `{project_id}.{dataset}.filter_publishers`
     UNION ALL
-    SELECT 
+    SELECT
         'category' as entity_type,
         category_id as entity_id,
         name,
         game_count
     FROM `{project_id}.{dataset}.filter_categories`
     UNION ALL
-    SELECT 
+    SELECT
         'mechanic' as entity_type,
         mechanic_id as entity_id,
         name,
         game_count
     FROM `{project_id}.{dataset}.filter_mechanics`
     UNION ALL
-    SELECT 
+    SELECT
         'designer' as entity_type,
         designer_id as entity_id,
         name,
