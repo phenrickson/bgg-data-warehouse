@@ -21,6 +21,29 @@ default_environment: dev
 storage:
   bucket: bgg-data-warehouse
 
+# Refresh policy for previously loaded games
+refresh_policy:
+  batch_size: 1000  # Maximum games to refresh per run
+  intervals:
+    - name: recent
+      max_age_years: 2
+      refresh_days: 7
+      description: "Games published in last 2 years - refresh weekly"
+    - name: established
+      min_age_years: 2
+      max_age_years: 5
+      refresh_days: 30
+      description: "Games 2-5 years old - refresh monthly"
+    - name: classic
+      min_age_years: 5
+      max_age_years: 10
+      refresh_days: 90
+      description: "Games 5-10 years old - refresh quarterly"
+    - name: vintage
+      min_age_years: 10
+      refresh_days: 180
+      description: "Games 10+ years old - refresh bi-annually"
+
 # Raw data tables
 raw_tables:
   thing_ids:

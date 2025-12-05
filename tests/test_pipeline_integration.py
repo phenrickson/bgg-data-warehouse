@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from datetime import datetime, UTC
 
 import pytest
+import pandas as pd
 from google.cloud import bigquery
 
 from src.pipeline.fetch_responses import BGGResponseFetcher
@@ -26,21 +27,47 @@ TEST_GAME_IDS = [
 
 
 @pytest.fixture
-def mock_bq_client():
+def mock_bq_client(mock_api_response):
     """Create mock BigQuery client."""
     mock_client = Mock(spec=bigquery.Client)
 
-    # Create a more complete mock DataFrame for get_unfetched_ids
-    mock_df = Mock()
-    mock_df.__len__ = lambda _: len(TEST_GAME_IDS)
-    mock_df.iterrows.return_value = [
+    # Create properly configured mock responses for process_responses using real pandas DataFrame
+    mock_responses = [
+        {
+            "record_id": f"rec_{id}",
+            "game_id": id,
+            "response_data": str({"items": {"item": item}}),
+            "fetch_timestamp": datetime.now(UTC),
+        }
+        for id, item in zip(TEST_GAME_IDS, mock_api_response["items"]["item"])
+    ]
+
+    # Create a real pandas DataFrame for process_responses to use
+    responses_df = pd.DataFrame(mock_responses)
+
+    # Create a mock DataFrame for get_unfetched_ids (fetch_responses)
+    fetch_mock_df = Mock()
+    fetch_mock_df.__len__ = lambda _: len(TEST_GAME_IDS)
+    iterrows_data = [
         (i, {"game_id": id, "type": "boardgame"}) for i, id in enumerate(TEST_GAME_IDS)
     ]
-    mock_df.__getitem__ = lambda _, key: [id for id in TEST_GAME_IDS] if key == "game_id" else None
+    fetch_mock_df.iterrows = Mock(return_value=iter(iterrows_data))
+    fetch_mock_df.__getitem__ = lambda _, key: [id for id in TEST_GAME_IDS] if key == "game_id" else None
 
-    # Mock query job that returns our DataFrame
+    # Mock query job that returns appropriate DataFrame based on query type
+    def create_mock_query_job(query_str):
+        mock_job = Mock()
+        # If it's a query for unprocessed responses (used by process_responses), return real DataFrame
+        if "processed = FALSE" in query_str or "record_id" in query_str:
+            mock_job.to_dataframe.return_value = responses_df
+        else:
+            # Otherwise return the mock DataFrame (for fetch_responses)
+            mock_job.to_dataframe.return_value = fetch_mock_df
+        mock_job.result.return_value = None
+        return mock_job
+
     mock_query_job = Mock()
-    mock_query_job.to_dataframe.return_value = mock_df
+    mock_query_job.to_dataframe.return_value = fetch_mock_df
     mock_query_job.result.return_value = None  # For non-DataFrame queries
 
     # Configure mock for insert_rows_json
@@ -48,11 +75,16 @@ def mock_bq_client():
 
     # Configure the mock client to return appropriate results for different queries
     def mock_query(query):
-        if "SELECT COUNT(DISTINCT game_id)" in query:
+        if "SELECT COUNT(*) as count" in query or "SELECT COUNT(DISTINCT game_id)" in query:
+            # Handle COUNT queries - return appropriate count
             result = Mock()
-            result.count = len(TEST_GAME_IDS)
+            if "processed = TRUE" in query:
+                # Verification query - return the count of processed records
+                result.count = len(TEST_GAME_IDS)
+            else:
+                result.count = len(TEST_GAME_IDS)
             mock_result_iterator = Mock()
-            mock_result_iterator.result.return_value = iter([result])  # Make it an iterator
+            mock_result_iterator.result.return_value = iter([result])
             return mock_result_iterator
         elif "SELECT game_id, primary_name, year_published" in query:
             result = Mock()
@@ -60,9 +92,19 @@ def mock_bq_client():
             result.primary_name = "Catan"
             result.year_published = 1995
             mock_result_iterator = Mock()
-            mock_result_iterator.result.return_value = iter([result])  # Make it an iterator
+            mock_result_iterator.result.return_value = iter([result])
             return mock_result_iterator
-        return mock_query_job
+        elif "processed = FALSE" in query or ("record_id" in query and "FROM" in query and "SELECT" in query and "UPDATE" not in query):
+            # Return a job that gives real DataFrame for process_responses SELECT queries
+            return create_mock_query_job(query)
+        elif "UPDATE" in query or "DELETE" in query or "INSERT" in query:
+            # For DML statements, return a mock that has a result() method returning an empty iterator
+            mock_job = Mock()
+            mock_job.result.return_value = iter([])
+            return mock_job
+        else:
+            # Default query job for fetch_responses
+            return mock_query_job
 
     mock_client.query = mock_query
 

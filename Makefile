@@ -20,18 +20,22 @@ clean:
 	rm -rf dist/
 	rm -rf *.egg-info
 
-monitor:
+dashboard:
+	uv run streamlit run src/visualization/Home.py --server.port 8501
+
+dashboard-old:
 	uv run streamlit run src/visualization/dashboard.py --server.port 8501
 
 search:
 	uv run streamlit run src/visualization/game_search_dashboard.py --server.port 8502
 
 # migrate
-source-dataset ?= bgg_data_dev
-target-dataset ?= bgg_data_test
-source-raw ?= bgg_raw_dev
-target-raw ?= bgg_raw_test
-TARGET_ENV ?= test
+project-id ?= gcp-demos-411520
+source-dataset ?= bgg_data_prod
+target-dataset ?= bgg_data_dev
+source-raw ?= bgg_raw_prod
+target-raw ?= bgg_raw_dev
+TARGET_ENV ?= dev
 
 migrate-bgg-data:
 	uv run -m src.warehouse.migrate_datasets \
@@ -46,11 +50,32 @@ migrate-bgg-raw:
 	--project-id gcp-demos-411520
 
 create-views:
-	uv run -m src.warehouse.create_views \
-	--environment $(TARGET_ENV)
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.create_views
+
+create-scheduled-tables:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.create_scheduled_tables
 
 add-record-id:
-	uv run -m src.warehouse.migration_scripts.add_record_id \
-	--environment $(TARGET_ENV)
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.add_record_id_to_raw_responses
 
-migrate-data: migrate-bgg-data migrate-bgg-raw create-views
+create-tracking-tables:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.create_tracking_tables
+
+backfill-tracking-tables:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.backfill_tracking_tables
+
+remove-processed-columns:
+	set ENVIRONMENT=$(TARGET_ENV) && uv run -m src.warehouse.migration_scripts.remove_processed_columns
+
+.PHONY: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id create-tracking-tables backfill-tracking-tables remove-processed-columns
+migrate-dataset: migrate-bgg-data migrate-bgg-raw create-views
+
+# Complete migration workflow: copy prod to target env and apply all migrations
+migrate-full: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id create-tracking-tables backfill-tracking-tables remove-processed-columns
+
+# pipeline
+fetch-new-games:
+	uv run -m src.pipeline.fetch_new_games
+
+refresh-old-games:
+	uv run -m src.pipeline.refresh_old_games
