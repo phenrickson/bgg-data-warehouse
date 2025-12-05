@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 
 from ..modules.id_fetcher import IDFetcher
 from ..modules.response_fetcher import ResponseFetcher
-from ..modules.response_processor import ResponseProcessor
 from ..utils.logging_config import setup_logging
+from ..utils.pubsub_client import trigger_processing
 
 # Load environment variables
 load_dotenv()
@@ -57,15 +57,23 @@ def main() -> None:
     else:
         logger.info("No responses fetched - checking for unprocessed responses anyway")
 
-    # Step 3: Process unprocessed responses
+    # Step 3: Trigger async processing via Pub/Sub
     logger.info("=" * 80)
-    logger.info("Step 3: Processing responses into normalized tables")
+    logger.info("Step 3: Triggering async response processing")
     logger.info("=" * 80)
-    response_processor = ResponseProcessor(
-        batch_size=100,
-        environment=environment,
-    )
-    responses_processed = response_processor.run()
+
+    if responses_fetched:
+        try:
+            trigger_processing()
+            logger.info("Processing trigger sent - processing will happen asynchronously via Cloud Function")
+            processing_triggered = True
+        except Exception as e:
+            logger.error(f"Failed to trigger processing: {e}")
+            logger.info("You can manually process responses using: python -m src.pipeline.process_responses_manual")
+            processing_triggered = False
+    else:
+        logger.info("No responses fetched - skipping processing trigger")
+        processing_triggered = False
 
     # Summary
     logger.info("=" * 80)
@@ -74,12 +82,12 @@ def main() -> None:
     logger.info(f"Summary:")
     logger.info(f"  - New IDs fetched: {'Yes' if ids_fetched else 'No'}")
     logger.info(f"  - Responses fetched: {'Yes' if responses_fetched else 'No'}")
-    logger.info(f"  - Responses processed: {'Yes' if responses_processed else 'No'}")
+    logger.info(f"  - Processing triggered: {'Yes' if processing_triggered else 'No'}")
 
-    if ids_fetched or responses_fetched or responses_processed:
+    if ids_fetched or responses_fetched:
         logger.info("Pipeline completed successfully with new data")
     else:
-        logger.info("Pipeline completed - no new data to process")
+        logger.info("Pipeline completed - no new data to fetch")
 
 
 if __name__ == "__main__":
