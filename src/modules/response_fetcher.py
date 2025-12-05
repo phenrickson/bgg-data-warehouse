@@ -268,52 +268,10 @@ class ResponseFetcher:
         table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}"
 
         try:
-            # In test/dev environment, use insert_rows_json directly
-            if self.environment in ["test", "dev"]:
-                errors = self.bq_client.insert_rows_json(table_id, rows)
-                if errors:
-                    logger.error(f"Failed to insert rows: {errors}")
-            else:
-                # Get table schema
-                table = self.bq_client.get_table(table_id)
-
-                # Validate schema to ensure response_data can be empty
-                response_data_field = next(
-                    (field for field in table.schema if field.name == "response_data"), None
-                )
-                if response_data_field and not response_data_field.is_nullable:
-                    logger.warning(
-                        "response_data field is not nullable. This may cause insertion errors."
-                    )
-
-                # Configure the load job
-                job_config = bigquery.LoadJobConfig(
-                    source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-                    schema=table.schema,
-                    write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-                    # Add max bad records to prevent job failure
-                    max_bad_records=len(rows),  # Allow all rows to be considered bad if needed
-                )
-
-                # Load data using load job
-                load_job = self.bq_client.load_table_from_json(
-                    rows, table_id, job_config=job_config
-                )
-
-                # Wait for job to complete
-                load_job_result = load_job.result()
-
-                # Check for specific errors
-                if load_job.errors:
-                    logger.error(f"Detailed load job errors: {load_job.errors}")
-
-                    # Log individual row details for debugging
-                    for row in rows:
-                        logger.debug(f"Problematic row details: {row}")
-
-                # Log job statistics
-                logger.info(f"Load job input rows: {load_job_result.input_file_bytes}")
-                logger.info(f"Load job output rows: {load_job_result.output_rows}")
+            # Use insert_rows_json for all environments
+            errors = self.bq_client.insert_rows_json(table_id, rows)
+            if errors:
+                logger.error(f"Failed to insert rows: {errors}")
 
             logger.info(f"Successfully fetched responses for {len(rows)} games")
 
@@ -460,19 +418,18 @@ class ResponseFetcher:
 
                 except Exception as e:
                     logger.error(f"Failed to fetch chunk {chunk_ids}: {e}")
-                    # In test/dev environment, handle rate limiting and API errors
-                    if self.environment in ["test", "dev"]:
-                        if "Rate limited" in str(e) or "API Error" in str(e):
-                            # Try the same chunk again
-                            try:
-                                response = self.api_client.get_thing(chunk_ids)
-                                if response:
-                                    self.store_response(chunk_ids, str(response))
-                            except Exception as retry_e:
-                                logger.error(f"Retry failed for chunk {chunk_ids}: {retry_e}")
-                                raise
-                        else:
+                    # Handle rate limiting and API errors with retry
+                    if "Rate limited" in str(e) or "API Error" in str(e):
+                        # Try the same chunk again
+                        try:
+                            response = self.api_client.get_thing(chunk_ids)
+                            if response:
+                                self.store_response(chunk_ids, str(response))
+                        except Exception as retry_e:
+                            logger.error(f"Retry failed for chunk {chunk_ids}: {retry_e}")
                             raise
+                    else:
+                        raise
 
             except Exception as e:
                 logger.error(f"Unhandled error in fetch_batch: {e}")

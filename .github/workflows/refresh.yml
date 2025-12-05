@@ -2,7 +2,7 @@ name: Refresh BGG Game Data
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Run daily at 8 AM UTC (2 hours after new game pipeline)
+    - cron: '0 7 * * *'  # Run daily at 7 AM UTC (2 hours after new game pipeline)
   workflow_dispatch:
     inputs:
       environment:
@@ -16,8 +16,8 @@ on:
         - test
 
 jobs:
-  refresh-games:
-    name: Refresh Game Data
+  refresh-old-games:
+    name: Refresh Old Games
     runs-on: ubuntu-latest
 
     steps:
@@ -44,11 +44,11 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Execute Refresh Games Job
+      - name: Execute Refresh Old Games Job
         run: |
           ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
           API_TOKEN=${{ secrets.BGG_API_TOKEN }}
-          echo "Refreshing games in $ENVIRONMENT environment..."
+          echo "Refreshing old games in $ENVIRONMENT environment..."
           gcloud run jobs execute bgg-refresh-games-$ENVIRONMENT \
             --region us-central1 \
             --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
@@ -57,7 +57,7 @@ jobs:
   process-responses:
     name: Process Refresh Responses
     runs-on: ubuntu-latest
-    needs: refresh-games
+    needs: refresh-old-games
 
     steps:
       - name: Checkout code
