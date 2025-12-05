@@ -8,6 +8,8 @@ on:
       - 'cloudbuild.yaml'
       - 'src/pipeline/**'
       - 'src/modules/**'
+      - 'src/cloud_functions/**'
+      - 'src/utils/pubsub_client.py'
       - 'config/bigquery.yaml'
   workflow_dispatch:  # Allow manual triggers for testing
     inputs:

@@ -8,24 +8,60 @@ The architecture has been updated to separate fetching and processing:
 - **Fetch scripts** write responses to `raw_responses` and publish a Pub/Sub message
 - **Cloud Function** processes responses asynchronously when triggered by Pub/Sub
 
-## Prerequisites
+## Deployment via GitHub Actions (Recommended)
+
+The deployment is **fully automated** through GitHub Actions and Cloud Build.
+
+### Automatic Deployment
+
+Simply push to these branches to trigger deployment:
+- **`test` branch** → deploys to test environment
+- **`main` branch** → deploys to prod environment
+- **`develop` branch** → deploys to dev environment
+
+The workflow automatically:
+1. Builds Docker image with your code
+2. Creates `process-responses` Pub/Sub topic (if it doesn't exist)
+3. Deploys `process-responses-{environment}` Cloud Function
+4. Updates Cloud Run Jobs for fetch scripts
+
+### Manual Deployment via GitHub Actions
+
+Trigger a deployment manually from GitHub:
+
+1. Go to **Actions** → **"Deploy BGG Data Warehouse"**
+2. Click **"Run workflow"**
+3. Select environment (dev/test/prod)
+4. Click **"Run workflow"**
+
+### What Gets Deployed
+
+When Cloud Build runs:
+- ✅ Pub/Sub topic: `process-responses`
+- ✅ Cloud Function: `process-responses-{environment}`
+- ✅ Cloud Run Job: `bgg-fetch-new-games-{environment}`
+- ✅ Cloud Run Job: `bgg-refresh-old-games-{environment}`
+
+## Manual Deployment (Advanced)
+
+If you need to deploy manually outside of GitHub Actions:
+
+### Prerequisites
 
 1. GCP CLI (`gcloud`) installed and authenticated
 2. Project: `gcp-demos-411520`
 3. Service account: `bgg-data-warehouse@gcp-demos-411520.iam.gserviceaccount.com`
 
-## Deployment Steps
+### Manual Steps
 
-### 1. Create Pub/Sub Topic
-
+1. **Create Pub/Sub Topic**
 ```bash
 gcloud pubsub topics create process-responses --project=gcp-demos-411520
 ```
 
-### 2. Deploy Cloud Function (Test Environment)
-
+2. **Deploy Cloud Function**
 ```bash
-gcloud functions deploy process-responses \
+gcloud functions deploy process-responses-test \
   --gen2 \
   --runtime=python311 \
   --region=us-central1 \
@@ -35,33 +71,7 @@ gcloud functions deploy process-responses \
   --timeout=540s \
   --memory=512MB \
   --set-env-vars=ENVIRONMENT=test \
-  --project=gcp-demos-411520
-```
-
-### 3. Grant Permissions (if needed)
-
-```bash
-gcloud functions add-invoker-policy-binding process-responses \
-  --region=us-central1 \
-  --member=serviceAccount:bgg-data-warehouse@gcp-demos-411520.iam.gserviceaccount.com \
-  --project=gcp-demos-411520
-```
-
-### 4. Deploy for Production
-
-To deploy for production environment:
-
-```bash
-gcloud functions deploy process-responses-prod \
-  --gen2 \
-  --runtime=python311 \
-  --region=us-central1 \
-  --source=./src/cloud_functions/process_responses \
-  --entry-point=process_responses \
-  --trigger-topic=process-responses \
-  --timeout=540s \
-  --memory=512MB \
-  --set-env-vars=ENVIRONMENT=prod \
+  --service-account=bgg-data-warehouse@gcp-demos-411520.iam.gserviceaccount.com \
   --project=gcp-demos-411520
 ```
 
