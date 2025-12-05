@@ -71,7 +71,7 @@ remove-processed-columns:
 migrate-dataset: migrate-bgg-data migrate-bgg-raw create-views
 
 # Complete migration workflow: copy prod to target env and apply all migrations
-migrate-full: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id create-tracking-tables backfill-tracking-tables remove-processed-columns
+migrate-full: migrate-bgg-data migrate-bgg-raw create-views create-scheduled-tables add-record-id
 
 # pipeline
 fetch-new-games:

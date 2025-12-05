@@ -78,41 +78,6 @@ steps:
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
-  # Deploy Process Responses Cloud Run Job - Create if not exists, otherwise update
-  # Standalone processor for reprocessing or catch-up scenarios
-  - name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        if gcloud run jobs describe bgg-process-responses-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-process-responses-$_ENVIRONMENT"
-          gcloud run jobs update bgg-process-responses-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.process_responses \
-            --tasks=1 \
-            --max-retries=3 \
-            --task-timeout=2h \
-            --memory=4Gi \
-            --cpu=2 \
-            --region=us-central1 \
-            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
-        else
-          echo "Creating new job: bgg-process-responses-$_ENVIRONMENT"
-          gcloud run jobs create bgg-process-responses-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.process_responses \
-            --tasks=1 \
-            --max-retries=3 \
-            --task-timeout=2h \
-            --memory=4Gi \
-            --cpu=2 \
-            --region=us-central1 \
-            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
-        fi
-
 # Images to push to Container Registry
 images:
   - 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT'
