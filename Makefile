@@ -31,11 +31,11 @@ search:
 
 # migrate
 project-id ?= gcp-demos-411520
-source-dataset ?= bgg_data_prod
-target-dataset ?= bgg_data_dev
-source-raw ?= bgg_raw_prod
-target-raw ?= bgg_raw_dev
-TARGET_ENV ?= dev
+source-dataset ?= bgg_data_dev
+target-dataset ?= bgg_data_prod
+source-raw ?= bgg_raw_dev
+target-raw ?= bgg_raw_prod
+TARGET_ENV ?= prod
 
 migrate-bgg-data:
 	uv run -m src.warehouse.migrate_datasets \
