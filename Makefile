@@ -32,10 +32,10 @@ search:
 # migrate
 project-id ?= gcp-demos-411520
 source-dataset ?= bgg_data_prod
-target-dataset ?= bgg_data_dev
+target-dataset ?= bgg_data_test
 source-raw ?= bgg_raw_prod
-target-raw ?= bgg_raw_dev
-TARGET_ENV ?= dev
+target-raw ?= bgg_raw_test
+TARGET_ENV ?= test
 
 migrate-bgg-data:
 	uv run -m src.warehouse.migrate_datasets \

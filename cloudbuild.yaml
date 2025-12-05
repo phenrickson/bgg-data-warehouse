@@ -9,7 +9,7 @@ steps:
     args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT']
 
   # Deploy Fetch New Games Cloud Run Job - Create if not exists, otherwise update
-  # This pipeline fetches new game IDs, fetches their responses, and processes them
+  # This job fetches new game IDs and responses, then triggers async processing via Pub/Sub
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
@@ -44,7 +44,7 @@ steps:
         fi
 
   # Deploy Refresh Old Games Cloud Run Job - Create if not exists, otherwise update
-  # This pipeline refreshes stale game data and processes the responses
+  # This job refreshes stale game data, then triggers async processing via Pub/Sub
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
@@ -78,40 +78,39 @@ steps:
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
-  # Deploy Process Responses Cloud Run Job - Create if not exists, otherwise update
-  # Standalone processor for reprocessing or catch-up scenarios
+  # Create Pub/Sub topic if it doesn't exist
+  # This topic is used to trigger the response processing Cloud Function
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        if gcloud run jobs describe bgg-process-responses-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-process-responses-$_ENVIRONMENT"
-          gcloud run jobs update bgg-process-responses-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.process_responses \
-            --tasks=1 \
-            --max-retries=3 \
-            --task-timeout=2h \
-            --memory=4Gi \
-            --cpu=2 \
-            --region=us-central1 \
-            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
+        if gcloud pubsub topics describe process-responses 2>/dev/null; then
+          echo "Pub/Sub topic 'process-responses' already exists"
         else
-          echo "Creating new job: bgg-process-responses-$_ENVIRONMENT"
-          gcloud run jobs create bgg-process-responses-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
-            --args=src.pipeline.process_responses \
-            --tasks=1 \
-            --max-retries=3 \
-            --task-timeout=2h \
-            --memory=4Gi \
-            --cpu=2 \
-            --region=us-central1 \
-            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
+          echo "Creating Pub/Sub topic 'process-responses'"
+          gcloud pubsub topics create process-responses
         fi
+
+  # Deploy Response Processing Cloud Function
+  # This function is triggered by Pub/Sub when fetch scripts complete
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Deploying Cloud Function: process-responses-$_ENVIRONMENT"
+        gcloud functions deploy process-responses-$_ENVIRONMENT \
+          --gen2 \
+          --runtime=python311 \
+          --region=us-central1 \
+          --source=./src/cloud_functions/process_responses \
+          --entry-point=process_responses \
+          --trigger-topic=process-responses \
+          --timeout=540s \
+          --memory=512MB \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=ENVIRONMENT=$_ENVIRONMENT
 
 # Images to push to Container Registry
 images:
