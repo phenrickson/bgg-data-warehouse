@@ -237,8 +237,8 @@ SELECT
     f.first_fetch_timestamp
 FROM `${project_id}.${dataset}.games_active` g
 INNER JOIN first_fetches f ON g.game_id = f.game_id
-ORDER BY f.first_fetch_timestamp DESC
-LIMIT 25;
+WHERE f.first_fetch_timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+ORDER BY f.first_fetch_timestamp DESC;
 """
 
 DAILY_PROCESSING_COUNTS = """
