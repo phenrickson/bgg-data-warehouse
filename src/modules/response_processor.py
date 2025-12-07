@@ -189,7 +189,11 @@ class ResponseProcessor:
                 r.game_id,
                 r.response_data,
                 r.fetch_timestamp,
-                TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), r.fetch_timestamp, MINUTE) >= 30 as is_old
+                TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), r.fetch_timestamp, MINUTE) >= 30 as is_old,
+                ROW_NUMBER() OVER (
+                    PARTITION BY r.game_id
+                    ORDER BY r.fetch_timestamp DESC, r.record_id DESC
+                ) as row_num
             FROM `{self.raw_responses_table}` r
             INNER JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
                 ON r.record_id = f.record_id
@@ -200,6 +204,7 @@ class ResponseProcessor:
         )
         SELECT record_id, game_id, response_data, fetch_timestamp
         FROM responses
+        WHERE row_num = 1  -- Only take the most recent response for each game_id
         ORDER BY
             is_old DESC,  -- Process older responses first
             fetch_timestamp ASC  -- Then oldest to newest within each group
