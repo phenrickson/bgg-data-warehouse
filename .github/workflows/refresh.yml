@@ -47,9 +47,7 @@ jobs:
       - name: Execute Refresh Old Games Job
         run: |
           ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
-          API_TOKEN=${{ secrets.BGG_API_TOKEN }}
           echo "Refreshing old games in $ENVIRONMENT environment..."
           gcloud run jobs execute bgg-refresh-old-games-$ENVIRONMENT \
             --region us-central1 \
-            --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
             --wait

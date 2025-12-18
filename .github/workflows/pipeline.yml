@@ -47,9 +47,7 @@ jobs:
       - name: Execute Fetch New Games Job
         run: |
           ENVIRONMENT=${{ github.event.inputs.environment || vars.ENVIRONMENT || 'prod' }}
-          API_TOKEN=${{ secrets.BGG_API_TOKEN }}
           echo "Fetching new games in $ENVIRONMENT environment..."
           gcloud run jobs execute bgg-fetch-new-games-$ENVIRONMENT \
             --region us-central1 \
-            --update-env-vars ENVIRONMENT=$ENVIRONMENT,BGG_API_TOKEN=$API_TOKEN \
             --wait
