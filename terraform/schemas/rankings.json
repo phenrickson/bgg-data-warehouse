@@ -1,0 +1,9 @@
+[
+  {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "ranking_type", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "ranking_name", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "friendly_name", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "value", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "bayes_average", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "load_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"}
+]

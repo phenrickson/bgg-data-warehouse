@@ -1,0 +1,8 @@
+[
+  {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "type", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "processed", "type": "BOOLEAN", "mode": "REQUIRED"},
+  {"name": "process_timestamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "source", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "load_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"}
+]

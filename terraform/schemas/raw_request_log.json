@@ -1,0 +1,10 @@
+[
+  {"name": "request_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "url", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "method", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "game_ids", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "status_code", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "response_time", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "error", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "request_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"}
+]

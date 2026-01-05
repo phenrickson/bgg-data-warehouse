@@ -1,0 +1,4 @@
+[
+  {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "expansion_id", "type": "INTEGER", "mode": "REQUIRED"}
+]

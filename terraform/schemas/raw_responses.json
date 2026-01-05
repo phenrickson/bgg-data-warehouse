@@ -1,0 +1,9 @@
+[
+  {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "response_data", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "fetch_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "processed", "type": "BOOLEAN", "mode": "REQUIRED"},
+  {"name": "process_timestamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "process_status", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "process_attempt", "type": "INTEGER", "mode": "REQUIRED"}
+]
