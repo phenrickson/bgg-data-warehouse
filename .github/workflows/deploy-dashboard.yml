@@ -1,98 +1,60 @@
-name: Deploy BGG Dashboard
+name: Deploy Dashboard
 
 on:
   push:
-    branches:
-        - main
-        - develop
+    branches: [ main ]
     paths:
       - 'src/visualization/**'
-      - 'src/config.py'
-      - 'config/bigquery.yaml'
       - 'docker/Dockerfile.dashboard'
       - '.github/workflows/deploy-dashboard.yml'
-  workflow_dispatch:  # Allow manual triggers for testing
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
 
 jobs:
   deploy-dashboard:
-    name: deploy-dashboard
+    name: Deploy Dashboard
     runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install UV
-        run: pip install uv
-
-      - name: Setup Environment
-        run: |
-          mkdir -p credentials
-          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
-
-          cat << EOF > .env
-          GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT || 'prod' }}
-          GOOGLE_APPLICATION_CREDENTIALS=credentials/service-account-key.json
-          EOF
-
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Configure Docker
-        uses: docker/setup-buildx-action@v3
-      
       - name: Configure Docker auth for GCR
-        run: |
-          gcloud auth configure-docker gcr.io
+        run: gcloud auth configure-docker gcr.io
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./docker/Dockerfile.dashboard
-          push: true
-          tags: gcr.io/${{ vars.GCP_PROJECT_ID }}/bgg-dashboard:latest
+        run: |
+          docker build -f docker/Dockerfile.dashboard -t gcr.io/${GCP_PROJECT_ID}/bgg-dashboard:latest .
+          docker push gcr.io/${GCP_PROJECT_ID}/bgg-dashboard:latest
 
       - name: Deploy Dashboard to Cloud Run
         run: |
-          # Get the project ID from the environment
-          PROJECT_ID=${{ vars.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ vars.ENVIRONMENT || 'prod' }}
-          
           gcloud run deploy bgg-dashboard \
-            --image gcr.io/${PROJECT_ID}/bgg-dashboard:latest \
-            --platform managed \
-            --region us-central1 \
+            --project=${GCP_PROJECT_ID} \
+            --image=gcr.io/${GCP_PROJECT_ID}/bgg-dashboard:latest \
+            --platform=managed \
+            --region=${GCP_REGION} \
             --allow-unauthenticated \
-            --memory 1Gi \
-            --cpu 1 \
-            --service-account bgg-data-warehouse@${PROJECT_ID}.iam.gserviceaccount.com \
-            --set-env-vars="ENVIRONMENT=${ENVIRONMENT},GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json,STREAMLIT_SERVER_PORT=8501" \
+            --memory=1Gi \
+            --cpu=1 \
+            --service-account=bgg-data-warehouse@${GCP_PROJECT_ID}.iam.gserviceaccount.com \
+            --set-env-vars="STREAMLIT_SERVER_PORT=8501" \
             --port=8501 \
             --timeout=300s \
             --min-instances=0 \
-            --max-instances=1 \
-            --command="/bin/bash" \
-            --args="/app/start.sh"
+            --max-instances=1
 
       - name: Output Dashboard URL
         run: |
-          echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard --platform managed --region us-central1 --format='value(status.url)')"
+          echo "Dashboard deployed to: $(gcloud run services describe bgg-dashboard --project=${GCP_PROJECT_ID} --region=${GCP_REGION} --format='value(status.url)')"
