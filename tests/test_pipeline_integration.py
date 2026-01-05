@@ -147,11 +147,9 @@ class TestResponseFetcher:
                 fetcher = ResponseFetcher(
                     batch_size=100,
                     chunk_size=20,
-                    environment="test",
                 )
                 assert fetcher.batch_size == 100
                 assert fetcher.chunk_size == 20
-                assert fetcher.environment == "test"
 
     @patch("src.modules.response_fetcher.BGGAPIClient")
     def test_fetch_batch_with_mock_api(self, mock_api_class, mock_bq_client, mock_config, mock_api_response):
@@ -164,7 +162,6 @@ class TestResponseFetcher:
                 fetcher = ResponseFetcher(
                     batch_size=len(TEST_GAME_IDS),
                     chunk_size=2,
-                    environment="test",
                 )
                 fetcher.bq_client = mock_bq_client
                 fetcher.api_client = mock_api_instance
@@ -187,12 +184,9 @@ class TestResponseProcessor:
                 processor = ResponseProcessor(
                     batch_size=100,
                     max_retries=3,
-                    environment="test",
-                    config=mock_config,
                 )
                 assert processor.batch_size == 100
                 assert processor.max_retries == 3
-                assert processor.environment == "test"
 
 
 class TestPipelineIntegration:
@@ -210,7 +204,6 @@ class TestPipelineIntegration:
                 fetcher = ResponseFetcher(
                     batch_size=len(TEST_GAME_IDS),
                     chunk_size=5,
-                    environment="test",
                 )
                 fetcher.bq_client = mock_bq_client
                 fetcher.api_client = mock_api_instance
@@ -224,8 +217,6 @@ class TestPipelineIntegration:
                 # Initialize processor
                 processor = ResponseProcessor(
                     batch_size=len(TEST_GAME_IDS),
-                    environment="test",
-                    config=mock_config,
                 )
                 processor.bq_client = mock_bq_client
 

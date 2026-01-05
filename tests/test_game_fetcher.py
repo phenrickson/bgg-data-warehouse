@@ -2,6 +2,9 @@
 
 import json
 import logging
+
+import pytest
+
 from src.modules.game_fetcher_processor import GameFetcher
 
 # Set up logging
@@ -59,10 +62,7 @@ def test_single_game():
         logger.info(f"✓ Full output saved to {output_file}")
 
     else:
-        logger.error("✗ Failed to fetch game features")
-        return False
-
-    return True
+        pytest.fail("Failed to fetch game features")
 
 
 def test_multiple_games():
@@ -97,21 +97,8 @@ def test_multiple_games():
     successful = sum(1 for v in results.values() if v is not None)
     logger.info(f"Successfully fetched {successful}/{len(game_ids)} games")
 
-    return successful > 0
+    assert successful > 0, "Failed to fetch any games"
 
 
 if __name__ == "__main__":
-    logger.info("Starting GameFetcher tests...")
-
-    # Test single game
-    success1 = test_single_game()
-
-    # Test multiple games
-    success2 = test_multiple_games()
-
-    logger.info("=" * 80)
-    if success1 and success2:
-        logger.info("✓ All tests completed successfully!")
-    else:
-        logger.error("✗ Some tests failed")
-    logger.info("=" * 80)
+    pytest.main([__file__, "-v"])

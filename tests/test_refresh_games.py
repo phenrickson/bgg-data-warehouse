@@ -101,11 +101,9 @@ class TestResponseRefresherUnit:
                 with patch("src.modules.response_refresher.ResponseFetcher"):
                     refresher = ResponseRefresher(
                         chunk_size=5,
-                        environment="test",
                         dry_run=True,
                     )
                     assert refresher.chunk_size == 5
-                    assert refresher.environment == "test"
                     assert refresher.dry_run is True
                     assert refresher.batch_size == 1000
                     logger.info("ResponseRefresher initialization test passed")
@@ -117,7 +115,6 @@ class TestResponseRefresherUnit:
                 with patch("src.modules.response_refresher.ResponseFetcher"):
                     refresher = ResponseRefresher(
                         chunk_size=5,
-                        environment="test",
                     )
                     assert len(refresher.refresh_intervals) == 4
 
@@ -135,7 +132,6 @@ class TestResponseRefresherUnit:
                 with patch("src.modules.response_refresher.ResponseFetcher"):
                     refresher = ResponseRefresher(
                         chunk_size=5,
-                        environment="test",
                         dry_run=True,
                     )
                     refresher.bq_client = mock_bq_client
@@ -152,30 +148,22 @@ class TestResponseRefresherIntegration:
     """Integration tests for ResponseRefresher (require credentials)."""
 
     @pytest.fixture
-    def test_environment(self):
-        """Ensure we're running in test environment."""
-        env = os.getenv("ENVIRONMENT", "test")
-        if env == "prod":
-            pytest.skip("Refusing to run tests against production environment")
-        return env
-
-    @pytest.fixture
-    def config(self, test_environment):
-        """Get BigQuery configuration for test environment."""
+    def config(self):
+        """Get BigQuery configuration."""
         check_credentials()
-        return get_bigquery_config(test_environment)
+        return get_bigquery_config()
 
     @pytest.fixture
-    def bigquery_client(self):
+    def bigquery_client(self, config):
         """Create BigQuery client."""
         check_credentials()
-        return bigquery.Client()
+        return bigquery.Client(project=config["project"]["id"])
 
     @pytest.fixture
-    def refresher(self, test_environment):
+    def refresher(self):
         """Create ResponseRefresher instance for testing."""
         check_credentials()
-        return ResponseRefresher(chunk_size=5, environment=test_environment, dry_run=True)
+        return ResponseRefresher(chunk_size=5, dry_run=True)
 
     def test_config_loading(self, refresher):
         """Test that refresh policy configuration loads correctly."""
@@ -191,10 +179,10 @@ class TestResponseRefresherIntegration:
 
         logger.info(f"Config loaded: {len(refresher.refresh_intervals)} refresh intervals")
 
-    def test_games_table_exists(self, bigquery_client, config, test_environment):
-        """Test that the games table exists in test environment."""
-        env_config = config["environments"][test_environment]
-        games_table = f"{env_config['project_id']}.{env_config['dataset']}.games"
+    def test_games_table_exists(self, bigquery_client, config):
+        """Test that the games table exists."""
+        project_id = config["project"]["id"]
+        games_table = f"{project_id}.core.games"
 
         try:
             table = bigquery_client.get_table(games_table)
@@ -205,7 +193,7 @@ class TestResponseRefresherIntegration:
             count_query = f"SELECT COUNT(DISTINCT game_id) as count FROM `{games_table}`"
             result = bigquery_client.query(count_query).result()
             count = next(result).count
-            logger.info(f"  Found {count} unique games in test database")
+            logger.info(f"  Found {count} unique games in database")
 
         except Exception as e:
             pytest.fail(f"Games table not found or inaccessible: {e}")
@@ -242,24 +230,22 @@ class TestResponseRefresherIntegration:
         except Exception as e:
             pytest.fail(f"Failed to query games for refresh: {e}")
 
-    def test_dry_run_no_api_calls(self, refresher, test_environment):
+    def test_dry_run_no_api_calls(self, refresher):
         """Test that we can instantiate and configure refresher without making API calls."""
-        assert refresher.environment == test_environment
         assert refresher.chunk_size == 5
         assert refresher.dry_run is True
         assert refresher.api_client is not None
         assert refresher.bq_client is not None
 
         logger.info("Refresher instantiated without errors")
-        logger.info(f"  Environment: {refresher.environment}")
         logger.info(f"  Chunk size: {refresher.chunk_size}")
         logger.info(f"  Batch size: {refresher.batch_size}")
 
     @pytest.mark.integration
-    def test_full_refresh_integration(self, config, test_environment):
+    def test_full_refresh_integration(self, config):
         """
         INTEGRATION TEST - This will actually fetch and process games!
-        Only run this if you want to test the full pipeline against test environment.
+        Only run this if you want to test the full pipeline.
 
         Run with: pytest tests/test_refresh_games.py::TestResponseRefresherIntegration::test_full_refresh_integration -v -m integration
         """
@@ -267,13 +253,11 @@ class TestResponseRefresherIntegration:
 
         logger.warning("=" * 60)
         logger.warning("INTEGRATION TEST - Will fetch real data from BGG API")
-        logger.warning(f"Environment: {test_environment}")
         logger.warning("=" * 60)
 
         try:
             refresher = ResponseRefresher(
                 chunk_size=5,
-                environment=test_environment,
                 dry_run=False,  # Actually run
             )
             # Limit to small batch for testing

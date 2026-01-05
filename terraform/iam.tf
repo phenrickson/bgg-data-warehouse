@@ -40,3 +40,10 @@ resource "google_project_iam_member" "bgg_pipeline_dataform" {
   role    = "roles/dataform.editor"
   member  = "serviceAccount:${google_service_account.bgg_pipeline.email}"
 }
+
+# BigQuery Storage Read API (for pandas .to_dataframe())
+resource "google_project_iam_member" "bgg_pipeline_bigquery_read_session" {
+  project = var.project_id
+  role    = "roles/bigquery.readSessionUser"
+  member  = "serviceAccount:${google_service_account.bgg_pipeline.email}"
+}
