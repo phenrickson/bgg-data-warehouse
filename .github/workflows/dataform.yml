@@ -49,9 +49,11 @@ jobs:
           ENVIRONMENT=${{ steps.env.outputs.environment }}
           echo "Running Dataform transformations for $ENVIRONMENT..."
 
-          # Trigger Dataform workflow execution
-          # Replace REPOSITORY_NAME with your Dataform repository name in BigQuery
-          gcloud dataform repositories workflows execute \
-            --repository=bgg-data-warehouse \
-            --region=us \
-            --project=bgg-data-warehouse
+          # Create a workflow invocation using the REST API
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+
+          curl -X POST \
+            "https://dataform.googleapis.com/v1beta1/projects/bgg-data-warehouse/locations/us/repositories/bgg-data-warehouse/workflowInvocations" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{}'
