@@ -60,7 +60,9 @@ temp/
 # Google Cloud
 *.json
 !terraform/schemas/*.json
-!dataform/*.json
+!dataform.json
+!package.json
+!definitions/**/*.json
 credentials/
 service-account-key.json
 .env.local
