@@ -1,5 +1,7 @@
 """Module for processing raw BGG API responses."""
 
+import ast
+import json
 import logging
 import os
 from datetime import datetime, UTC
@@ -257,15 +259,11 @@ class ResponseProcessor:
                 try:
                     # Handle response_data based on its type
                     if isinstance(response_data, str):
-                        import json
-
                         try:
                             # Try JSON first
                             parsed_data = json.loads(response_data)
                         except json.JSONDecodeError:
                             # Fall back to ast.literal_eval for string dict
-                            import ast
-
                             parsed_data = ast.literal_eval(response_data)
                     else:
                         # Already a dict/object, use as-is
