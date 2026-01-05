@@ -46,7 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secured GitHub Actions secret handling
 - Enhanced Cloud Run job security configurations
 
-## [Unreleased]
+## [0.3.11] - 2026-01-05
+
+### Changed
+- Reduced Cloud Run job resources from 4Gi/2vCPU to 2Gi/1vCPU for cost optimization
+
+## [0.3.1]
 
 ### Added
 - New fetch_in_progress table for tracking and locking game fetches
@@ -58,12 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ID fetcher now runs in both prod and dev environments (previously prod-only)
 - Enhanced response processing with better error handling
 - Improved logging for fetch operations and error cases
-
-### Deprecated
-- None
-
-### Removed
-- None
 
 ### Fixed
 - Prevented duplicate game fetches in parallel execution
@@ -81,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core functionality for BGG data pipeline
 - Documentation and setup instructions
 
-[Unreleased]: https://github.com/yourusername/bgg-data-warehouse/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/yourusername/bgg-data-warehouse/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/yourusername/bgg-data-warehouse/releases/tag/v0.1.0
+[0.3.11]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.3.1...v0.3.11
+[0.3.1]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.2.0...v0.3.1
+[0.2.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/phenrickson/bgg-data-warehouse/releases/tag/v0.1.0
