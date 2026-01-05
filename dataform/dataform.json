@@ -1,0 +1,7 @@
+{
+  "defaultSchema": "analytics",
+  "assertionSchema": "analytics_assertions",
+  "warehouse": "bigquery",
+  "defaultDatabase": "bgg-data-warehouse",
+  "defaultLocation": "US"
+}

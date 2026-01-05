@@ -1,23 +1,11 @@
 name: Run Dataform
 
 on:
-  # Run after pipeline completes
   workflow_run:
     workflows: ["Run BGG Data Warehouse Jobs"]
     types: [completed]
 
-  # Manual trigger
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to run in'
-        required: true
-        default: 'prod'
-        type: choice
-        options:
-        - prod
-        - dev
-        - test
 
 env:
   GCP_PROJECT_ID: bgg-data-warehouse
@@ -28,7 +16,6 @@ jobs:
   dataform:
     name: Run Dataform Transformations
     runs-on: ubuntu-latest
-    # Only run if triggered manually OR if the pipeline succeeded
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
@@ -40,25 +27,35 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Determine Environment
-        id: env
+      - name: Create Compilation Result
+        id: compile
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
-          else
-            echo "environment=prod" >> $GITHUB_OUTPUT
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
+
+          COMPILATION=$(curl -s -X POST "${API_BASE}/compilationResults" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"gitCommitish": "main"}')
+
+          echo "Response: ${COMPILATION}"
+          COMPILATION_NAME=$(echo "${COMPILATION}" | jq -r '.name')
+
+          if [ "${COMPILATION_NAME}" == "null" ] || [ -z "${COMPILATION_NAME}" ]; then
+            echo "Failed to create compilation result"
+            exit 1
           fi
 
-      - name: Run Dataform
+          echo "compilation_name=${COMPILATION_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Execute Workflow
         run: |
-          ENVIRONMENT=${{ steps.env.outputs.environment }}
-          echo "Running Dataform transformations for $ENVIRONMENT..."
-
-          # Create a workflow invocation using the REST API
           ACCESS_TOKEN=$(gcloud auth print-access-token)
+          API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
 
-          curl -X POST \
-            "https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}/workflowInvocations" \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
+          EXECUTION=$(curl -s -X POST "${API_BASE}/workflowInvocations" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            -d '{"compilationResult": "${{ steps.compile.outputs.compilation_name }}"}')
+
+          echo "Response: ${EXECUTION}"

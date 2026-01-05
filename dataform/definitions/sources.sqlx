@@ -1,69 +1,83 @@
 config {
   type: "declaration",
+  schema: "core",
   name: "games"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "player_counts"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "categories"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "mechanics"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "publishers"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "designers"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "artists"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "families"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "game_categories"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "game_mechanics"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "game_publishers"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "game_designers"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "game_artists"
 }
 ---
 config {
   type: "declaration",
+  schema: "core",
   name: "game_families"
 }
