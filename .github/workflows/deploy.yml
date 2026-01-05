@@ -2,23 +2,13 @@ name: Deploy BGG Data Warehouse
 
 on:
   push:
-    branches: [ main, develop, test ]
+    branches: [ main ]
     paths:
       - 'docker/Dockerfile.pipeline'
       - 'config/cloudbuild.yaml'
       - 'src/pipeline/**'
       - 'src/modules/**'
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - test
-        - prod
 
 env:
   GCP_PROJECT_ID: bgg-data-warehouse
@@ -33,22 +23,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Determine Environment
-        id: env
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ENVIRONMENT="${{ github.event.inputs.environment }}"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            ENVIRONMENT="prod"
-          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
-            ENVIRONMENT="test"
-          else
-            ENVIRONMENT="dev"
-          fi
-
-          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
-          echo "Deploying to environment: $ENVIRONMENT"
-
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
@@ -61,4 +35,4 @@ jobs:
         run: |
           gcloud builds submit --config config/cloudbuild.yaml \
             --project=${GCP_PROJECT_ID} \
-            --substitutions=_ENVIRONMENT=${{ steps.env.outputs.environment }},_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+            --substitutions=_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
