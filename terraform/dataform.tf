@@ -3,7 +3,7 @@
 resource "google_dataform_repository" "bgg_warehouse" {
   provider = google-beta
   name     = "bgg-data-warehouse"
-  region   = var.location
+  region   = var.region
   project  = var.project_id
 
   git_remote_settings {

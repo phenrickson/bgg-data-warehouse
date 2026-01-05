@@ -14,6 +14,6 @@ output "service_account_email" {
   value = google_service_account.bgg_pipeline.email
 }
 
-output "fetch_job_name" {
-  value = google_cloud_run_v2_job.fetch_new_games.name
+output "artifact_registry_repository" {
+  value = google_artifact_registry_repository.bgg_images.name
 }
