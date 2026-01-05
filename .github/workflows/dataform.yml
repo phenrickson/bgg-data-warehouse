@@ -19,6 +19,11 @@ on:
         - dev
         - test
 
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
+  DATAFORM_REPO: bgg-data-warehouse
+
 jobs:
   dataform:
     name: Run Dataform Transformations
@@ -53,7 +58,7 @@ jobs:
           ACCESS_TOKEN=$(gcloud auth print-access-token)
 
           curl -X POST \
-            "https://dataform.googleapis.com/v1beta1/projects/bgg-data-warehouse/locations/us/repositories/bgg-data-warehouse/workflowInvocations" \
+            "https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}/workflowInvocations" \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{}'
