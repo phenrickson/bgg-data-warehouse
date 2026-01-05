@@ -1,7 +1,7 @@
 # Dataform Repository
 
 resource "google_dataform_repository" "bgg_warehouse" {
-  provider = google
+  provider = google-beta
   name     = "bgg-data-warehouse"
   region   = var.location
   project  = var.project_id
