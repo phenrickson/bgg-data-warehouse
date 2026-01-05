@@ -1,10 +1,10 @@
 # BigQuery Datasets
 
 resource "google_bigquery_dataset" "bgg_data" {
-  dataset_id  = "bgg_data_${var.environment}"
+  dataset_id  = "core"
   project     = var.project_id
   location    = var.location
-  description = "BGG Data Warehouse - processed game data (${var.environment})"
+  description = "BGG Data Warehouse - processed game data"
 
   labels = {
     environment = var.environment
@@ -13,14 +13,26 @@ resource "google_bigquery_dataset" "bgg_data" {
 }
 
 resource "google_bigquery_dataset" "bgg_raw" {
-  dataset_id  = "bgg_raw_${var.environment}"
+  dataset_id  = "raw"
   project     = var.project_id
   location    = var.location
-  description = "BGG Data Warehouse - raw API responses (${var.environment})"
+  description = "BGG Data Warehouse - raw API responses"
 
   labels = {
     environment = var.environment
     managed_by  = "terraform"
+  }
+}
+
+resource "google_bigquery_dataset" "bgg_analytics" {
+  dataset_id  = "analytics"
+  project     = var.project_id
+  location    = var.location
+  description = "BGG Data Warehouse - analytics views and tables (managed by Dataform)"
+
+  labels = {
+    environment = var.environment
+    managed_by  = "dataform"
   }
 }
 

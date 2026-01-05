@@ -16,7 +16,6 @@ resource "google_dataform_repository" "bgg_warehouse" {
 
   workspace_compilation_overrides {
     default_database = var.project_id
-    schema_suffix    = "_${var.environment}"
   }
 }
 
