@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  name: "filter_designers"
+}
+
+SELECT
+  d.designer_id,
+  d.name,
+  COUNT(DISTINCT gd.game_id) AS game_count
+FROM ${ref("designers")} d
+INNER JOIN ${ref("game_designers")} gd ON d.designer_id = gd.designer_id
+INNER JOIN ${ref("games_active")} g ON gd.game_id = g.game_id
+WHERE g.bayes_average IS NOT NULL AND g.bayes_average > 0
+GROUP BY d.designer_id, d.name
+ORDER BY game_count DESC
+LIMIT 1000

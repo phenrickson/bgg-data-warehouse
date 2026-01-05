@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  name: "filter_mechanics"
+}
+
+SELECT
+  m.mechanic_id,
+  m.name,
+  COUNT(DISTINCT gm.game_id) AS game_count
+FROM ${ref("mechanics")} m
+INNER JOIN ${ref("game_mechanics")} gm ON m.mechanic_id = gm.mechanic_id
+INNER JOIN ${ref("games_active")} g ON gm.game_id = g.game_id
+WHERE g.bayes_average IS NOT NULL AND g.bayes_average > 0
+GROUP BY m.mechanic_id, m.name
+ORDER BY game_count DESC
+LIMIT 500

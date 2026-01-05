@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  name: "filter_publishers"
+}
+
+SELECT
+  p.publisher_id,
+  p.name,
+  COUNT(DISTINCT gp.game_id) AS game_count
+FROM ${ref("publishers")} p
+INNER JOIN ${ref("game_publishers")} gp ON p.publisher_id = gp.publisher_id
+INNER JOIN ${ref("games_active")} g ON gp.game_id = g.game_id
+WHERE g.bayes_average IS NOT NULL AND g.bayes_average > 0
+GROUP BY p.publisher_id, p.name
+ORDER BY game_count DESC
+LIMIT 500

@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  name: "filter_categories"
+}
+
+SELECT
+  c.category_id,
+  c.name,
+  COUNT(DISTINCT gc.game_id) AS game_count
+FROM ${ref("categories")} c
+INNER JOIN ${ref("game_categories")} gc ON c.category_id = gc.category_id
+INNER JOIN ${ref("games_active")} g ON gc.game_id = g.game_id
+WHERE g.bayes_average IS NOT NULL AND g.bayes_average > 0
+GROUP BY c.category_id, c.name
+ORDER BY game_count DESC
+LIMIT 500
