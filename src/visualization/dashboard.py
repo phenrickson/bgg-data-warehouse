@@ -4,17 +4,15 @@ import os
 import sys
 import logging
 from datetime import datetime, timezone
-import streamlit as st
 
-# Import logging configuration
+# add to project path (required for Streamlit which runs from different working directories)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+import streamlit as st
 import pandas as pd
-import yaml
 from google.auth import default
 from google.cloud import bigquery
 from dotenv import load_dotenv
-
-# add to project path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 # Page config must be the first Streamlit command
 st.set_page_config(page_title="BGG Data Warehouse Monitor", page_icon="🎲", layout="wide")
@@ -25,7 +23,8 @@ load_dotenv()
 # Get environment variable
 env = os.getenv("ENVIRONMENT", "prod")
 
-# Import local modules directly
+# Import local modules
+from src.config import get_bigquery_config
 from src.utils.logging_config import setup_logging
 import src.visualization.queries as queries
 import src.visualization.components as components
@@ -53,38 +52,6 @@ except Exception as e:
     logger.warning(f"Could not start health check server: {e}")
 
 
-# Load BigQuery config directly
-def get_bigquery_config():
-    """Get BigQuery configuration directly."""
-    config_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "bigquery.yaml"
-    )
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    # Get environment from .env
-    env = os.getenv("ENVIRONMENT", "prod")
-    logger.debug(f"Loading config for environment: {env}")
-
-    # Build config with environment-specific values
-    env_config = config["environments"][env]
-    result = {
-        "project": {
-            "id": env_config["project_id"],
-            "dataset": env_config["dataset"],
-            "raw": env_config["raw"],
-            "location": env_config["location"],
-        },
-        "datasets": config.get("datasets", {}),
-    }
-
-    # Debug: Log configuration
-    logger.debug(f"Config loaded: {result}")
-    return result
-
-
-# Page config is now at the top of the file
-
 # Initialize BigQuery client
 # Get credentials using google.auth.default()
 credentials, _ = default()
@@ -103,7 +70,7 @@ def format_project_dataset(query: str) -> str:
     config = get_bigquery_config()
     project_id = config["project"]["id"]
     dataset = config["project"]["dataset"]
-    raw_dataset = config["project"].get(
+    raw_dataset = config["datasets"].get(
         "raw", "bgg_raw_prod"
     )  # Get raw dataset or default to bgg_raw_prod
 
@@ -137,7 +104,7 @@ def debug_raw_data():
     """Debug function to check raw data directly."""
     config = get_bigquery_config()
     project_id = config["project"]["id"]
-    raw_dataset = config["project"]["raw"]
+    raw_dataset = config["datasets"]["raw"]
 
     # Check for recent data in raw_responses
     query = f"""

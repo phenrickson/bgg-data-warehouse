@@ -10,6 +10,53 @@ import polars as pl
 logger = logging.getLogger(__name__)
 
 
+def _safe_int(value: Any) -> int:
+    """Safely convert a value to integer.
+
+    Handles int, str, and dict (with @value key) inputs.
+
+    Args:
+        value: Value to convert
+
+    Returns:
+        Integer value or 0 if conversion fails
+    """
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            val = int(value)
+            return val if val >= 0 else 0
+        except (ValueError, TypeError):
+            return 0
+    if isinstance(value, dict):
+        return _safe_int(value.get("@value", 0))
+    return 0
+
+
+def _safe_float(value: Any) -> float:
+    """Safely convert a value to float.
+
+    Handles int, float, str, and dict (with @value key) inputs.
+
+    Args:
+        value: Value to convert
+
+    Returns:
+        Float value or 0.0 if conversion fails
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+    if isinstance(value, dict):
+        return _safe_float(value.get("@value", 0))
+    return 0.0
+
+
 class BGGDataProcessor:
     class GameStats:
         """Container for game statistics."""
@@ -17,77 +64,23 @@ class BGGDataProcessor:
         def __init__(self, stats: Dict[str, Any]):
             ratings = stats.get("statistics", {}).get("ratings", {})
 
-            def safe_int(value: Any) -> int:
-                """Safely convert a value to integer."""
-                if isinstance(value, int):
-                    return value
-                if isinstance(value, str):
-                    try:
-                        val = int(value)
-                        return val if val >= 0 else 0
-                    except (ValueError, TypeError):
-                        return 0
-                if isinstance(value, dict):
-                    return safe_int(value.get("@value", 0))
-                return 0
-
-            def safe_float(value: Any) -> float:
-                """Safely convert a value to float."""
-                if isinstance(value, (int, float)):
-                    return float(value)
-                if isinstance(value, str):
-                    try:
-                        return float(value)
-                    except (ValueError, TypeError):
-                        return 0.0
-                if isinstance(value, dict):
-                    return safe_float(value.get("@value", 0))
-                return 0.0
-
-            self.users_rated = safe_int(ratings.get("usersrated", 0))
-            self.average = safe_float(ratings.get("average", 0))
-            self.bayes_average = safe_float(ratings.get("bayesaverage", 0))
-            self.standard_deviation = safe_float(ratings.get("stddev", 0))
-            self.median = safe_float(ratings.get("median", 0))
-            self.owned = safe_int(ratings.get("owned", 0))
-            self.trading = safe_int(ratings.get("trading", 0))
-            self.wanting = safe_int(ratings.get("wanting", 0))
-            self.wishing = safe_int(ratings.get("wishing", 0))
-            self.num_comments = safe_int(ratings.get("numcomments", 0))
-            self.num_weights = safe_int(ratings.get("numweights", 0))
-            self.average_weight = safe_float(ratings.get("averageweight", 0))
+            self.users_rated = _safe_int(ratings.get("usersrated", 0))
+            self.average = _safe_float(ratings.get("average", 0))
+            self.bayes_average = _safe_float(ratings.get("bayesaverage", 0))
+            self.standard_deviation = _safe_float(ratings.get("stddev", 0))
+            self.median = _safe_float(ratings.get("median", 0))
+            self.owned = _safe_int(ratings.get("owned", 0))
+            self.trading = _safe_int(ratings.get("trading", 0))
+            self.wanting = _safe_int(ratings.get("wanting", 0))
+            self.wishing = _safe_int(ratings.get("wishing", 0))
+            self.num_comments = _safe_int(ratings.get("numcomments", 0))
+            self.num_weights = _safe_int(ratings.get("numweights", 0))
+            self.average_weight = _safe_float(ratings.get("averageweight", 0))
 
     class GameRanks:
         """Container for game ranking information."""
 
         def __init__(self, stats: Dict[str, Any]):
-            def safe_int(value: Any) -> int:
-                """Safely convert a value to integer."""
-                if isinstance(value, int):
-                    return value
-                if isinstance(value, str):
-                    try:
-                        val = int(value)
-                        return val if val >= 0 else 0
-                    except (ValueError, TypeError):
-                        return 0
-                if isinstance(value, dict):
-                    return safe_int(value.get("@value", 0))
-                return 0
-
-            def safe_float(value: Any) -> float:
-                """Safely convert a value to float."""
-                if isinstance(value, (int, float)):
-                    return float(value)
-                if isinstance(value, str):
-                    try:
-                        return float(value)
-                    except (ValueError, TypeError):
-                        return 0.0
-                if isinstance(value, dict):
-                    return safe_float(value.get("@value", 0))
-                return 0.0
-
             self.ranks = []
             ratings = stats.get("statistics", {}).get("ratings", {})
             ranks = ratings.get("ranks", {}).get("rank", [])
@@ -101,29 +94,10 @@ class BGGDataProcessor:
                             "type": rank.get("@type", ""),
                             "name": rank.get("@name", ""),
                             "friendly_name": rank.get("@friendlyname", ""),
-                            "value": safe_int(rank.get("@value", 0)),
-                            "bayes_average": safe_float(rank.get("@bayesaverage", 0)),
+                            "value": _safe_int(rank.get("@value", 0)),
+                            "bayes_average": _safe_float(rank.get("@bayesaverage", 0)),
                         }
                     )
-
-    def _safe_int(self, value: Any) -> int:
-        """Safely convert a value to integer.
-
-        Args:
-            value: Value to convert
-
-        Returns:
-            Integer value or 0 if conversion fails
-        """
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            try:
-                val = int(value)
-                return val if val >= 0 else 0
-            except (ValueError, TypeError):
-                return 0
-        return 0
 
     def _extract_names(self, item: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
         """Extract primary name and alternate names of the game.
@@ -376,12 +350,12 @@ class BGGDataProcessor:
                 "primary_name": primary_name,
                 "alternate_names": alternate_names,
                 "year_published": self._extract_year(item),
-                "min_players": self._safe_int(item.get("minplayers", {}).get("@value", "0")),
-                "max_players": self._safe_int(item.get("maxplayers", {}).get("@value", "0")),
-                "playing_time": self._safe_int(item.get("playingtime", {}).get("@value", "0")),
-                "min_playtime": self._safe_int(item.get("minplaytime", {}).get("@value", "0")),
-                "max_playtime": self._safe_int(item.get("maxplaytime", {}).get("@value", "0")),
-                "min_age": self._safe_int(item.get("minage", {}).get("@value", "0")),
+                "min_players": _safe_int(item.get("minplayers", {}).get("@value", "0")),
+                "max_players": _safe_int(item.get("maxplayers", {}).get("@value", "0")),
+                "playing_time": _safe_int(item.get("playingtime", {}).get("@value", "0")),
+                "min_playtime": _safe_int(item.get("minplaytime", {}).get("@value", "0")),
+                "max_playtime": _safe_int(item.get("maxplaytime", {}).get("@value", "0")),
+                "min_age": _safe_int(item.get("minage", {}).get("@value", "0")),
                 "description": item.get("description", ""),
                 "thumbnail": item.get("thumbnail", ""),
                 "image": item.get("image", ""),
