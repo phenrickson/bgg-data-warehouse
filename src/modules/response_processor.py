@@ -22,6 +22,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 setup_logging()
 
+# Hardcoded table names (managed by Terraform)
+RAW_DATASET = "raw"
+CORE_DATASET = "core"
+RAW_RESPONSES_TABLE = "raw_responses"
+FETCHED_RESPONSES_TABLE = "fetched_responses"
+PROCESSED_RESPONSES_TABLE = "processed_responses"
+GAMES_TABLE = "games"
+
 
 class ResponseProcessor:
     """Processes raw BGG API responses into normalized data."""
@@ -30,41 +38,28 @@ class ResponseProcessor:
         self,
         batch_size: int = 100,
         max_retries: int = 3,
-        environment: Optional[str] = None,
-        config: Optional[Dict] = None,
     ) -> None:
         """Initialize the processor.
 
         Args:
             batch_size: Number of responses to process in each batch
             max_retries: Maximum number of retry attempts for processing
-            environment: Environment to run in (prod/dev/test)
-            config: Optional configuration dictionary
         """
-        # Get environment from config
-        self.config = config or get_bigquery_config(environment)
+        self.config = get_bigquery_config()
+        self.project_id = self.config["project"]["id"]
 
         # Set processing parameters
         self.batch_size = batch_size
         self.max_retries = max_retries
-        self.environment = environment or os.getenv("ENVIRONMENT", "dev")
 
         # Initialize clients and processors
         self.bq_client = bigquery.Client()
         self.processor = BGGDataProcessor()
-        self.loader = BigQueryLoader(environment)
+        self.loader = BigQueryLoader()
 
-        # Construct table references with fallback logic
-        self.raw_responses_table = (
-            f"{self.config['project']['id']}."
-            f"{self.config['datasets']['raw']}."
-            f"{self.config.get('raw_tables', {}).get('raw_responses', {}).get('name', 'raw_responses')}"
-        )
-
-        # Use the main dataset for processed tables
-        self.processed_games_table = (
-            f"{self.config['project']['id']}." f"{self.config['project']['dataset']}." "games"
-        )
+        # Construct table references
+        self.raw_responses_table = f"{self.project_id}.{RAW_DATASET}.{RAW_RESPONSES_TABLE}"
+        self.processed_games_table = f"{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}"
 
     def _convert_dataframe_to_list(self, df: Any) -> List[Dict]:
         """Convert various DataFrame types to a list of dictionaries.
@@ -161,9 +156,9 @@ class ResponseProcessor:
         query = f"""
         SELECT COUNT(*) as count
         FROM `{self.raw_responses_table}` r
-        INNER JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
+        INNER JOIN `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}` f
             ON r.record_id = f.record_id
-        LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses` p
+        LEFT JOIN `{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}` p
             ON r.record_id = p.record_id
         WHERE p.record_id IS NULL
             AND f.fetch_status = 'success'
@@ -197,9 +192,9 @@ class ResponseProcessor:
                     ORDER BY r.fetch_timestamp DESC, r.record_id DESC
                 ) as row_num
             FROM `{self.raw_responses_table}` r
-            INNER JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses` f
+            INNER JOIN `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}` f
                 ON r.record_id = f.record_id
-            LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses` p
+            LEFT JOIN `{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}` p
                 ON r.record_id = p.record_id
             WHERE p.record_id IS NULL  -- Not yet processed
                 AND f.fetch_status = 'success'  -- Only process successful fetches
@@ -239,7 +234,7 @@ class ResponseProcessor:
 
                     # Mark as no_response in processed_responses
                     try:
-                        processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                        processed_table_id = f"{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}"
                         no_response_row = [{
                             "record_id": row.get("record_id"),
                             "process_timestamp": datetime.now(UTC).isoformat(),
@@ -285,7 +280,7 @@ class ResponseProcessor:
 
                     # Mark as parse_error in processed_responses
                     try:
-                        processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                        processed_table_id = f"{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}"
                         parse_error_row = [{
                             "record_id": row.get("record_id"),
                             "process_timestamp": datetime.now(UTC).isoformat(),
@@ -362,7 +357,7 @@ class ResponseProcessor:
 
                     # Mark as failed in processed_responses
                     try:
-                        processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                        processed_table_id = f"{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}"
                         failed_row = [{
                             "record_id": response["record_id"],
                             "process_timestamp": datetime.now(UTC).isoformat(),
@@ -384,7 +379,7 @@ class ResponseProcessor:
 
                 # Mark as error in processed_responses
                 try:
-                    processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                    processed_table_id = f"{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}"
                     error_row = [{
                         "record_id": response["record_id"],
                         "process_timestamp": datetime.now(UTC).isoformat(),
@@ -450,7 +445,7 @@ class ResponseProcessor:
 
                 try:
                     # Insert into processed_responses tracking table
-                    processed_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses"
+                    processed_table_id = f"{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}"
                     errors = self.bq_client.insert_rows_json(processed_table_id, processed_tracking_rows)
 
                     if errors:
@@ -463,7 +458,7 @@ class ResponseProcessor:
                     record_ids_str = "', '".join(record_ids)
                     verify_query = f"""
                     SELECT COUNT(*) as count
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.processed_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}`
                     WHERE record_id IN ('{record_ids_str}')
                     """
                     verify_job = self.bq_client.query(verify_query)
@@ -493,7 +488,7 @@ class ResponseProcessor:
         Returns:
             bool: True if any responses were processed, False otherwise
         """
-        logger.info(f"Starting response processor in {self.environment} environment")
+        logger.info("Starting response processor")
         logger.info(f"Reading responses from: {self.raw_responses_table}")
         logger.info(f"Loading processed data to: {self.processed_games_table}")
 

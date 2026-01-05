@@ -8,7 +8,6 @@ This script runs the complete refresh pipeline:
 
 import argparse
 import logging
-import os
 
 from dotenv import load_dotenv
 
@@ -34,18 +33,11 @@ def main() -> None:
         action="store_true",
         help="Run in dry-run mode without fetching or processing data",
     )
-    parser.add_argument(
-        "--environment",
-        default=os.getenv("ENVIRONMENT", "test"),
-        choices=["test", "prod"],
-        help="Environment to run in (default: test)",
-    )
     args = parser.parse_args()
 
-    environment = args.environment
     dry_run = args.dry_run
 
-    logger.info(f"Starting refresh_old_games pipeline in {environment} environment")
+    logger.info("Starting refresh_old_games pipeline")
     if dry_run:
         logger.info("Running in DRY RUN mode - no data will be fetched or processed")
 
@@ -55,7 +47,6 @@ def main() -> None:
     logger.info("=" * 80)
     refresher = ResponseRefresher(
         chunk_size=20,
-        environment=environment,
         dry_run=dry_run,
     )
     games_refreshed = refresher.run()
@@ -72,7 +63,6 @@ def main() -> None:
         logger.info("=" * 80)
         response_processor = ResponseProcessor(
             batch_size=100,
-            environment=environment,
         )
         responses_processed = response_processor.run()
     else:
@@ -85,7 +75,7 @@ def main() -> None:
     logger.info("=" * 80)
     logger.info(f"Summary:")
     logger.info(f"  - Games refreshed: {'Yes' if games_refreshed else 'No'}")
-    logger.info(f"  - Responses processed: {'Yes' if responses_processed else 'No (dry run)' if dry_run else 'No'}")
+    logger.info(f"  - Responses processed: {'Yes' if responses_processed else ('No (dry run)' if dry_run else 'No')}")
 
     if games_refreshed or responses_processed:
         logger.info("Pipeline completed successfully with refreshed data")

@@ -20,22 +20,23 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Hardcoded table names (managed by Terraform)
+RAW_DATASET = "raw"
+THING_IDS_TABLE = "thing_ids"
+
 
 class BGGIDFetcher:
     """Fetches and manages BoardGameGeek IDs."""
 
     BGG_IDS_URL = "http://bgg.activityclub.org/bggdata/thingids.txt"
 
-    def __init__(self, config: Optional[Dict] = None) -> None:
-        """Initialize the fetcher with BigQuery configuration.
-
-        Args:
-            config: Optional configuration dictionary
-        """
-        self.config = config or get_bigquery_config()
-        self.client = bigquery.Client(project=self.config["project"]["id"])
-        self.dataset_id = self.config["datasets"]["raw"]
-        self.table_id = self.config["raw_tables"]["thing_ids"]["name"]
+    def __init__(self) -> None:
+        """Initialize the fetcher with BigQuery configuration."""
+        self.config = get_bigquery_config()
+        self.project_id = self.config["project"]["id"]
+        self.client = bigquery.Client(project=self.project_id)
+        self.dataset_id = RAW_DATASET
+        self.table_id = THING_IDS_TABLE
 
     def download_ids(self, output_dir: Path) -> Path:
         """Download the BGG IDs file.
@@ -96,7 +97,7 @@ class BGGIDFetcher:
         """
         query = f"""
         SELECT DISTINCT game_id, type
-        FROM `{self.config['project']['id']}.{self.dataset_id}.{self.table_id}`
+        FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`
         """
 
         try:
@@ -119,7 +120,7 @@ class BGGIDFetcher:
             return
 
         # Create temp table for new data
-        temp_table = f"{self.config['project']['id']}.{self.dataset_id}.temp_thing_ids"
+        temp_table = f"{self.project_id}.{self.dataset_id}.temp_thing_ids"
 
         # Create DataFrame with new IDs
         now = datetime.datetime.now(datetime.UTC)
@@ -165,7 +166,7 @@ class BGGIDFetcher:
 
             # Merge into main table
             merge_query = f"""
-            MERGE `{self.config['project']['id']}.{self.dataset_id}.{self.table_id}` T
+            MERGE `{self.project_id}.{self.dataset_id}.{self.table_id}` T
             USING `{temp_table}` S
             ON T.game_id = S.game_id AND T.type = S.type
             WHEN NOT MATCHED THEN

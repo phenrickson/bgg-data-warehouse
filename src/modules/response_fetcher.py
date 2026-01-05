@@ -14,6 +14,13 @@ from ..utils.logging_config import setup_logging
 logger = logging.getLogger(__name__)
 setup_logging()
 
+# Hardcoded table names (managed by Terraform)
+RAW_DATASET = "raw"
+THING_IDS_TABLE = "thing_ids"
+RAW_RESPONSES_TABLE = "raw_responses"
+FETCHED_RESPONSES_TABLE = "fetched_responses"
+FETCH_IN_PROGRESS_TABLE = "fetch_in_progress"
+
 
 class ResponseFetcher:
     """Fetches and stores raw BGG API responses."""
@@ -22,7 +29,6 @@ class ResponseFetcher:
         self,
         batch_size: int = 1000,
         chunk_size: int = 20,
-        environment: str = "prod",
         max_retries: int = 1,
     ) -> None:
         """Initialize the fetcher.
@@ -30,13 +36,12 @@ class ResponseFetcher:
         Args:
             batch_size: Number of games to fetch in each batch from BigQuery
             chunk_size: Number of games to request in each API call
-            environment: Environment to use (prod/dev/test)
             max_retries: Maximum number of retry attempts for failed requests
         """
-        self.config = get_bigquery_config(environment)
+        self.config = get_bigquery_config()
+        self.project_id = self.config["project"]["id"]
         self.batch_size = batch_size
         self.chunk_size = chunk_size
-        self.environment = environment
         self.max_retries = max_retries
         self.api_client = BGGAPIClient()
         self.bq_client = bigquery.Client()
@@ -53,7 +58,7 @@ class ResponseFetcher:
         try:
             # Clean up old in-progress entries first
             cleanup_query = f"""
-            DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+            DELETE FROM `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}`
             WHERE fetch_start_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
             """
             self.bq_client.query(cleanup_query).result()
@@ -70,13 +75,13 @@ class ResponseFetcher:
                         game_id,
                         COUNT(*) as attempt_count,
                         MAX(fetch_timestamp) as last_attempt_time
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
                     WHERE fetch_status IN ('no_response', 'parse_error')
                     GROUP BY game_id
                 ),
                 successful_fetches AS (
                     SELECT DISTINCT game_id
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
                     WHERE fetch_status = 'success'
                 ),
                 candidates AS (
@@ -84,7 +89,7 @@ class ResponseFetcher:
                     FROM input_ids i
                     LEFT JOIN successful_fetches sf ON i.game_id = sf.game_id
                     LEFT JOIN retry_counts rc ON i.game_id = rc.game_id
-                    LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` p
+                    LEFT JOIN `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` p
                         ON i.game_id = p.game_id
                     WHERE
                         -- Exclude successful fetches
@@ -105,21 +110,21 @@ class ResponseFetcher:
                         game_id,
                         COUNT(*) as attempt_count,
                         MAX(fetch_timestamp) as last_attempt_time
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
                     WHERE fetch_status IN ('no_response', 'parse_error')
                     GROUP BY game_id
                 ),
                 successful_fetches AS (
                     SELECT DISTINCT game_id
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
                     WHERE fetch_status = 'success'
                 ),
                 candidates AS (
                     SELECT t.game_id, t.type
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['thing_ids']['name']}` t
+                    FROM `{self.project_id}.{RAW_DATASET}.{THING_IDS_TABLE}` t
                     LEFT JOIN successful_fetches sf ON t.game_id = sf.game_id
                     LEFT JOIN retry_counts rc ON t.game_id = rc.game_id
-                    LEFT JOIN `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` p
+                    LEFT JOIN `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` p
                         ON t.game_id = p.game_id
                     WHERE
                         t.type = 'boardgame'
@@ -150,7 +155,7 @@ class ResponseFetcher:
                 # Then mark them as in progress
                 game_ids_str = ", ".join(str(id) for id in candidates_df["game_id"])
                 mark_query = f"""
-                INSERT INTO `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+                INSERT INTO `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}`
                     (game_id, fetch_start_timestamp)
                 SELECT c.game_id, CURRENT_TIMESTAMP()
                 FROM (
@@ -265,7 +270,7 @@ class ResponseFetcher:
         # Log total number of rows to be inserted
         logger.info(f"Total rows to insert: {len(rows)}")
 
-        table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['raw_responses']['name']}"
+        table_id = f"{self.project_id}.{RAW_DATASET}.{RAW_RESPONSES_TABLE}"
 
         try:
             # Use insert_rows_json for all environments
@@ -304,7 +309,7 @@ class ResponseFetcher:
                         })
 
                 if fetched_tracking_rows:
-                    fetched_table_id = f"{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses"
+                    fetched_table_id = f"{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}"
                     errors = self.bq_client.insert_rows_json(fetched_table_id, fetched_tracking_rows)
                     if errors:
                         logger.error(f"Failed to insert into fetched_responses: {errors}")
@@ -317,7 +322,7 @@ class ResponseFetcher:
             try:
                 game_ids_str = ",".join(str(row["game_id"]) for row in rows)
                 cleanup_query = f"""
-                DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+                DELETE FROM `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}`
                 WHERE game_id IN ({game_ids_str})
                 """
                 self.bq_client.query(cleanup_query).result()
@@ -447,7 +452,7 @@ class ResponseFetcher:
         Returns:
             bool: True if any responses were fetched, False otherwise
         """
-        logger.info(f"Starting response fetcher in {self.environment} environment")
+        logger.info("Starting response fetcher")
 
         try:
             responses_fetched = False

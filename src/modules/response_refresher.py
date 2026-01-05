@@ -16,6 +16,13 @@ from .response_fetcher import ResponseFetcher
 logger = logging.getLogger(__name__)
 setup_logging()
 
+# Hardcoded table names (managed by Terraform)
+RAW_DATASET = "raw"
+CORE_DATASET = "core"
+GAMES_TABLE = "games"
+FETCHED_RESPONSES_TABLE = "fetched_responses"
+FETCH_IN_PROGRESS_TABLE = "fetch_in_progress"
+
 
 class ResponseRefresher:
     """Refreshes previously loaded games with priority for recently published games."""
@@ -23,25 +30,22 @@ class ResponseRefresher:
     def __init__(
         self,
         chunk_size: int = 20,
-        environment: str = "test",
         dry_run: bool = False,
     ) -> None:
         """Initialize the refresher.
 
         Args:
             chunk_size: Number of games to request in each API call
-            environment: Environment to use (test/dev/prod). Defaults to test for safety.
             dry_run: If True, only query and log what would be done without making changes
         """
-        self.config = get_bigquery_config(environment)
+        self.config = get_bigquery_config()
+        self.project_id = self.config["project"]["id"]
         self.chunk_size = chunk_size
-        self.environment = environment
         self.dry_run = dry_run
         self.api_client = BGGAPIClient()
         self.bq_client = bigquery.Client()
         self.response_fetcher = ResponseFetcher(
-            chunk_size=chunk_size,
-            environment=environment
+            chunk_size=chunk_size
         )
 
         # Load refresh policy from config
@@ -91,7 +95,7 @@ class ResponseRefresher:
                 SELECT COUNT(DISTINCT game_data.game_id) as count
                 FROM (
                     SELECT game_id, year_published
-                    FROM `{self.config['project']['id']}.{self.config['project']['dataset']}.{self.config['tables']['games']['name']}`
+                    FROM `{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}`
                     WHERE {year_filter}
                     GROUP BY game_id, year_published
                 ) game_data
@@ -99,7 +103,7 @@ class ResponseRefresher:
                     SELECT
                         game_id,
                         MAX(fetch_timestamp) as last_fetch_timestamp
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
                     GROUP BY game_id
                 ) last_fetch ON game_data.game_id = last_fetch.game_id
                 WHERE
@@ -127,7 +131,7 @@ class ResponseRefresher:
         try:
             # Clean up old in-progress entries first
             cleanup_query = f"""
-            DELETE FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+            DELETE FROM `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}`
             WHERE fetch_start_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
             """
             if not self.dry_run:
@@ -170,7 +174,7 @@ class ResponseRefresher:
                     {refresh_days} as refresh_days
                 FROM (
                     SELECT game_id, year_published
-                    FROM `{self.config['project']['id']}.{self.config['project']['dataset']}.{self.config['tables']['games']['name']}`
+                    FROM `{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}`
                     WHERE {year_filter}
                     GROUP BY game_id, year_published
                 ) game_data
@@ -178,7 +182,7 @@ class ResponseRefresher:
                     SELECT
                         game_id,
                         MAX(fetch_timestamp) as last_fetch_timestamp
-                    FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.fetched_responses`
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
                     GROUP BY game_id
                 ) last_fetch ON game_data.game_id = last_fetch.game_id
                 WHERE
@@ -188,7 +192,7 @@ class ResponseRefresher:
                     -- Exclude games currently being fetched
                     AND NOT EXISTS (
                         SELECT 1
-                        FROM `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}` f
+                        FROM `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` f
                         WHERE game_data.game_id = f.game_id
                     )
                 """
@@ -232,7 +236,7 @@ class ResponseRefresher:
                 if not self.dry_run:
                     game_ids_str = ", ".join(str(id) for id in candidates_df["game_id"])
                     mark_query = f"""
-                    INSERT INTO `{self.config['project']['id']}.{self.config['datasets']['raw']}.{self.config['raw_tables']['fetch_in_progress']['name']}`
+                    INSERT INTO `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}`
                         (game_id, fetch_start_timestamp)
                     SELECT game_id, CURRENT_TIMESTAMP()
                     FROM UNNEST([{game_ids_str}]) AS game_id
@@ -358,7 +362,7 @@ class ResponseRefresher:
         Returns:
             bool: True if any games were refreshed, False otherwise
         """
-        logger.info(f"Starting response refresher in {self.environment} environment")
+        logger.info("Starting response refresher")
 
         try:
             # First, check how many games need refreshing (cheap count query)
