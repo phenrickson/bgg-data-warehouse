@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  name: "best_player_counts"
+}
+
+WITH normalized_player_counts AS (
+  SELECT
+    game_id,
+    player_count,
+    SAFE_CAST(player_count AS INT64) AS player_count_int,
+    best_votes,
+    recommended_votes,
+    not_recommended_votes
+  FROM ${ref("player_counts")}
+),
+
+player_count_thresholds AS (
+  SELECT
+    game_id,
+    player_count,
+    player_count_int,
+    best_votes,
+    recommended_votes,
+    not_recommended_votes,
+    best_votes + recommended_votes + not_recommended_votes AS total_votes,
+    CASE
+      WHEN (best_votes + recommended_votes + not_recommended_votes) = 0 THEN 0
+      ELSE ROUND(best_votes / (best_votes + recommended_votes + not_recommended_votes) * 100, 2)
+    END AS best_percentage,
+    CASE
+      WHEN (best_votes + recommended_votes + not_recommended_votes) = 0 THEN 0
+      ELSE ROUND((best_votes + recommended_votes) / (best_votes + recommended_votes + not_recommended_votes) * 100, 2)
+    END AS positive_percentage
+  FROM normalized_player_counts
+  WHERE (best_votes + recommended_votes + not_recommended_votes) > 5
+    AND player_count IN ('1', '2', '3', '4', '5', '6', '7', '8')
+),
+
+ranked_player_counts AS (
+  SELECT
+    game_id,
+    player_count,
+    player_count_int,
+    best_percentage,
+    positive_percentage,
+    total_votes,
+    ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY best_percentage DESC, total_votes DESC) AS best_rank,
+    ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY positive_percentage DESC, total_votes DESC) AS recommended_rank
+  FROM player_count_thresholds
+  WHERE best_percentage >= 40 OR positive_percentage >= 70
+)
+
+SELECT
+  g.game_id,
+  g.name,
+  g.min_players,
+  g.max_players,
+  STRING_AGG(CASE WHEN best_rank <= 3 AND best_percentage >= 40 THEN player_count END, ', ' ORDER BY best_rank) AS best_player_counts,
+  STRING_AGG(CASE WHEN recommended_rank <= 5 AND positive_percentage >= 70 THEN player_count END, ', ' ORDER BY recommended_rank) AS recommended_player_counts,
+  MIN(CASE WHEN best_rank <= 3 AND best_percentage >= 40 THEN player_count_int END) AS min_best_player_count,
+  MAX(CASE WHEN best_rank <= 3 AND best_percentage >= 40 THEN player_count_int END) AS max_best_player_count,
+  MIN(CASE WHEN recommended_rank <= 5 AND positive_percentage >= 70 THEN player_count_int END) AS min_recommended_player_count,
+  MAX(CASE WHEN recommended_rank <= 5 AND positive_percentage >= 70 THEN player_count_int END) AS max_recommended_player_count,
+  COUNT(CASE WHEN best_rank <= 3 AND best_percentage >= 40 THEN 1 END) > 0 AS has_best_count,
+  COUNT(CASE WHEN recommended_rank <= 5 AND positive_percentage >= 70 THEN 1 END) > 0 AS has_recommended_count,
+  CURRENT_TIMESTAMP() AS last_updated
+FROM ${ref("games_active")} g
+LEFT JOIN ranked_player_counts rpc ON g.game_id = rpc.game_id
+GROUP BY g.game_id, g.name, g.min_players, g.max_players

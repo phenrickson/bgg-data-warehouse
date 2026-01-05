@@ -1,0 +1,7 @@
+[
+  {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "player_count", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "best_votes", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "recommended_votes", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "not_recommended_votes", "type": "INTEGER", "mode": "NULLABLE"}
+]

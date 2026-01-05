@@ -1,0 +1,4 @@
+[
+  {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "artist_id", "type": "INTEGER", "mode": "REQUIRED"}
+]

@@ -1,0 +1,78 @@
+config {
+  type: "table",
+  name: "games_features"
+}
+
+WITH categories_agg AS (
+  SELECT gc.game_id, ARRAY_AGG(cat.name IGNORE NULLS) AS categories
+  FROM ${ref("game_categories")} gc
+  LEFT JOIN ${ref("categories")} cat ON gc.category_id = cat.category_id
+  GROUP BY gc.game_id
+),
+
+mechanics_agg AS (
+  SELECT gm.game_id, ARRAY_AGG(mech.name IGNORE NULLS) AS mechanics
+  FROM ${ref("game_mechanics")} gm
+  LEFT JOIN ${ref("mechanics")} mech ON gm.mechanic_id = mech.mechanic_id
+  GROUP BY gm.game_id
+),
+
+publishers_agg AS (
+  SELECT gp.game_id, ARRAY_AGG(pub.name IGNORE NULLS) AS publishers
+  FROM ${ref("game_publishers")} gp
+  LEFT JOIN ${ref("publishers")} pub ON gp.publisher_id = pub.publisher_id
+  GROUP BY gp.game_id
+),
+
+designers_agg AS (
+  SELECT gd.game_id, ARRAY_AGG(des.name IGNORE NULLS) AS designers
+  FROM ${ref("game_designers")} gd
+  LEFT JOIN ${ref("designers")} des ON gd.designer_id = des.designer_id
+  GROUP BY gd.game_id
+),
+
+artists_agg AS (
+  SELECT ga.game_id, ARRAY_AGG(art.name IGNORE NULLS) AS artists
+  FROM ${ref("game_artists")} ga
+  LEFT JOIN ${ref("artists")} art ON ga.artist_id = art.artist_id
+  GROUP BY ga.game_id
+),
+
+families_agg AS (
+  SELECT gf.game_id, ARRAY_AGG(fam.name IGNORE NULLS) AS families
+  FROM ${ref("game_families")} gf
+  LEFT JOIN ${ref("families")} fam ON gf.family_id = fam.family_id
+  GROUP BY gf.game_id
+)
+
+SELECT
+  g.game_id,
+  g.name,
+  g.year_published,
+  g.bayes_average,
+  g.average_rating,
+  g.average_weight,
+  g.users_rated,
+  g.num_weights,
+  g.min_players,
+  g.max_players,
+  g.min_playtime,
+  g.max_playtime,
+  g.min_age,
+  g.image,
+  g.thumbnail,
+  g.description,
+  IFNULL(c.categories, []) AS categories,
+  IFNULL(m.mechanics, []) AS mechanics,
+  IFNULL(p.publishers, []) AS publishers,
+  IFNULL(d.designers, []) AS designers,
+  IFNULL(a.artists, []) AS artists,
+  IFNULL(f.families, []) AS families,
+  CURRENT_TIMESTAMP() AS last_updated
+FROM ${ref("games_active")} g
+LEFT JOIN categories_agg c ON g.game_id = c.game_id
+LEFT JOIN mechanics_agg m ON g.game_id = m.game_id
+LEFT JOIN publishers_agg p ON g.game_id = p.game_id
+LEFT JOIN designers_agg d ON g.game_id = d.game_id
+LEFT JOIN artists_agg a ON g.game_id = a.game_id
+LEFT JOIN families_agg f ON g.game_id = f.game_id
