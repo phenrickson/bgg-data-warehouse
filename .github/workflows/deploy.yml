@@ -1,4 +1,4 @@
-name: Deploy Pipeline Jobs
+name: Deploy Cloud Build
 
 on:
   push:
