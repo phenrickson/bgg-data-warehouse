@@ -30,7 +30,7 @@ jobs:
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -54,4 +54,4 @@ jobs:
           gcloud dataform repositories workflows execute \
             --repository=bgg-data-warehouse \
             --region=us \
-            --project=${{ secrets.GCP_PROJECT_ID }}
+            --project=bgg-data-warehouse
