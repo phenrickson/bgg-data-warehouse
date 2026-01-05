@@ -329,3 +329,37 @@ resource "google_bigquery_table" "raw_responses" {
 
   schema = file("${path.module}/schemas/raw_responses.json")
 }
+
+resource "google_bigquery_table" "fetch_in_progress" {
+  dataset_id          = google_bigquery_dataset.bgg_raw.dataset_id
+  table_id            = "fetch_in_progress"
+  project             = var.project_id
+  description         = "Tracks game IDs currently being fetched to prevent duplicates"
+  deletion_protection = false
+
+  clustering = ["game_id"]
+
+  schema = file("${path.module}/schemas/fetch_in_progress.json")
+}
+
+resource "google_bigquery_table" "fetched_responses" {
+  dataset_id          = google_bigquery_dataset.bgg_raw.dataset_id
+  table_id            = "fetched_responses"
+  project             = var.project_id
+  description         = "Tracks fetch status for each raw response"
+  deletion_protection = var.environment == "prod"
+
+  clustering = ["game_id"]
+
+  schema = file("${path.module}/schemas/fetched_responses.json")
+}
+
+resource "google_bigquery_table" "processed_responses" {
+  dataset_id          = google_bigquery_dataset.bgg_raw.dataset_id
+  table_id            = "processed_responses"
+  project             = var.project_id
+  description         = "Tracks which raw responses have been processed"
+  deletion_protection = var.environment == "prod"
+
+  schema = file("${path.module}/schemas/processed_responses.json")
+}

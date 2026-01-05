@@ -1,0 +1,32 @@
+[
+  {
+    "name": "record_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique record ID from raw_responses"
+  },
+  {
+    "name": "process_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the response was processed"
+  },
+  {
+    "name": "process_status",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Process status: success, no_response, parse_error, failed, error"
+  },
+  {
+    "name": "process_attempt",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "Number of processing attempts"
+  },
+  {
+    "name": "error_message",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Error message if processing failed"
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "record_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique record ID from raw_responses"
+  },
+  {
+    "name": "game_id",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "BGG game ID"
+  },
+  {
+    "name": "fetch_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the response was fetched"
+  },
+  {
+    "name": "fetch_status",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Fetch status: success, no_response, parse_error"
+  }
+]

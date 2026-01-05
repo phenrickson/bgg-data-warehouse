@@ -1,0 +1,14 @@
+[
+  {
+    "name": "game_id",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "BGG game ID"
+  },
+  {
+    "name": "fetch_start_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the fetch started"
+  }
+]
