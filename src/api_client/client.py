@@ -22,6 +22,10 @@ load_dotenv()
 # Get logger
 logger = logging.getLogger(__name__)
 
+# Hardcoded table names (managed by Terraform)
+RAW_DATASET = "raw"
+REQUEST_LOG_TABLE = "request_log"
+
 
 class BGGAPIClient:
     """Client for the BoardGameGeek XML API2."""
@@ -88,7 +92,7 @@ class BGGAPIClient:
             client = bigquery.Client()
 
             # Prepare request log entry
-            table_id = f"{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}"
+            table_id = f"{config['project']['id']}.{RAW_DATASET}.{REQUEST_LOG_TABLE}"
             rows_to_insert = [
                 {
                     "request_id": request_id,
@@ -262,7 +266,7 @@ class BGGAPIClient:
             query = f"""
             WITH recent_requests AS (
                 SELECT *
-                FROM `{config['project']['id']}.{config['datasets']['raw']}.{config['raw_tables']['request_log']['name']}`
+                FROM `{config['project']['id']}.{RAW_DATASET}.{REQUEST_LOG_TABLE}`
                 WHERE request_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {minutes} MINUTE)
             )
             SELECT
