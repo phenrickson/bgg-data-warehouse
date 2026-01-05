@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  name: "games_active"
+}
+
+WITH game_latest_timestamps AS (
+  SELECT game_id, MAX(load_timestamp) AS latest_game_timestamp
+  FROM ${ref("games")}
+  GROUP BY game_id
+)
+
+SELECT DISTINCT
+  g.game_id,
+  g.type,
+  g.primary_name AS name,
+  g.year_published,
+  g.average_rating,
+  g.average_weight,
+  g.bayes_average,
+  g.users_rated,
+  g.owned_count,
+  g.trading_count,
+  g.wanting_count,
+  g.wishing_count,
+  g.num_comments,
+  g.num_weights,
+  g.min_players,
+  g.max_players,
+  g.playing_time,
+  g.min_playtime,
+  g.max_playtime,
+  g.min_age,
+  g.description,
+  g.thumbnail,
+  g.image,
+  g.load_timestamp,
+  CURRENT_TIMESTAMP() AS last_updated
+FROM ${ref("games")} g
+INNER JOIN game_latest_timestamps lt
+  ON g.game_id = lt.game_id
+  AND g.load_timestamp = lt.latest_game_timestamp

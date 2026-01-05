@@ -1,0 +1,57 @@
+name: Run Dataform
+
+on:
+  # Run after pipeline completes
+  workflow_run:
+    workflows: ["Run BGG Data Warehouse Jobs"]
+    types: [completed]
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run in'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+        - prod
+        - dev
+        - test
+
+jobs:
+  dataform:
+    name: Run Dataform Transformations
+    runs-on: ubuntu-latest
+    # Only run if triggered manually OR if the pipeline succeeded
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Determine Environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Dataform
+        run: |
+          ENVIRONMENT=${{ steps.env.outputs.environment }}
+          echo "Running Dataform transformations for $ENVIRONMENT..."
+
+          # Trigger Dataform workflow execution
+          # Replace REPOSITORY_NAME with your Dataform repository name in BigQuery
+          gcloud dataform repositories workflows execute \
+            --repository=bgg-data-warehouse \
+            --region=us \
+            --project=${{ secrets.GCP_PROJECT_ID }}

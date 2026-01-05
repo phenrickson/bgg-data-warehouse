@@ -1,0 +1,40 @@
+config {
+  type: "view",
+  name: "player_count_recommendations"
+}
+
+WITH player_count_stats AS (
+  SELECT
+    game_id,
+    player_count,
+    best_votes,
+    recommended_votes,
+    not_recommended_votes,
+    best_votes + recommended_votes + not_recommended_votes AS total_votes,
+    CASE
+      WHEN (best_votes + recommended_votes + not_recommended_votes) = 0 THEN 0
+      ELSE ROUND(best_votes / (best_votes + recommended_votes + not_recommended_votes) * 100, 2)
+    END AS best_percentage,
+    CASE
+      WHEN (best_votes + recommended_votes + not_recommended_votes) = 0 THEN 0
+      ELSE ROUND(recommended_votes / (best_votes + recommended_votes + not_recommended_votes) * 100, 2)
+    END AS recommended_percentage
+  FROM ${ref("player_counts")}
+)
+
+SELECT
+  g.game_id,
+  g.name,
+  pc.player_count,
+  pc.best_votes,
+  pc.recommended_votes,
+  pc.not_recommended_votes,
+  pc.total_votes,
+  pc.best_percentage,
+  pc.recommended_percentage
+FROM ${ref("games_active")} g
+INNER JOIN player_count_stats pc ON g.game_id = pc.game_id
+WHERE pc.best_votes IS NOT NULL
+  AND pc.recommended_votes IS NOT NULL
+  AND pc.not_recommended_votes IS NOT NULL
+ORDER BY pc.total_votes DESC, pc.best_percentage DESC

@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  name: "filter_options_combined"
+}
+
+SELECT 'publisher' AS entity_type, publisher_id AS entity_id, name, game_count
+FROM ${ref("filter_publishers")}
+
+UNION ALL
+
+SELECT 'category' AS entity_type, category_id AS entity_id, name, game_count
+FROM ${ref("filter_categories")}
+
+UNION ALL
+
+SELECT 'mechanic' AS entity_type, mechanic_id AS entity_id, name, game_count
+FROM ${ref("filter_mechanics")}
+
+UNION ALL
+
+SELECT 'designer' AS entity_type, designer_id AS entity_id, name, game_count
+FROM ${ref("filter_designers")}
