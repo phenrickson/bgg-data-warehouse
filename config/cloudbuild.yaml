@@ -23,8 +23,8 @@ steps:
             --tasks=1 \
             --max-retries=3 \
             --task-timeout=3h \
-            --memory=4Gi \
-            --cpu=2 \
+            --memory=2Gi \
+            --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
@@ -36,8 +36,8 @@ steps:
             --tasks=1 \
             --max-retries=3 \
             --task-timeout=3h \
-            --memory=4Gi \
-            --cpu=2 \
+            --memory=2Gi \
+            --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
@@ -58,8 +58,8 @@ steps:
             --tasks=1 \
             --max-retries=3 \
             --task-timeout=3h \
-            --memory=4Gi \
-            --cpu=2 \
+            --memory=2Gi \
+            --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
@@ -71,8 +71,8 @@ steps:
             --tasks=1 \
             --max-retries=3 \
             --task-timeout=3h \
-            --memory=4Gi \
-            --cpu=2 \
+            --memory=2Gi \
+            --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
             --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
