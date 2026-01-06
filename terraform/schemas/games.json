@@ -2,7 +2,7 @@
   {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
   {"name": "type", "type": "STRING", "mode": "REQUIRED"},
   {"name": "primary_name", "type": "STRING", "mode": "REQUIRED"},
-  {"name": "year_published", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "year_published", "type": "INTEGER", "mode": "NULLABLE"},
   {"name": "min_players", "type": "INTEGER", "mode": "NULLABLE"},
   {"name": "max_players", "type": "INTEGER", "mode": "NULLABLE"},
   {"name": "playing_time", "type": "INTEGER", "mode": "NULLABLE"},
