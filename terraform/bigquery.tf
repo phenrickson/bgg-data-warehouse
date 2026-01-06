@@ -45,7 +45,7 @@ resource "google_bigquery_table" "games" {
   table_id            = "games"
   project             = var.project_id
   description         = "Core game information and statistics"
-  deletion_protection = var.environment == "prod"
+  deletion_protection = false
 
   time_partitioning {
     type  = "DAY"
