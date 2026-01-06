@@ -2,59 +2,28 @@
 
 import logging
 import os
-from typing import Dict, Optional
+from typing import Dict
 
 import yaml
 
-# Get logger
 logger = logging.getLogger(__name__)
 
 
-def get_bigquery_config(environment: Optional[str] = None) -> Dict:
+def get_bigquery_config() -> Dict:
     """Get BigQuery configuration.
-
-    Args:
-        environment: Optional environment name (dev/prod). If not provided,
-                    uses ENVIRONMENT from .env file or default_environment from config.
 
     Returns:
         Dictionary containing BigQuery configuration
     """
-    # Load environment from .env if not provided
-    if not environment:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-        environment = os.getenv("ENVIRONMENT")
-
-    # Strip whitespace from environment name (Windows cmd can add trailing spaces)
-    if environment:
-        environment = environment.strip()
-
     config_path = os.path.join("config", "bigquery.yaml")
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    # Get environment
-    env = environment or config.get("default_environment", "dev")
-    logger.info(f"Using environment: {env}")
-    if env not in config["environments"]:
-        raise ValueError(f"Invalid environment: {env}")
-
-    # Build config with environment-specific values
-    env_config = config["environments"][env]
     return {
         "project": {
-            "id": env_config["project_id"],
-            "dataset": env_config["dataset"],
-            "location": env_config["location"],
+            "id": config["project_id"],
+            "location": config["location"],
         },
-        "storage": config["storage"],
-        "datasets": {
-            "raw": env_config["raw"],  # Use environment-specific raw dataset
-        },
-        "tables": config["tables"],
-        "raw_tables": config.get("raw_tables", {}),
-        "refresh_policy": config.get("refresh_policy", {}),  # Include refresh policy
-        "environments": config["environments"],  # Include environments in config
+        "datasets": config["datasets"],
+        "refresh_policy": config.get("refresh_policy", {}),
     }

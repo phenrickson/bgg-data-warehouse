@@ -2,5 +2,5 @@
   {"name": "game_id", "type": "INTEGER", "mode": "REQUIRED"},
   {"name": "response_data", "type": "STRING", "mode": "REQUIRED"},
   {"name": "fetch_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"},
-  {"name": "record_id", "type": "STRING", "mode": "REQUIRED"}
+  {"name": "record_id", "type": "STRING", "mode": "REQUIRED", "defaultValueExpression": "GENERATE_UUID()"}
 ]

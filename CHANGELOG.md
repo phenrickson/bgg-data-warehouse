@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-06
+
+### Added
+- **Terraform-managed infrastructure**: Complete infrastructure-as-code setup
+  - GCP project and authentication, BigQuery datasets and schemas managed via Terraform
+  - Service account with required IAM permissions
+  - Cloud Run jobs and schedulers
+- **Dataform integration**: Analytics transformations via Google Dataform loading to `analytics datasets`
+  - `games_active` view for latest game data
+  - `games_features` as table for predictive modeling
+  -  tables used for Dash application (`filter_publishers`, `filter_designers`)
+  - GitHub Actions workflow for automated Dataform runs
+- **New computed columns in `games_features`**:
+  - `hurdle`: Binary flag (1 if users_rated >= 25, else 0)
+  - `geek_rating`: Alias for bayes_average
+  - `complexity`: Alias for average_weight
+  - `rating`: Alias for average_rating
+  - `log_users_rated`: Natural log of (users_rated + 1)
+- Migration documentation for moving from old GCP project
+
+### Changed
+- **GCP project migration**: Moved from `gcp-demos-411520` to dedicated `bgg-data-warehouse` project
+- **Simplified dataset naming**: `raw`, `core`, `analytics` instead of `bgg_raw_{env}`, `bgg_data_{env}`
+- **Hardcoded table names**: Removed multi-environment configuration in favor of single-project setup
+- Changed `year_published` column type from INTEGER to FLOAT64 to support ancient games with BCE publication dates
+- Removed environment separation from configuration
+
+### Removed
+- Multi-environment configuration (`dev`/`prod` suffix on datasets)
+- Dynamic table name resolution from config
+
 ## [0.2.0] - 2025-06-24
 
 ### Added
@@ -80,6 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core functionality for BGG data pipeline
 - Documentation and setup instructions
 
+[0.4.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.3.11...v0.4.0
 [0.3.11]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.3.1...v0.3.11
 [0.3.1]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.1.0...v0.2.0

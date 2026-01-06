@@ -19,40 +19,28 @@ load_dotenv()
 # Get logger
 logger = logging.getLogger(__name__)
 
+# Hardcoded dataset names (managed by Terraform)
+CORE_DATASET = "core"
+
 
 class BigQueryLoader:
     """Loads processed BGG data into BigQuery."""
 
-    def __init__(self, environment: Optional[str] = None):
-        """Initialize BigQuery client and configuration.
-
-        Args:
-            environment: Optional environment name (dev/prod)
-        """
-        # Get environment from .env if not provided
-        if not environment:
-            environment = os.getenv("ENVIRONMENT")
-
+    def __init__(self):
+        """Initialize BigQuery client and configuration."""
         # Get configuration
-        self.config = get_bigquery_config(environment)
+        self.config = get_bigquery_config()
+        self.project_id = self.config["project"]["id"]
         self.client = bigquery.Client()
         self.processor = BGGDataProcessor()
 
-        # Get project and dataset from environment config
-        env_config = self.config["environments"][environment]
-        project_id = env_config["project_id"]
-        dataset_id = env_config["dataset"]
-
-        if not project_id or not dataset_id:
-            raise ValueError(f"Could not find project_id or dataset for environment: {environment}")
-
-        self.dataset_ref = f"{project_id}.{dataset_id}"
+        self.dataset_ref = f"{self.project_id}.{CORE_DATASET}"
         logger.info(f"Using BigQuery dataset: {self.dataset_ref}")
 
         # Ensure storage configuration exists
         if "storage" not in self.config:
             self.config["storage"] = {
-                "bucket": self.config.get("storage", {}).get("bucket") or f"{project_id}-bucket"
+                "bucket": self.config.get("storage", {}).get("bucket") or f"{self.project_id}-bucket"
             }
 
     def _get_table_id(self, table_name: str) -> str:

@@ -7,7 +7,6 @@ This script runs the complete pipeline:
 """
 
 import logging
-import os
 
 from dotenv import load_dotenv
 
@@ -26,14 +25,13 @@ setup_logging()
 
 def main() -> None:
     """Main entry point for fetching and processing new games."""
-    environment = os.getenv("ENVIRONMENT", "test")
-    logger.info(f"Starting fetch_new_games pipeline in {environment} environment")
+    logger.info("Starting fetch_new_games pipeline")
 
     # Step 1: Fetch new IDs from BGG
     logger.info("=" * 80)
     logger.info("Step 1: Fetching new game IDs from BGG")
     logger.info("=" * 80)
-    id_fetcher = IDFetcher(environment=environment)
+    id_fetcher = IDFetcher()
     ids_fetched = id_fetcher.run()
 
     if ids_fetched:
@@ -48,7 +46,6 @@ def main() -> None:
     response_fetcher = ResponseFetcher(
         batch_size=1000,
         chunk_size=20,
-        environment=environment,
     )
     responses_fetched = response_fetcher.run()
 
@@ -63,7 +60,6 @@ def main() -> None:
     logger.info("=" * 80)
     response_processor = ResponseProcessor(
         batch_size=100,
-        environment=environment,
     )
     responses_processed = response_processor.run()
 

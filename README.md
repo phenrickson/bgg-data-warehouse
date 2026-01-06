@@ -41,25 +41,37 @@ graph TD
 
 ### BigQuery Datasets
 
-**Raw Dataset** (`bgg_raw_prod` / `bgg_raw_dev`)
+**Raw Dataset** (`raw`)
 - `thing_ids`: Game ID registry
 - `raw_responses`: Raw API responses
 - `fetched_responses`: Fetch tracking
 - `processed_responses`: Processing tracking
 - `request_log`: API request audit log
+- `fetch_in_progress`: Prevents duplicate concurrent fetches
 
-**Processed Dataset** (`bgg_data_prod` / `bgg_data_dev`)
+**Core Dataset** (`core`)
 - `games`: Core game data
 - `categories`, `mechanics`, `families`: Dimension tables
 - `designers`, `artists`, `publishers`: Creator tables
 - `rankings`, `player_counts`: Metrics tables
 
+**Analytics Dataset** (`analytics`) - Managed by Dataform
+- `games_active`: View of latest game data (deduped by game_id)
+- `games_features`: Denormalized table with computed columns:
+  - `hurdle`: Binary flag for games with 25+ ratings
+  - `geek_rating`, `complexity`, `rating`: Renamed metrics
+  - `log_users_rated`: Log-transformed user count
+  - Aggregated arrays for categories, mechanics, publishers, designers, artists, families
+
 ### Infrastructure
 
+All infrastructure is managed via Terraform in the `terraform/` directory.
+
 - **Cloud Run Jobs**: Two jobs execute the pipelines daily
-  - `bgg-fetch-new-games-{env}`: 1 vCPU, 2GB memory
-  - `bgg-refresh-old-games-{env}`: 1 vCPU, 2GB memory
-- **GitHub Actions**: Triggers Cloud Run jobs on schedule and deploys on merge to main
+  - `bgg-fetch-new-games`: 1 vCPU, 2GB memory
+  - `bgg-refresh-old-games`: 1 vCPU, 2GB memory
+- **Dataform**: Analytics transformations run via GitHub Actions workflow
+- **GitHub Actions**: Triggers Cloud Run jobs on schedule, deploys on merge to main, runs Dataform
 - **Cloud Build**: Builds and deploys Docker images
 
 ## Prerequisites

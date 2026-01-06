@@ -1,24 +1,23 @@
 # Cloud Build configuration for BGG processor
 steps:
-  # Build the processor image with environment tag
+  # Build the processor image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', 'docker/Dockerfile.pipeline', '-t', 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT', '.']
+    args: ['build', '-f', 'docker/Dockerfile.pipeline', '-t', 'gcr.io/$PROJECT_ID/bgg-processor:latest', '.']
 
   # Push the image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT']
+    args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:latest']
 
   # Deploy Fetch New Games Cloud Run Job - Create if not exists, otherwise update
-  # This pipeline fetches new game IDs, fetches their responses, and processes them
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        if gcloud run jobs describe bgg-fetch-new-games-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-fetch-new-games-$_ENVIRONMENT"
-          gcloud run jobs update bgg-fetch-new-games-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
+        if gcloud run jobs describe bgg-fetch-new-games --region=us-central1 2>/dev/null; then
+          echo "Updating existing job: bgg-fetch-new-games"
+          gcloud run jobs update bgg-fetch-new-games \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
             --args=src.pipeline.fetch_new_games \
             --tasks=1 \
             --max-retries=3 \
@@ -27,11 +26,11 @@ steps:
             --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
+            --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         else
-          echo "Creating new job: bgg-fetch-new-games-$_ENVIRONMENT"
-          gcloud run jobs create bgg-fetch-new-games-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
+          echo "Creating new job: bgg-fetch-new-games"
+          gcloud run jobs create bgg-fetch-new-games \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
             --args=src.pipeline.fetch_new_games \
             --tasks=1 \
             --max-retries=3 \
@@ -40,20 +39,19 @@ steps:
             --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
+            --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
   # Deploy Refresh Old Games Cloud Run Job - Create if not exists, otherwise update
-  # This pipeline refreshes stale game data and processes the responses
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        if gcloud run jobs describe bgg-refresh-old-games-$_ENVIRONMENT --region=us-central1 2>/dev/null; then
-          echo "Updating existing job: bgg-refresh-old-games-$_ENVIRONMENT"
-          gcloud run jobs update bgg-refresh-old-games-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
+        if gcloud run jobs describe bgg-refresh-old-games --region=us-central1 2>/dev/null; then
+          echo "Updating existing job: bgg-refresh-old-games"
+          gcloud run jobs update bgg-refresh-old-games \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
             --args=src.pipeline.refresh_old_games \
             --tasks=1 \
             --max-retries=3 \
@@ -62,11 +60,11 @@ steps:
             --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
+            --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         else
-          echo "Creating new job: bgg-refresh-old-games-$_ENVIRONMENT"
-          gcloud run jobs create bgg-refresh-old-games-$_ENVIRONMENT \
-            --image=gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT \
+          echo "Creating new job: bgg-refresh-old-games"
+          gcloud run jobs create bgg-refresh-old-games \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
             --args=src.pipeline.refresh_old_games \
             --tasks=1 \
             --max-retries=3 \
@@ -75,12 +73,12 @@ steps:
             --cpu=1 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-            --set-env-vars=ENVIRONMENT=$_ENVIRONMENT,BGG_API_TOKEN=$_BGG_API_TOKEN
+            --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
 # Images to push to Container Registry
 images:
-  - 'gcr.io/$PROJECT_ID/bgg-processor:$_ENVIRONMENT'
+  - 'gcr.io/$PROJECT_ID/bgg-processor:latest'
 
 # Timeout for the entire build
 timeout: '1800s'  # 30 minutes

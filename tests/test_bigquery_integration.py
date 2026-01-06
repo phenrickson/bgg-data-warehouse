@@ -37,10 +37,10 @@ def config():
 
 
 @pytest.fixture
-def bigquery_client():
+def bigquery_client(config):
     """Create BigQuery client."""
     check_credentials()
-    return bigquery.Client()
+    return bigquery.Client(project=config["project"]["id"])
 
 
 def test_bigquery_authentication(bigquery_client, config):
@@ -57,12 +57,10 @@ def test_bigquery_authentication(bigquery_client, config):
         assert len(datasets) > 0, "No datasets found in project"
         logger.info(f"Found {len(datasets)} datasets")
 
-        # Verify our main dataset exists
-        main_dataset = f"{config['project']['id']}.{config['project']['dataset']}"
+        # Verify our core dataset exists
         dataset_names = [ds.dataset_id for ds in datasets]
-        assert (
-            config["project"]["dataset"] in dataset_names
-        ), f"Main dataset {main_dataset} not found"
+        core_dataset = config["datasets"]["core"]
+        assert core_dataset in dataset_names, f"Core dataset '{core_dataset}' not found"
         logger.info("Successfully verified dataset access")
 
     except Exception as e:

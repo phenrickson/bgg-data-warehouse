@@ -1,73 +1,38 @@
-name: Deploy BGG Data Warehouse
+name: Deploy Cloud Build
 
 on:
   push:
-    branches: [ main, develop, test ]
+    branches: [ main ]
     paths:
       - 'docker/Dockerfile.pipeline'
       - 'config/cloudbuild.yaml'
       - 'src/pipeline/**'
       - 'src/modules/**'
-      - 'config/bigquery.yaml'
-  workflow_dispatch:  # Allow manual triggers for testing
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - test
-        - prod
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Determine Environment
-        id: env
-        run: |
-          # Set environment based on branch or manual input
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ENVIRONMENT="${{ github.event.inputs.environment }}"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            ENVIRONMENT="prod"
-          elif [ "${{ github.ref }}" = "refs/heads/test" ]; then
-            ENVIRONMENT="test"
-          else
-            ENVIRONMENT="dev"
-          fi
-          
-          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
-          echo "Deploying to environment: $ENVIRONMENT"
-
-      - name: Setup Environment
-        run: |
-          mkdir -p credentials
-          echo '${{ secrets.SERVICE_ACCOUNT_KEY }}' > credentials/service-account-key.json
-
-          cat << EOF > .env
-          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-          ENVIRONMENT=${{ steps.env.outputs.environment }}
-          GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
-          EOF
-
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy
         run: |
-          # Build and update job configurations
           gcloud builds submit --config config/cloudbuild.yaml \
-            --substitutions=_ENVIRONMENT=${{ steps.env.outputs.environment }},_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+            --project=${GCP_PROJECT_ID} \
+            --substitutions=_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
