@@ -1,0 +1,28 @@
+config {
+  type: "table",
+  schema: "staging",
+  name: "game_features_hash",
+  description: "Tracks feature hashes for all games to enable change detection in the scoring service"
+}
+
+SELECT
+  game_id,
+  name,
+  FARM_FINGERPRINT(TO_JSON_STRING(STRUCT(
+    year_published,
+    categories,
+    mechanics,
+    designers,
+    artists,
+    publishers,
+    families,
+    min_age,
+    min_playtime,
+    max_playtime,
+    min_players,
+    max_players,
+    description
+  ))) as feature_hash,
+  CURRENT_TIMESTAMP() as last_updated
+FROM ${ref("games_features")}
+WHERE year_published IS NOT NULL
