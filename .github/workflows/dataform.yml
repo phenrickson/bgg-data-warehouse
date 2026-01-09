@@ -10,8 +10,8 @@ on:
       - main
     paths:
       - 'definitions/**'
-      - 'dataform.json'
-      - 'package.json'
+      - 'workflow_settings.yaml'
+      - '.github/workflows/dataform.yml'
 
   workflow_dispatch:
 
