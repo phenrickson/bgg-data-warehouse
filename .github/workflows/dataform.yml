@@ -2,8 +2,16 @@ name: Run Dataform
 
 on:
   workflow_run:
-    workflows: ["Run BGG Data Warehouse Jobs"]
+    workflows: ["Run Fetch New Games", "Run Refresh Old Games"]
     types: [completed]
+
+  push:
+    branches:
+      - main
+    paths:
+      - 'definitions/**'
+      - 'dataform.json'
+      - 'package.json'
 
   workflow_dispatch:
 
