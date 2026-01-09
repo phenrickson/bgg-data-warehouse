@@ -21,3 +21,10 @@ coreTables.forEach(table => {
     name: table
   });
 });
+
+// Cross-project source: ML predictions from bgg-predictive-models
+declare({
+  database: "bgg-predictive-models",
+  schema: "raw",
+  name: "ml_predictions_landing"
+});

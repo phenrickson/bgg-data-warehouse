@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "predictions",
+  name: "bgg_predictions"
+}
+
+SELECT * EXCEPT(rn)
+FROM (
+  SELECT
+    job_id,
+    game_id,
+    name,
+    year_published,
+    predicted_hurdle_prob,
+    predicted_complexity,
+    predicted_rating,
+    predicted_users_rated,
+    predicted_geek_rating,
+    geek_rating_model_name,
+    geek_rating_model_version,
+    geek_rating_experiment,
+    hurdle_model_name,
+    hurdle_model_version,
+    hurdle_experiment,
+    complexity_model_name,
+    complexity_model_version,
+    complexity_experiment,
+    rating_model_name,
+    rating_model_version,
+    rating_experiment,
+    users_rated_model_name,
+    users_rated_model_version,
+    users_rated_experiment,
+    score_ts,
+    source_environment,
+    ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY score_ts DESC, job_id DESC) as rn
+  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
+)
+WHERE rn = 1

@@ -69,3 +69,12 @@ resource "google_project_iam_member" "dataform_bigquery_job_user" {
 data "google_project" "current" {
   project_id = var.project_id
 }
+
+# Cross-project access: Grant Dataform service agent read access to bgg-predictive-models
+resource "google_project_iam_member" "dataform_cross_project_bigquery" {
+  project = "bgg-predictive-models"
+  role    = "roles/bigquery.dataViewer"
+  member  = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-dataform.iam.gserviceaccount.com"
+
+  depends_on = [google_dataform_repository.bgg_warehouse]
+}
