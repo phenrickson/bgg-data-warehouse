@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  schema: "predictions",
+  name: "bgg_complexity_predictions"
+}
+
+SELECT * EXCEPT(rn)
+FROM (
+  SELECT
+    job_id,
+    game_id,
+    name,
+    year_published,
+    predicted_complexity,
+    complexity_model_name,
+    complexity_model_version,
+    complexity_experiment,
+    score_ts,
+    ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY score_ts DESC, job_id DESC) as rn
+  FROM ${ref("bgg-predictive-models", "raw", "complexity_predictions")}
+)
+WHERE rn = 1

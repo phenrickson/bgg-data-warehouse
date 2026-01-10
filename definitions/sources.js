@@ -28,3 +28,9 @@ declare({
   schema: "raw",
   name: "ml_predictions_landing"
 });
+
+declare({
+  database: "bgg-predictive-models",
+  schema: "raw",
+  name: "complexity_predictions"
+});
