@@ -25,6 +25,8 @@ jobs:
     name: Run Dataform Transformations
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      compilation_name: ${{ steps.compile.outputs.compilation_name }}
 
     steps:
       - name: Google Cloud Auth
@@ -67,3 +69,115 @@ jobs:
             -d '{"compilationResult": "${{ steps.compile.outputs.compilation_name }}"}')
 
           echo "Response: ${EXECUTION}"
+
+  generate-lineage:
+    name: Generate Lineage Diagram
+    runs-on: ubuntu-latest
+    needs: dataform
+    if: ${{ always() && needs.dataform.outputs.compilation_name != '' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Fetch Compilation and Generate Diagram
+        run: |
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+
+          # Fetch compilation details
+          echo "Fetching compilation: ${{ needs.dataform.outputs.compilation_name }}"
+          COMPILATION_DETAILS=$(curl -s -X GET "${{ needs.dataform.outputs.compilation_name }}" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}")
+
+          # Debug: Print first 500 chars of response
+          echo "API Response preview:"
+          echo "${COMPILATION_DETAILS}" | head -c 500
+
+          # Create docs directory if it doesn't exist
+          mkdir -p docs
+
+          # Export for Python
+          export COMPILATION_DETAILS
+
+          # Generate Mermaid diagram using Python
+          python3 << 'PYTHON_EOF'
+          import json
+          import os
+          import sys
+
+          try:
+              compilation = json.loads(os.environ['COMPILATION_DETAILS'])
+          except json.JSONDecodeError as e:
+              print(f"Failed to parse JSON: {e}")
+              print(f"Raw data: {os.environ.get('COMPILATION_DETAILS', 'NOT SET')[:500]}")
+              sys.exit(1)
+
+          # Start Mermaid diagram
+          mermaid = ["# Dataform Lineage Diagram", "", "```mermaid", "graph LR"]
+
+          # Track edges
+          edges = []
+
+          # Debug: Print keys
+          print(f"Top-level keys: {compilation.keys()}")
+
+          # Process tables - try different possible structures
+          tables = []
+          if 'tables' in compilation:
+              tables = compilation['tables']
+          elif 'compilationResult' in compilation and 'tables' in compilation['compilationResult']:
+              tables = compilation['compilationResult']['tables']
+
+          print(f"Found {len(tables)} tables")
+
+          for table in tables:
+              target = table.get('target', {})
+              schema = target.get('schema', 'unknown')
+              name = target.get('name', 'unknown')
+              table_id = f'["{schema}.{name}"]'
+
+              # Get dependencies
+              for dep in table.get('dependencyTargets', []):
+                  dep_schema = dep.get('schema', 'unknown')
+                  dep_name = dep.get('name', 'unknown')
+                  dep_id = f'["{dep_schema}.{dep_name}"]'
+                  edges.append(f'    {dep_id} --> {table_id}')
+
+          # Add all edges (deduplicated and sorted)
+          if edges:
+              mermaid.extend(sorted(set(edges)))
+          else:
+              mermaid.append("    No dependencies found")
+
+          mermaid.append("```")
+
+          # Write to file
+          with open('docs/lineage.md', 'w') as f:
+              f.write('\n'.join(mermaid))
+
+          print(f"Generated lineage diagram with {len(edges)} edges")
+          PYTHON_EOF
+
+      - name: Commit Lineage Diagram
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add docs/lineage.md
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to lineage diagram"
+          else
+            git commit -m "Update Dataform lineage diagram [skip ci]"
+            git push
+          fi
