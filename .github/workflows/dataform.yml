@@ -95,8 +95,9 @@ jobs:
           ACCESS_TOKEN=$(gcloud auth print-access-token)
 
           # Fetch compilation details
-          echo "Fetching compilation: ${{ needs.dataform.outputs.compilation_name }}"
-          COMPILATION_DETAILS=$(curl -s -X GET "${{ needs.dataform.outputs.compilation_name }}" \
+          COMPILATION_URL="https://dataform.googleapis.com/v1beta1/${{ needs.dataform.outputs.compilation_name }}"
+          echo "Fetching compilation: ${COMPILATION_URL}"
+          COMPILATION_DETAILS=$(curl -s -X GET "${COMPILATION_URL}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}")
 
           # Debug: Print first 500 chars of response
