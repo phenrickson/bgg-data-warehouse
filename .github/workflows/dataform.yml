@@ -96,9 +96,9 @@ jobs:
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
 
-          # Fetch compilation details
-          COMPILATION_URL="https://dataform.googleapis.com/v1beta1/${{ needs.dataform.outputs.compilation_name }}"
-          echo "Fetching compilation: ${COMPILATION_URL}"
+          # Fetch compilation result actions (tables, operations, etc.)
+          COMPILATION_URL="https://dataform.googleapis.com/v1beta1/${{ needs.dataform.outputs.compilation_name }}:query"
+          echo "Fetching compilation actions: ${COMPILATION_URL}"
           COMPILATION_DETAILS=$(curl -s -X GET "${COMPILATION_URL}" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}")
 
@@ -134,27 +134,28 @@ jobs:
           # Debug: Print keys
           print(f"Top-level keys: {compilation.keys()}")
 
-          # Process tables - try different possible structures
-          tables = []
-          if 'tables' in compilation:
-              tables = compilation['tables']
-          elif 'compilationResult' in compilation and 'tables' in compilation['compilationResult']:
-              tables = compilation['compilationResult']['tables']
+          # Process compilation result actions (from :query endpoint)
+          actions = compilation.get('compilationResultActions', [])
+          print(f"Found {len(actions)} actions")
 
-          print(f"Found {len(tables)} tables")
-
-          for table in tables:
-              target = table.get('target', {})
+          for action in actions:
+              target = action.get('target', {})
               schema = target.get('schema', 'unknown')
               name = target.get('name', 'unknown')
-              table_id = f'["{schema}.{name}"]'
+              node_id = f'["{schema}.{name}"]'
 
-              # Get dependencies
-              for dep in table.get('dependencyTargets', []):
+              # Get dependencies from relation or operations
+              dep_targets = []
+              if 'relation' in action:
+                  dep_targets = action['relation'].get('dependencyTargets', [])
+              elif 'operations' in action:
+                  dep_targets = action['operations'].get('dependencyTargets', [])
+
+              for dep in dep_targets:
                   dep_schema = dep.get('schema', 'unknown')
                   dep_name = dep.get('name', 'unknown')
                   dep_id = f'["{dep_schema}.{dep_name}"]'
-                  edges.append(f'    {dep_id} --> {table_id}')
+                  edges.append(f'    {dep_id} --> {node_id}')
 
           # Add all edges (deduplicated and sorted)
           if edges:
