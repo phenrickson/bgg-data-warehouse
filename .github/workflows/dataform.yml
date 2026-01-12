@@ -138,11 +138,16 @@ jobs:
           actions = compilation.get('compilationResultActions', [])
           print(f"Found {len(actions)} actions")
 
+          def make_node_id(schema, name):
+              # Create a valid Mermaid node ID (alphanumeric with underscores)
+              return f'{schema}__{name}'.replace('.', '_').replace('-', '_')
+
           for action in actions:
               target = action.get('target', {})
               schema = target.get('schema', 'unknown')
               name = target.get('name', 'unknown')
-              node_id = f'["{schema}.{name}"]'
+              node_id = make_node_id(schema, name)
+              node_label = f'{schema}.{name}'
 
               # Get dependencies from relation or operations
               dep_targets = []
@@ -154,8 +159,9 @@ jobs:
               for dep in dep_targets:
                   dep_schema = dep.get('schema', 'unknown')
                   dep_name = dep.get('name', 'unknown')
-                  dep_id = f'["{dep_schema}.{dep_name}"]'
-                  edges.append(f'    {dep_id} --> {node_id}')
+                  dep_id = make_node_id(dep_schema, dep_name)
+                  dep_label = f'{dep_schema}.{dep_name}'
+                  edges.append(f'    {dep_id}["{dep_label}"] --> {node_id}["{node_label}"]')
 
           # Add all edges (deduplicated and sorted)
           if edges:
