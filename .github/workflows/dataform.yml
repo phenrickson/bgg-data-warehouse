@@ -93,11 +93,15 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Get Access Token
+        id: token
+        run: echo "access_token=$(gcloud auth print-access-token)" >> $GITHUB_OUTPUT
+
       - name: Generate Lineage Diagrams
         uses: ./.github/actions/dataform-lineage
         with:
           compilation_name: ${{ needs.dataform.outputs.compilation_name }}
-          access_token: ${{ steps.auth.outputs.access_token }}
+          access_token: ${{ steps.token.outputs.access_token }}
           formats: 'mermaid,visjs'
           output_dir: 'docs'
 
