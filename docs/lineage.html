@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dataform Lineage</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+        }
+        .header {
+            background: #1a1a2e;
+            color: white;
+            padding: 1rem 2rem;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+        #graph {
+            width: 100%;
+            height: calc(100vh - 60px);
+            background: white;
+        }
+        .controls {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .controls button {
+            display: block;
+            width: 100%;
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        .controls button:hover {
+            background: #f0f0f0;
+        }
+        .controls button:last-child {
+            margin-bottom: 0;
+        }
+        .search-box {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .search-box input {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            width: 200px;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: #1a1a2e;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Dataform Lineage</h1>
+    </div>
+    <div class="search-box">
+        <input type="text" id="search" placeholder="Search nodes..." onkeyup="searchNodes(this.value)">
+    </div>
+    <div class="controls">
+        <button onclick="network.fit()">Fit to View</button>
+        <button onclick="setHierarchical()">Hierarchical</button>
+        <button onclick="setFreeform()">Freeform</button>
+    </div>
+    <div id="graph"></div>
+
+    <script>
+        const nodes = new vis.DataSet([
+  {
+    "id": "analytics__best_player_counts",
+    "label": "analytics.best_player_counts",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__filter_categories",
+    "label": "analytics.filter_categories",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__filter_designers",
+    "label": "analytics.filter_designers",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__filter_mechanics",
+    "label": "analytics.filter_mechanics",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__filter_options_combined",
+    "label": "analytics.filter_options_combined",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__filter_publishers",
+    "label": "analytics.filter_publishers",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__games_active",
+    "label": "analytics.games_active",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__games_features",
+    "label": "analytics.games_features",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "analytics__player_count_recommendations",
+    "label": "analytics.player_count_recommendations",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__artists",
+    "label": "core.artists",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__categories",
+    "label": "core.categories",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__designers",
+    "label": "core.designers",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__families",
+    "label": "core.families",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__game_artists",
+    "label": "core.game_artists",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__game_categories",
+    "label": "core.game_categories",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__game_designers",
+    "label": "core.game_designers",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__game_families",
+    "label": "core.game_families",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__game_mechanics",
+    "label": "core.game_mechanics",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__game_publishers",
+    "label": "core.game_publishers",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__games",
+    "label": "core.games",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__mechanics",
+    "label": "core.mechanics",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__player_counts",
+    "label": "core.player_counts",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "core__publishers",
+    "label": "core.publishers",
+    "group": "core",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "predictions__bgg_complexity_predictions",
+    "label": "predictions.bgg_complexity_predictions",
+    "group": "predictions",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "predictions__bgg_predictions",
+    "label": "predictions.bgg_predictions",
+    "group": "predictions",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "raw__complexity_predictions",
+    "label": "raw.complexity_predictions",
+    "group": "raw",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "raw__ml_predictions_landing",
+    "label": "raw.ml_predictions_landing",
+    "group": "raw",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "staging__game_features_hash",
+    "label": "staging.game_features_hash",
+    "group": "staging",
+    "font": {
+      "size": 12
+    }
+  }
+]);
+
+        const edges = new vis.DataSet([
+  {
+    "id": 0,
+    "from": "analytics__filter_categories",
+    "to": "analytics__filter_options_combined",
+    "arrows": "to"
+  },
+  {
+    "id": 1,
+    "from": "analytics__filter_designers",
+    "to": "analytics__filter_options_combined",
+    "arrows": "to"
+  },
+  {
+    "id": 2,
+    "from": "analytics__filter_mechanics",
+    "to": "analytics__filter_options_combined",
+    "arrows": "to"
+  },
+  {
+    "id": 3,
+    "from": "analytics__filter_publishers",
+    "to": "analytics__filter_options_combined",
+    "arrows": "to"
+  },
+  {
+    "id": 4,
+    "from": "analytics__games_active",
+    "to": "analytics__best_player_counts",
+    "arrows": "to"
+  },
+  {
+    "id": 5,
+    "from": "analytics__games_active",
+    "to": "analytics__filter_categories",
+    "arrows": "to"
+  },
+  {
+    "id": 6,
+    "from": "analytics__games_active",
+    "to": "analytics__filter_designers",
+    "arrows": "to"
+  },
+  {
+    "id": 7,
+    "from": "analytics__games_active",
+    "to": "analytics__filter_mechanics",
+    "arrows": "to"
+  },
+  {
+    "id": 8,
+    "from": "analytics__games_active",
+    "to": "analytics__filter_publishers",
+    "arrows": "to"
+  },
+  {
+    "id": 9,
+    "from": "analytics__games_active",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 10,
+    "from": "analytics__games_active",
+    "to": "analytics__player_count_recommendations",
+    "arrows": "to"
+  },
+  {
+    "id": 11,
+    "from": "analytics__games_features",
+    "to": "staging__game_features_hash",
+    "arrows": "to"
+  },
+  {
+    "id": 12,
+    "from": "core__artists",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 13,
+    "from": "core__categories",
+    "to": "analytics__filter_categories",
+    "arrows": "to"
+  },
+  {
+    "id": 14,
+    "from": "core__categories",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 15,
+    "from": "core__designers",
+    "to": "analytics__filter_designers",
+    "arrows": "to"
+  },
+  {
+    "id": 16,
+    "from": "core__designers",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 17,
+    "from": "core__families",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 18,
+    "from": "core__game_artists",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 19,
+    "from": "core__game_categories",
+    "to": "analytics__filter_categories",
+    "arrows": "to"
+  },
+  {
+    "id": 20,
+    "from": "core__game_categories",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 21,
+    "from": "core__game_designers",
+    "to": "analytics__filter_designers",
+    "arrows": "to"
+  },
+  {
+    "id": 22,
+    "from": "core__game_designers",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 23,
+    "from": "core__game_families",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 24,
+    "from": "core__game_mechanics",
+    "to": "analytics__filter_mechanics",
+    "arrows": "to"
+  },
+  {
+    "id": 25,
+    "from": "core__game_mechanics",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 26,
+    "from": "core__game_publishers",
+    "to": "analytics__filter_publishers",
+    "arrows": "to"
+  },
+  {
+    "id": 27,
+    "from": "core__game_publishers",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 28,
+    "from": "core__games",
+    "to": "analytics__games_active",
+    "arrows": "to"
+  },
+  {
+    "id": 29,
+    "from": "core__mechanics",
+    "to": "analytics__filter_mechanics",
+    "arrows": "to"
+  },
+  {
+    "id": 30,
+    "from": "core__mechanics",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 31,
+    "from": "core__player_counts",
+    "to": "analytics__best_player_counts",
+    "arrows": "to"
+  },
+  {
+    "id": 32,
+    "from": "core__player_counts",
+    "to": "analytics__player_count_recommendations",
+    "arrows": "to"
+  },
+  {
+    "id": 33,
+    "from": "core__publishers",
+    "to": "analytics__filter_publishers",
+    "arrows": "to"
+  },
+  {
+    "id": 34,
+    "from": "core__publishers",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 35,
+    "from": "raw__complexity_predictions",
+    "to": "predictions__bgg_complexity_predictions",
+    "arrows": "to"
+  },
+  {
+    "id": 36,
+    "from": "raw__ml_predictions_landing",
+    "to": "predictions__bgg_predictions",
+    "arrows": "to"
+  }
+]);
+
+        const container = document.getElementById("graph");
+        const data = { nodes: nodes, edges: edges };
+
+        const options = {
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: "LR",
+                    sortMethod: "directed",
+                    levelSeparation: 250,
+                    nodeSpacing: 40,
+                    shakeTowards: "roots"
+                }
+            },
+            physics: {
+                enabled: false
+            },
+            edges: {
+                smooth: {
+                    type: "cubicBezier",
+                    forceDirection: "horizontal"
+                },
+                arrows: {
+                    to: { scaleFactor: 0.5 }
+                },
+                color: { color: "#848484", hover: "#1a1a2e" }
+            },
+            nodes: {
+                shape: "box",
+                margin: 10
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 200,
+                hideEdgesOnDrag: true
+            }
+        };
+
+        const network = new vis.Network(container, data, options);
+
+        function setHierarchical() {
+            network.setOptions({
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: "LR",
+                        sortMethod: "directed",
+                        levelSeparation: 250,
+                        nodeSpacing: 40,
+                        shakeTowards: "roots"
+                    }
+                },
+                physics: { enabled: false }
+            });
+            network.fit();
+        }
+
+        function setFreeform() {
+            network.setOptions({
+                layout: {
+                    hierarchical: { enabled: false }
+                },
+                physics: {
+                    enabled: true,
+                    solver: "forceAtlas2Based",
+                    forceAtlas2Based: {
+                        gravitationalConstant: -50,
+                        centralGravity: 0.01,
+                        springLength: 150,
+                        springConstant: 0.08
+                    },
+                    stabilization: { iterations: 100 }
+                }
+            });
+        }
+
+        // Fit on load
+        network.once("stabilizationIterationsDone", function() {
+            network.fit();
+        });
+
+        // Highlight connected nodes on hover
+        network.on("hoverNode", function(params) {
+            const nodeId = params.node;
+            const connectedNodes = network.getConnectedNodes(nodeId);
+            const connectedEdges = network.getConnectedEdges(nodeId);
+
+            // Dim all nodes except hovered and connected
+            nodes.forEach(node => {
+                if (node.id === nodeId || connectedNodes.includes(node.id)) {
+                    nodes.update({ id: node.id, opacity: 1 });
+                } else {
+                    nodes.update({ id: node.id, opacity: 0.2 });
+                }
+            });
+        });
+
+        network.on("blurNode", function(params) {
+            // Reset all nodes
+            nodes.forEach(node => {
+                nodes.update({ id: node.id, opacity: 1 });
+            });
+        });
+
+        // Search functionality
+        function searchNodes(query) {
+            if (!query) {
+                // Reset all nodes to default
+                nodes.forEach(node => {
+                    nodes.update({ id: node.id, opacity: 1 });
+                });
+                return;
+            }
+
+            query = query.toLowerCase();
+            const matchingIds = [];
+
+            nodes.forEach(node => {
+                if (node.label.toLowerCase().includes(query)) {
+                    matchingIds.push(node.id);
+                    nodes.update({ id: node.id, opacity: 1 });
+                } else {
+                    nodes.update({ id: node.id, opacity: 0.2 });
+                }
+            });
+
+            // Focus on first match
+            if (matchingIds.length > 0) {
+                network.focus(matchingIds[0], {
+                    scale: 1,
+                    animation: { duration: 300 }
+                });
+            }
+        }
+    </script>
+</body>
+</html>
