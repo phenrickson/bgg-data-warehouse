@@ -171,11 +171,50 @@ jobs:
 
           mermaid.append("```")
 
+          # Generate Graphviz DOT diagram
+          dot = ["", "## Graphviz Version", "", "```dot", "digraph dataform_lineage {", "    rankdir=LR;", "    node [shape=box];", ""]
+
+          # Collect all unique nodes and edges for DOT
+          nodes = set()
+          dot_edges = []
+
+          for action in actions:
+              target = action.get('target', {})
+              schema = target.get('schema', 'unknown')
+              name = target.get('name', 'unknown')
+              node_id = make_node_id(schema, name)
+              nodes.add((node_id, f'{schema}.{name}'))
+
+              dep_targets = []
+              if 'relation' in action:
+                  dep_targets = action['relation'].get('dependencyTargets', [])
+              elif 'operations' in action:
+                  dep_targets = action['operations'].get('dependencyTargets', [])
+
+              for dep in dep_targets:
+                  dep_schema = dep.get('schema', 'unknown')
+                  dep_name = dep.get('name', 'unknown')
+                  dep_id = make_node_id(dep_schema, dep_name)
+                  nodes.add((dep_id, f'{dep_schema}.{dep_name}'))
+                  dot_edges.append(f'    {dep_id} -> {node_id};')
+
+          # Add node definitions
+          for node_id, label in sorted(nodes):
+              dot.append(f'    {node_id} [label="{label}"];')
+
+          dot.append("")
+          dot.extend(sorted(set(dot_edges)))
+          dot.append("}")
+          dot.append("```")
+
+          # Combine both diagrams
+          output = mermaid + dot
+
           # Write to file
           with open('docs/lineage.md', 'w') as f:
-              f.write('\n'.join(mermaid))
+              f.write('\n'.join(output))
 
-          print(f"Generated lineage diagram with {len(edges)} edges")
+          print(f"Generated lineage diagrams with {len(edges)} edges")
           PYTHON_EOF
 
       - name: Commit Lineage Diagram
