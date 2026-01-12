@@ -1,0 +1,64 @@
+name: 'Dataform Lineage Renderer'
+description: 'Generates lineage diagrams from Dataform compilation results'
+author: 'phenrickson'
+
+inputs:
+  compilation_name:
+    description: 'Dataform compilation result name (from compilationResults API)'
+    required: true
+  formats:
+    description: 'Output formats (comma-separated: mermaid,dot,visjs)'
+    required: false
+    default: 'mermaid,visjs'
+  output_dir:
+    description: 'Output directory for generated files'
+    required: false
+    default: 'docs'
+  access_token:
+    description: 'GCP access token for Dataform API'
+    required: true
+
+outputs:
+  files_generated:
+    description: 'List of generated files'
+    value: ${{ steps.generate.outputs.files_generated }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Generate Lineage Diagrams
+      id: generate
+      shell: bash
+      env:
+        COMPILATION_NAME: ${{ inputs.compilation_name }}
+        ACCESS_TOKEN: ${{ inputs.access_token }}
+        OUTPUT_FORMATS: ${{ inputs.formats }}
+        OUTPUT_DIR: ${{ inputs.output_dir }}
+      run: |
+        # Fetch compilation result from Dataform API
+        COMPILATION_URL="https://dataform.googleapis.com/v1beta1/${COMPILATION_NAME}:query"
+        echo "Fetching compilation actions from: ${COMPILATION_URL}"
+
+        COMPILATION_DETAILS=$(curl -s -X GET "${COMPILATION_URL}" \
+          -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+          -w "\n%{http_code}")
+
+        HTTP_CODE=$(echo "${COMPILATION_DETAILS}" | tail -n1)
+        RESPONSE_BODY=$(echo "${COMPILATION_DETAILS}" | sed '$d')
+
+        if [ "${HTTP_CODE}" != "200" ]; then
+          echo "Error: API returned HTTP ${HTTP_CODE}"
+          echo "Response: ${RESPONSE_BODY}"
+          exit 1
+        fi
+
+        # Export for Python script
+        export COMPILATION_DETAILS="${RESPONSE_BODY}"
+
+        # Run the Python generator
+        python3 "${{ github.action_path }}/generate_lineage.py"

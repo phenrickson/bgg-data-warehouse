@@ -85,6 +85,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Google Cloud Auth
+        id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
@@ -92,140 +93,23 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Fetch Compilation and Generate Diagram
-        run: |
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
+      - name: Generate Lineage Diagrams
+        uses: ./.github/actions/dataform-lineage
+        with:
+          compilation_name: ${{ needs.dataform.outputs.compilation_name }}
+          access_token: ${{ steps.auth.outputs.access_token }}
+          formats: 'mermaid,visjs'
+          output_dir: 'docs'
 
-          # Fetch compilation result actions (tables, operations, etc.)
-          COMPILATION_URL="https://dataform.googleapis.com/v1beta1/${{ needs.dataform.outputs.compilation_name }}:query"
-          echo "Fetching compilation actions: ${COMPILATION_URL}"
-          COMPILATION_DETAILS=$(curl -s -X GET "${COMPILATION_URL}" \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}")
-
-          # Debug: Print first 500 chars of response
-          echo "API Response preview:"
-          echo "${COMPILATION_DETAILS}" | head -c 500
-
-          # Create docs directory if it doesn't exist
-          mkdir -p docs
-
-          # Export for Python
-          export COMPILATION_DETAILS
-
-          # Generate Mermaid diagram using Python
-          python3 << 'PYTHON_EOF'
-          import json
-          import os
-          import sys
-
-          try:
-              compilation = json.loads(os.environ['COMPILATION_DETAILS'])
-          except json.JSONDecodeError as e:
-              print(f"Failed to parse JSON: {e}")
-              print(f"Raw data: {os.environ.get('COMPILATION_DETAILS', 'NOT SET')[:500]}")
-              sys.exit(1)
-
-          # Start Mermaid diagram
-          mermaid = ["# Dataform Lineage Diagram", "", "```mermaid", "graph LR"]
-
-          # Track edges
-          edges = []
-
-          # Debug: Print keys
-          print(f"Top-level keys: {compilation.keys()}")
-
-          # Process compilation result actions (from :query endpoint)
-          actions = compilation.get('compilationResultActions', [])
-          print(f"Found {len(actions)} actions")
-
-          def make_node_id(schema, name):
-              # Create a valid Mermaid node ID (alphanumeric with underscores)
-              return f'{schema}__{name}'.replace('.', '_').replace('-', '_')
-
-          for action in actions:
-              target = action.get('target', {})
-              schema = target.get('schema', 'unknown')
-              name = target.get('name', 'unknown')
-              node_id = make_node_id(schema, name)
-              node_label = f'{schema}.{name}'
-
-              # Get dependencies from relation or operations
-              dep_targets = []
-              if 'relation' in action:
-                  dep_targets = action['relation'].get('dependencyTargets', [])
-              elif 'operations' in action:
-                  dep_targets = action['operations'].get('dependencyTargets', [])
-
-              for dep in dep_targets:
-                  dep_schema = dep.get('schema', 'unknown')
-                  dep_name = dep.get('name', 'unknown')
-                  dep_id = make_node_id(dep_schema, dep_name)
-                  dep_label = f'{dep_schema}.{dep_name}'
-                  edges.append(f'    {dep_id}["{dep_label}"] --> {node_id}["{node_label}"]')
-
-          # Add all edges (deduplicated and sorted)
-          if edges:
-              mermaid.extend(sorted(set(edges)))
-          else:
-              mermaid.append("    No dependencies found")
-
-          mermaid.append("```")
-
-          # Generate Graphviz DOT diagram
-          dot = ["", "## Graphviz Version", "", "```dot", "digraph dataform_lineage {", "    rankdir=LR;", "    node [shape=box];", ""]
-
-          # Collect all unique nodes and edges for DOT
-          nodes = set()
-          dot_edges = []
-
-          for action in actions:
-              target = action.get('target', {})
-              schema = target.get('schema', 'unknown')
-              name = target.get('name', 'unknown')
-              node_id = make_node_id(schema, name)
-              nodes.add((node_id, f'{schema}.{name}'))
-
-              dep_targets = []
-              if 'relation' in action:
-                  dep_targets = action['relation'].get('dependencyTargets', [])
-              elif 'operations' in action:
-                  dep_targets = action['operations'].get('dependencyTargets', [])
-
-              for dep in dep_targets:
-                  dep_schema = dep.get('schema', 'unknown')
-                  dep_name = dep.get('name', 'unknown')
-                  dep_id = make_node_id(dep_schema, dep_name)
-                  nodes.add((dep_id, f'{dep_schema}.{dep_name}'))
-                  dot_edges.append(f'    {dep_id} -> {node_id};')
-
-          # Add node definitions
-          for node_id, label in sorted(nodes):
-              dot.append(f'    {node_id} [label="{label}"];')
-
-          dot.append("")
-          dot.extend(sorted(set(dot_edges)))
-          dot.append("}")
-          dot.append("```")
-
-          # Combine both diagrams
-          output = mermaid + dot
-
-          # Write to file
-          with open('docs/lineage.md', 'w') as f:
-              f.write('\n'.join(output))
-
-          print(f"Generated lineage diagrams with {len(edges)} edges")
-          PYTHON_EOF
-
-      - name: Commit Lineage Diagram
+      - name: Commit Lineage Diagrams
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add docs/lineage.md
+          git add docs/lineage.md docs/lineage.html
 
           # Only commit if there are changes
           if git diff --staged --quiet; then
-            echo "No changes to lineage diagram"
+            echo "No changes to lineage diagrams"
           else
             git commit -m "Update Dataform lineage diagram [skip ci]"
             git push
