@@ -8,6 +8,14 @@ resource "google_artifact_registry_repository" "bgg_images" {
   project       = var.project_id
 }
 
+resource "google_artifact_registry_repository" "bgg_dash_viewer" {
+  location      = var.region
+  repository_id = "bgg-dash-viewer"
+  description   = "Docker images for BGG Dash Viewer"
+  format        = "DOCKER"
+  project       = var.project_id
+}
+
 # Cloud Run Jobs are created by the deploy workflow (config/cloudbuild.yaml)
 # after the Docker image is built and pushed.
 
