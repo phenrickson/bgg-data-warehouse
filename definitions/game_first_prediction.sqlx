@@ -1,0 +1,11 @@
+config {
+  type: "table",
+  schema: "predictions",
+  name: "game_first_prediction"
+}
+
+SELECT
+  game_id,
+  MIN(score_ts) AS first_prediction_ts
+FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
+GROUP BY game_id
