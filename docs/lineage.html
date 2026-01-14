@@ -296,6 +296,14 @@
     }
   },
   {
+    "id": "predictions__game_first_prediction",
+    "label": "predictions.game_first_prediction",
+    "group": "predictions",
+    "font": {
+      "size": 12
+    }
+  },
+  {
     "id": "raw__complexity_predictions",
     "label": "raw.complexity_predictions",
     "group": "raw",
@@ -534,14 +542,26 @@
   },
   {
     "id": 35,
+    "from": "predictions__game_first_prediction",
+    "to": "predictions__bgg_predictions",
+    "arrows": "to"
+  },
+  {
+    "id": 36,
     "from": "raw__complexity_predictions",
     "to": "predictions__bgg_complexity_predictions",
     "arrows": "to"
   },
   {
-    "id": 36,
+    "id": 37,
     "from": "raw__ml_predictions_landing",
     "to": "predictions__bgg_predictions",
+    "arrows": "to"
+  },
+  {
+    "id": 38,
+    "from": "raw__ml_predictions_landing",
+    "to": "predictions__game_first_prediction",
     "arrows": "to"
   }
 ]);
