@@ -61,3 +61,10 @@ resource "google_project_iam_member" "bgg_pipeline_run_admin" {
   role    = "roles/run.admin"
   member  = "serviceAccount:${google_service_account.bgg_pipeline.email}"
 }
+
+# Service Account User (allows deploying Cloud Run services that run as this SA)
+resource "google_service_account_iam_member" "bgg_pipeline_act_as_self" {
+  service_account_id = google_service_account.bgg_pipeline.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.bgg_pipeline.email}"
+}
