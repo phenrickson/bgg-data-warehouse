@@ -47,3 +47,17 @@ resource "google_project_iam_member" "bgg_pipeline_bigquery_read_session" {
   role    = "roles/bigquery.readSessionUser"
   member  = "serviceAccount:${google_service_account.bgg_pipeline.email}"
 }
+
+# Artifact Registry permissions (for pushing Docker images)
+resource "google_project_iam_member" "bgg_pipeline_artifact_registry" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.bgg_pipeline.email}"
+}
+
+# Cloud Run admin permissions (for deploying services)
+resource "google_project_iam_member" "bgg_pipeline_run_admin" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${google_service_account.bgg_pipeline.email}"
+}
