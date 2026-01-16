@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  schema: "predictions",
+  name: "bgg_game_embeddings",
+  description: "Latest game embeddings for similarity search, sourced from bgg-predictive-models. Only includes embeddings from the latest model version to ensure consistent vector space."
+}
+
+-- Get the latest embedding version to ensure all embeddings are from the same model
+WITH latest_version AS (
+  SELECT MAX(embedding_version) as version
+  FROM ${ref("bgg-predictive-models", "raw", "game_embeddings")}
+)
+
+SELECT * EXCEPT(rn)
+FROM (
+  SELECT
+    game_id,
+    name,
+    year_published,
+    embedding,
+    embedding_model,
+    embedding_version,
+    embedding_dim,
+    algorithm,
+    created_ts,
+    job_id,
+    ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY created_ts DESC, job_id DESC) as rn
+  FROM ${ref("bgg-predictive-models", "raw", "game_embeddings")}
+  WHERE embedding_version = (SELECT version FROM latest_version)
+)
+WHERE rn = 1
