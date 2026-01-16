@@ -34,3 +34,9 @@ declare({
   schema: "raw",
   name: "complexity_predictions"
 });
+
+declare({
+  database: "bgg-predictive-models",
+  schema: "raw",
+  name: "game_embeddings"
+});
