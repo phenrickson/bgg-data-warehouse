@@ -1,0 +1,30 @@
+config {
+  type: "table",
+  schema: "analytics",
+  name: "game_similarity_search",
+  description: "Game embeddings enriched with features for similarity search. Combines embeddings from predictions with game metadata for filtering by year, rating, complexity, etc."
+}
+
+SELECT
+  e.game_id,
+  e.name,
+  e.year_published,
+  e.embedding,
+  e.embedding_model,
+  e.embedding_version,
+  e.embedding_dim,
+  e.algorithm,
+  -- Filtering fields from games_features
+  g.users_rated,
+  g.average_rating,
+  g.average_weight AS complexity,
+  g.bayes_average AS geek_rating,
+  g.min_players,
+  g.max_players,
+  g.min_playtime,
+  g.max_playtime,
+  -- Display fields
+  g.thumbnail,
+  g.image
+FROM ${ref("bgg_game_embeddings")} e
+INNER JOIN ${ref("games_features")} g ON e.game_id = g.game_id
