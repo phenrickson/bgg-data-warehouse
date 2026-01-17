@@ -11,6 +11,7 @@ graph LR
     analytics__games_active["analytics.games_active"] --> analytics__filter_designers["analytics.filter_designers"]
     analytics__games_active["analytics.games_active"] --> analytics__filter_mechanics["analytics.filter_mechanics"]
     analytics__games_active["analytics.games_active"] --> analytics__filter_publishers["analytics.filter_publishers"]
+    analytics__games_active["analytics.games_active"] --> analytics__game_dropdown_options["analytics.game_dropdown_options"]
     analytics__games_active["analytics.games_active"] --> analytics__games_features["analytics.games_features"]
     analytics__games_active["analytics.games_active"] --> analytics__player_count_recommendations["analytics.player_count_recommendations"]
     analytics__games_features["analytics.games_features"] --> analytics__game_similarity_search["analytics.game_similarity_search"]

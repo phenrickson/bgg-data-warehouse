@@ -144,6 +144,14 @@
     }
   },
   {
+    "id": "analytics__game_dropdown_options",
+    "label": "analytics.game_dropdown_options",
+    "group": "analytics",
+    "font": {
+      "size": 12
+    }
+  },
+  {
     "id": "analytics__game_similarity_search",
     "label": "analytics.game_similarity_search",
     "group": "analytics",
@@ -411,197 +419,203 @@
   {
     "id": 9,
     "from": "analytics__games_active",
-    "to": "analytics__games_features",
+    "to": "analytics__game_dropdown_options",
     "arrows": "to"
   },
   {
     "id": 10,
     "from": "analytics__games_active",
-    "to": "analytics__player_count_recommendations",
+    "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 11,
-    "from": "analytics__games_features",
-    "to": "analytics__game_similarity_search",
+    "from": "analytics__games_active",
+    "to": "analytics__player_count_recommendations",
     "arrows": "to"
   },
   {
     "id": 12,
     "from": "analytics__games_features",
-    "to": "staging__game_features_hash",
+    "to": "analytics__game_similarity_search",
     "arrows": "to"
   },
   {
     "id": 13,
+    "from": "analytics__games_features",
+    "to": "staging__game_features_hash",
+    "arrows": "to"
+  },
+  {
+    "id": 14,
     "from": "core__artists",
     "to": "analytics__games_features",
     "arrows": "to"
   },
   {
-    "id": 14,
+    "id": 15,
     "from": "core__categories",
     "to": "analytics__filter_categories",
     "arrows": "to"
   },
   {
-    "id": 15,
+    "id": 16,
     "from": "core__categories",
     "to": "analytics__games_features",
-    "arrows": "to"
-  },
-  {
-    "id": 16,
-    "from": "core__designers",
-    "to": "analytics__filter_designers",
     "arrows": "to"
   },
   {
     "id": 17,
     "from": "core__designers",
-    "to": "analytics__games_features",
+    "to": "analytics__filter_designers",
     "arrows": "to"
   },
   {
     "id": 18,
-    "from": "core__families",
+    "from": "core__designers",
     "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 19,
-    "from": "core__game_artists",
+    "from": "core__families",
     "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 20,
-    "from": "core__game_categories",
-    "to": "analytics__filter_categories",
+    "from": "core__game_artists",
+    "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 21,
     "from": "core__game_categories",
-    "to": "analytics__games_features",
+    "to": "analytics__filter_categories",
     "arrows": "to"
   },
   {
     "id": 22,
-    "from": "core__game_designers",
-    "to": "analytics__filter_designers",
+    "from": "core__game_categories",
+    "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 23,
     "from": "core__game_designers",
-    "to": "analytics__games_features",
+    "to": "analytics__filter_designers",
     "arrows": "to"
   },
   {
     "id": 24,
-    "from": "core__game_families",
+    "from": "core__game_designers",
     "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 25,
-    "from": "core__game_mechanics",
-    "to": "analytics__filter_mechanics",
+    "from": "core__game_families",
+    "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 26,
     "from": "core__game_mechanics",
-    "to": "analytics__games_features",
+    "to": "analytics__filter_mechanics",
     "arrows": "to"
   },
   {
     "id": 27,
-    "from": "core__game_publishers",
-    "to": "analytics__filter_publishers",
+    "from": "core__game_mechanics",
+    "to": "analytics__games_features",
     "arrows": "to"
   },
   {
     "id": 28,
     "from": "core__game_publishers",
-    "to": "analytics__games_features",
+    "to": "analytics__filter_publishers",
     "arrows": "to"
   },
   {
     "id": 29,
+    "from": "core__game_publishers",
+    "to": "analytics__games_features",
+    "arrows": "to"
+  },
+  {
+    "id": 30,
     "from": "core__games",
     "to": "analytics__games_active",
     "arrows": "to"
   },
   {
-    "id": 30,
+    "id": 31,
     "from": "core__mechanics",
     "to": "analytics__filter_mechanics",
     "arrows": "to"
   },
   {
-    "id": 31,
+    "id": 32,
     "from": "core__mechanics",
     "to": "analytics__games_features",
     "arrows": "to"
   },
   {
-    "id": 32,
+    "id": 33,
     "from": "core__player_counts",
     "to": "analytics__best_player_counts",
     "arrows": "to"
   },
   {
-    "id": 33,
+    "id": 34,
     "from": "core__player_counts",
     "to": "analytics__player_count_recommendations",
     "arrows": "to"
   },
   {
-    "id": 34,
+    "id": 35,
     "from": "core__publishers",
     "to": "analytics__filter_publishers",
     "arrows": "to"
   },
   {
-    "id": 35,
+    "id": 36,
     "from": "core__publishers",
     "to": "analytics__games_features",
     "arrows": "to"
   },
   {
-    "id": 36,
+    "id": 37,
     "from": "predictions__bgg_game_embeddings",
     "to": "analytics__game_similarity_search",
     "arrows": "to"
   },
   {
-    "id": 37,
+    "id": 38,
     "from": "predictions__game_first_prediction",
     "to": "predictions__bgg_predictions",
     "arrows": "to"
   },
   {
-    "id": 38,
+    "id": 39,
     "from": "raw__complexity_predictions",
     "to": "predictions__bgg_complexity_predictions",
     "arrows": "to"
   },
   {
-    "id": 39,
+    "id": 40,
     "from": "raw__game_embeddings",
     "to": "predictions__bgg_game_embeddings",
     "arrows": "to"
   },
   {
-    "id": 40,
+    "id": 41,
     "from": "raw__ml_predictions_landing",
     "to": "predictions__bgg_predictions",
     "arrows": "to"
   },
   {
-    "id": 41,
+    "id": 42,
     "from": "raw__ml_predictions_landing",
     "to": "predictions__game_first_prediction",
     "arrows": "to"
