@@ -1,0 +1,14 @@
+config {
+  type: "table",
+  schema: "analytics",
+  name: "game_dropdown_options",
+  description: "Pre-computed dropdown options for game selection UI. Top 25k games by geek rating with minimal columns for fast loading."
+}
+
+SELECT
+  game_id,
+  name,
+  year_published
+FROM ${ref("games_active")}
+ORDER BY COALESCE(bayes_average, 0) DESC
+LIMIT 25000
