@@ -20,7 +20,7 @@ SELECT
   -- Filtering fields from games_features
   g.users_rated,
   g.average_rating,
-  g.average_weight AS complexity,
+  g.predicted_complexity AS complexity,
   g.bayes_average AS geek_rating,
   g.min_players,
   g.max_players,
