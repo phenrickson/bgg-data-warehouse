@@ -26,3 +26,7 @@ refresh_policy:
       min_age_years: 10
       refresh_days: 180
       description: "Games 10+ years old - refresh bi-annually"
+    - name: unpublished
+      year_published_null: true
+      refresh_days: 14
+      description: "Games with no publication year - refresh bi-weekly to catch releases"

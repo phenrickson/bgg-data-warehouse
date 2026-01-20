@@ -58,11 +58,14 @@ class ResponseRefresher:
         logger.info(f"Initialized refresher with batch size {self.batch_size}")
         logger.info("Refresh intervals:")
         for interval in self.refresh_intervals:
-            age_range = f"{interval.get('min_age_years', 0)}-{interval.get('max_age_years', '∞')} years"
-            if interval.get('max_age_years') is None:
+            if interval.get('year_published_null'):
+                age_range = "NULL year"
+            elif interval.get('max_age_years') is None:
                 age_range = f"{interval.get('min_age_years', 0)}+ years"
             elif interval.get('min_age_years', 0) == 0:
                 age_range = f"0-{interval.get('max_age_years')} years"
+            else:
+                age_range = f"{interval.get('min_age_years', 0)}-{interval.get('max_age_years', '∞')} years"
             logger.info(f"  {interval['name']:12} | Age: {age_range:12} | Refresh every {interval['refresh_days']:3} days")
 
     def count_games_needing_refresh(self) -> Dict[str, int]:
@@ -84,7 +87,9 @@ class ResponseRefresher:
                 refresh_days = interval.get("refresh_days")
 
                 # Calculate year thresholds
-                if max_age:
+                if interval.get("year_published_null"):
+                    year_filter = "year_published IS NULL"
+                elif max_age:
                     min_year = current_year - max_age
                     year_filter = f"year_published BETWEEN {min_year} AND {current_year - min_age}"
                 else:
@@ -150,18 +155,15 @@ class ResponseRefresher:
                 min_age = interval.get("min_age_years", 0)
                 refresh_days = interval.get("refresh_days")
 
-                # Calculate year thresholds
-                if max_age:
-                    min_year = current_year - max_age
-                else:
-                    min_year = 0  # No minimum for vintage games
-
-                max_year = current_year - min_age
-
                 # Build year filter
-                if max_age:
+                if interval.get("year_published_null"):
+                    year_filter = "year_published IS NULL"
+                elif max_age:
+                    min_year = current_year - max_age
+                    max_year = current_year - min_age
                     year_filter = f"year_published BETWEEN {min_year} AND {max_year}"
                 else:
+                    max_year = current_year - min_age
                     year_filter = f"year_published <= {max_year}"
 
                 # Create query for this interval
