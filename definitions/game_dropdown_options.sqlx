@@ -8,7 +8,8 @@ config {
 SELECT
   game_id,
   name,
-  year_published
+  year_published,
+  bayes_average
 FROM ${ref("games_active")}
 ORDER BY COALESCE(bayes_average, 0) DESC
 LIMIT 25000
