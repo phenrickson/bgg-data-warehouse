@@ -20,7 +20,7 @@ SELECT
   -- Filtering fields from games_features
   g.users_rated,
   g.average_rating,
-  g.predicted_complexity AS complexity,
+  c.predicted_complexity AS complexity,
   g.bayes_average AS geek_rating,
   g.min_players,
   g.max_players,
@@ -31,3 +31,4 @@ SELECT
   g.image
 FROM ${ref("bgg_game_embeddings")} e
 INNER JOIN ${ref("games_features")} g ON e.game_id = g.game_id
+LEFT JOIN ${ref("bgg_complexity_predictions")} c ON e.game_id = c.game_id
