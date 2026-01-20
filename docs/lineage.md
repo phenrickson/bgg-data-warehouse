@@ -39,6 +39,7 @@ graph LR
     core__player_counts["core.player_counts"] --> analytics__player_count_recommendations["analytics.player_count_recommendations"]
     core__publishers["core.publishers"] --> analytics__filter_publishers["analytics.filter_publishers"]
     core__publishers["core.publishers"] --> analytics__games_features["analytics.games_features"]
+    predictions__bgg_complexity_predictions["predictions.bgg_complexity_predictions"] --> analytics__game_similarity_search["analytics.game_similarity_search"]
     predictions__bgg_game_embeddings["predictions.bgg_game_embeddings"] --> analytics__game_similarity_search["analytics.game_similarity_search"]
     predictions__game_first_prediction["predictions.game_first_prediction"] --> predictions__bgg_predictions["predictions.bgg_predictions"]
     raw__complexity_predictions["raw.complexity_predictions"] --> predictions__bgg_complexity_predictions["predictions.bgg_complexity_predictions"]
