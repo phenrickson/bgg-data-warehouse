@@ -5,24 +5,42 @@ config {
   description: "Tracks feature hashes for all games to enable change detection in the scoring service"
 }
 
+WITH new_hashes AS (
+  SELECT
+    game_id,
+    name,
+    FARM_FINGERPRINT(TO_JSON_STRING(STRUCT(
+      year_published,
+      categories,
+      mechanics,
+      designers,
+      artists,
+      publishers,
+      families,
+      min_age,
+      min_playtime,
+      max_playtime,
+      min_players,
+      max_players,
+      description
+    ))) as feature_hash
+  FROM ${ref("games_features")}
+  WHERE year_published IS NOT NULL
+),
+
+old_hashes AS (
+  SELECT game_id, feature_hash, last_updated
+  FROM ${self()}
+)
+
 SELECT
-  game_id,
-  name,
-  FARM_FINGERPRINT(TO_JSON_STRING(STRUCT(
-    year_published,
-    categories,
-    mechanics,
-    designers,
-    artists,
-    publishers,
-    families,
-    min_age,
-    min_playtime,
-    max_playtime,
-    min_players,
-    max_players,
-    description
-  ))) as feature_hash,
-  CURRENT_TIMESTAMP() as last_updated
-FROM ${ref("games_features")}
-WHERE year_published IS NOT NULL
+  n.game_id,
+  n.name,
+  n.feature_hash,
+  CASE
+    WHEN o.game_id IS NULL THEN CURRENT_TIMESTAMP()  -- New game
+    WHEN n.feature_hash != o.feature_hash THEN CURRENT_TIMESTAMP()  -- Hash changed
+    ELSE o.last_updated  -- No change, preserve old timestamp
+  END as last_updated
+FROM new_hashes n
+LEFT JOIN old_hashes o ON n.game_id = o.game_id
