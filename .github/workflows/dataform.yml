@@ -5,6 +5,12 @@ on:
     workflows: ["Run Fetch New Games", "Run Refresh Old Games"]
     types: [completed]
 
+  schedule:
+    # Run after complexity predictions (6 AM) to sync predictions to DW before embeddings
+    - cron: '30 6 * * *'
+    # Run after embeddings (7 AM) to update hash table with correct timestamps
+    - cron: '30 7 * * *'
+
   push:
     branches:
       - main
