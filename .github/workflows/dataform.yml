@@ -8,8 +8,10 @@ on:
   schedule:
     # Run after complexity predictions (6 AM) to sync predictions to DW before embeddings
     - cron: '30 6 * * *'
-    # Run after embeddings (7 AM) to update hash table with correct timestamps
+    # Run after game embeddings (7 AM) to update hash table with correct timestamps
     - cron: '30 7 * * *'
+    # Run after text/description embeddings (8 AM) to sync description embeddings
+    - cron: '30 8 * * *'
 
   push:
     branches:
