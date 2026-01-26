@@ -43,6 +43,7 @@ graph LR
     predictions__bgg_game_embeddings["predictions.bgg_game_embeddings"] --> analytics__game_similarity_search["analytics.game_similarity_search"]
     predictions__game_first_prediction["predictions.game_first_prediction"] --> predictions__bgg_predictions["predictions.bgg_predictions"]
     raw__complexity_predictions["raw.complexity_predictions"] --> predictions__bgg_complexity_predictions["predictions.bgg_complexity_predictions"]
+    raw__description_embeddings["raw.description_embeddings"] --> predictions__bgg_description_embeddings["predictions.bgg_description_embeddings"]
     raw__game_embeddings["raw.game_embeddings"] --> predictions__bgg_game_embeddings["predictions.bgg_game_embeddings"]
     raw__ml_predictions_landing["raw.ml_predictions_landing"] --> predictions__bgg_predictions["predictions.bgg_predictions"]
     raw__ml_predictions_landing["raw.ml_predictions_landing"] --> predictions__game_first_prediction["predictions.game_first_prediction"]
