@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-01-27
+
+### Changed
+
+- **Pipeline event flow redesign**: Fixed data dependency bug where embeddings used stale complexity predictions
+  - Dataform now runs after complexity scoring to materialize predictions before embeddings
+  - New event naming: `complexity_complete`, `embeddings_complete`, `dataform_complexity_ready`
+  - Replaced generic `predictions_complete` with specific events for better observability
+  - Pipeline is now purely event-driven (removed cron schedules from ML workflows)
+  - Text embeddings now runs before game embeddings (future-proofing for dependency)
+  - See `docs/plans/2026-01-27-pipeline-event-flow-design.md` for full design
+
 ## [0.4.2] - 2026-01-26
 
 ### Added

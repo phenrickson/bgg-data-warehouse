@@ -5,9 +5,9 @@ on:
     workflows: ["Run Fetch New Games", "Run Refresh Old Games"]
     types: [completed]
 
-  # Triggered by ML pipeline after all predictions complete
+  # Triggered by ML pipeline
   repository_dispatch:
-    types: [predictions_complete]
+    types: [complexity_complete, embeddings_complete]
 
   push:
     branches:
@@ -19,7 +19,7 @@ on:
 
   workflow_dispatch:
 
-  # Single daily fallback (replaces triple cron)
+  # Single daily fallback
   schedule:
     - cron: '30 8 * * *'
 
@@ -79,16 +79,31 @@ jobs:
           echo "Response: ${EXECUTION}"
 
       - name: Notify ML Pipeline
-        # Only dispatch to ML when NOT triggered by predictions_complete (prevents loop)
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'repository_dispatch'
+        if: success() && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
         run: |
+          # Determine which event to dispatch based on trigger
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            if [ "${{ github.event.action }}" == "complexity_complete" ]; then
+              # Complexity predictions done, tell ML to continue with scoring
+              EVENT_TYPE="dataform_complexity_ready"
+            else
+              # embeddings_complete - end of pipeline, no dispatch
+              echo "Pipeline complete (embeddings_complete). No further dispatch needed."
+              exit 0
+            fi
+          else
+            # schedule, workflow_run, push, workflow_dispatch - start of pipeline
+            EVENT_TYPE="dataform_complete"
+          fi
+
+          echo "Dispatching event: $EVENT_TYPE"
           curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/phenrickson/bgg-predictive-models/dispatches \
-            -d '{"event_type": "dataform_complete", "client_payload": {"run_id": "${{ github.run_id }}"}}'
+            -d "{\"event_type\": \"$EVENT_TYPE\", \"client_payload\": {\"run_id\": \"${{ github.run_id }}\"}}"
 
   generate-lineage:
     name: Generate Lineage Diagram
