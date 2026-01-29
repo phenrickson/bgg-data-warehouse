@@ -19,10 +19,6 @@ on:
 
   workflow_dispatch:
 
-  # Single daily fallback
-  schedule:
-    - cron: '30 8 * * *'
-
 env:
   GCP_PROJECT_ID: bgg-data-warehouse
   GCP_REGION: us-central1
@@ -32,7 +28,7 @@ jobs:
   dataform:
     name: Run Dataform Transformations
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'repository_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'repository_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       compilation_name: ${{ steps.compile.outputs.compilation_name }}
 
@@ -94,7 +90,7 @@ jobs:
               exit 0
             fi
           else
-            # schedule, workflow_run, push, workflow_dispatch - start of pipeline
+            # workflow_run, push, workflow_dispatch - start of pipeline
             EVENT_TYPE="dataform_complete"
           fi
 
