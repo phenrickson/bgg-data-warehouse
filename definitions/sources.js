@@ -46,3 +46,9 @@ declare({
   schema: "raw",
   name: "description_embeddings"
 });
+
+declare({
+  database: "bgg-predictive-models",
+  schema: "raw",
+  name: "game_coordinates"
+});
