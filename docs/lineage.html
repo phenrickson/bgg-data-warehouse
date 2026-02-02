@@ -368,6 +368,14 @@
     }
   },
   {
+    "id": "raw__game_coordinates",
+    "label": "raw.game_coordinates",
+    "group": "raw",
+    "font": {
+      "size": 12
+    }
+  },
+  {
     "id": "raw__game_embeddings",
     "label": "raw.game_embeddings",
     "group": "raw",
@@ -654,30 +662,36 @@
   },
   {
     "id": 43,
-    "from": "raw__game_embeddings",
-    "to": "monitoring__deployed_models",
+    "from": "raw__game_coordinates",
+    "to": "predictions__bgg_game_coordinates",
     "arrows": "to"
   },
   {
     "id": 44,
     "from": "raw__game_embeddings",
-    "to": "predictions__bgg_game_embeddings",
+    "to": "monitoring__deployed_models",
     "arrows": "to"
   },
   {
     "id": 45,
-    "from": "raw__ml_predictions_landing",
-    "to": "monitoring__deployed_models",
+    "from": "raw__game_embeddings",
+    "to": "predictions__bgg_game_embeddings",
     "arrows": "to"
   },
   {
     "id": 46,
     "from": "raw__ml_predictions_landing",
-    "to": "predictions__bgg_predictions",
+    "to": "monitoring__deployed_models",
     "arrows": "to"
   },
   {
     "id": 47,
+    "from": "raw__ml_predictions_landing",
+    "to": "predictions__bgg_predictions",
+    "arrows": "to"
+  },
+  {
+    "id": 48,
     "from": "raw__ml_predictions_landing",
     "to": "predictions__game_first_prediction",
     "arrows": "to"
