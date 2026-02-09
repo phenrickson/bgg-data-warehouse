@@ -68,6 +68,22 @@ WITH prediction_models AS (
     MAX(score_ts) AS last_updated
   FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
   GROUP BY users_rated_model_name, users_rated_model_version, users_rated_experiment
+
+  UNION ALL
+
+  SELECT
+    'prediction' AS model_category,
+    'geek_rating' AS model_type,
+    geek_rating_model_name AS model_name,
+    geek_rating_model_version AS model_version,
+    geek_rating_experiment AS experiment,
+    CAST(NULL AS STRING) AS algorithm,
+    CAST(NULL AS INT64) AS embedding_dim,
+    CAST(NULL AS STRING) AS document_method,
+    COUNT(DISTINCT game_id) AS games_count,
+    MAX(score_ts) AS last_updated
+  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
+  GROUP BY geek_rating_model_name, geek_rating_model_version, geek_rating_experiment
 ),
 
 -- Game embeddings metadata
