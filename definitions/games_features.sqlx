@@ -1,11 +1,20 @@
 config {
-  type: "table",
-  name: "games_features"
+  type: "incremental",
+  name: "games_features",
+  uniqueKey: ["game_id"]
 }
 
-WITH categories_agg AS (
+-- First, identify which games need processing (new/updated games only in incremental mode)
+WITH games_to_process AS (
+  SELECT game_id
+  FROM ${ref("games_active")}
+  ${when(incremental(), `WHERE load_timestamp > (SELECT MAX(load_timestamp) FROM ${self()})`) }
+),
+
+categories_agg AS (
   SELECT gc.game_id, ARRAY_AGG(cat.name IGNORE NULLS) AS categories
   FROM ${ref("game_categories")} gc
+  INNER JOIN games_to_process gtp ON gc.game_id = gtp.game_id
   LEFT JOIN ${ref("categories")} cat ON gc.category_id = cat.category_id
   GROUP BY gc.game_id
 ),
@@ -13,6 +22,7 @@ WITH categories_agg AS (
 mechanics_agg AS (
   SELECT gm.game_id, ARRAY_AGG(mech.name IGNORE NULLS) AS mechanics
   FROM ${ref("game_mechanics")} gm
+  INNER JOIN games_to_process gtp ON gm.game_id = gtp.game_id
   LEFT JOIN ${ref("mechanics")} mech ON gm.mechanic_id = mech.mechanic_id
   GROUP BY gm.game_id
 ),
@@ -20,6 +30,7 @@ mechanics_agg AS (
 publishers_agg AS (
   SELECT gp.game_id, ARRAY_AGG(pub.name IGNORE NULLS) AS publishers
   FROM ${ref("game_publishers")} gp
+  INNER JOIN games_to_process gtp ON gp.game_id = gtp.game_id
   LEFT JOIN ${ref("publishers")} pub ON gp.publisher_id = pub.publisher_id
   GROUP BY gp.game_id
 ),
@@ -27,6 +38,7 @@ publishers_agg AS (
 designers_agg AS (
   SELECT gd.game_id, ARRAY_AGG(des.name IGNORE NULLS) AS designers
   FROM ${ref("game_designers")} gd
+  INNER JOIN games_to_process gtp ON gd.game_id = gtp.game_id
   LEFT JOIN ${ref("designers")} des ON gd.designer_id = des.designer_id
   GROUP BY gd.game_id
 ),
@@ -34,6 +46,7 @@ designers_agg AS (
 artists_agg AS (
   SELECT ga.game_id, ARRAY_AGG(art.name IGNORE NULLS) AS artists
   FROM ${ref("game_artists")} ga
+  INNER JOIN games_to_process gtp ON ga.game_id = gtp.game_id
   LEFT JOIN ${ref("artists")} art ON ga.artist_id = art.artist_id
   GROUP BY ga.game_id
 ),
@@ -41,6 +54,7 @@ artists_agg AS (
 families_agg AS (
   SELECT gf.game_id, ARRAY_AGG(fam.name IGNORE NULLS) AS families
   FROM ${ref("game_families")} gf
+  INNER JOIN games_to_process gtp ON gf.game_id = gtp.game_id
   LEFT JOIN ${ref("families")} fam ON gf.family_id = fam.family_id
   GROUP BY gf.game_id
 )
@@ -73,6 +87,7 @@ SELECT
   IFNULL(d.designers, []) AS designers,
   IFNULL(a.artists, []) AS artists,
   IFNULL(f.families, []) AS families,
+  g.load_timestamp,
   CURRENT_TIMESTAMP() AS last_updated
 FROM ${ref("games_active")} g
 LEFT JOIN categories_agg c ON g.game_id = c.game_id
@@ -81,3 +96,4 @@ LEFT JOIN publishers_agg p ON g.game_id = p.game_id
 LEFT JOIN designers_agg d ON g.game_id = d.game_id
 LEFT JOIN artists_agg a ON g.game_id = a.game_id
 LEFT JOIN families_agg f ON g.game_id = f.game_id
+${when(incremental(), `WHERE g.load_timestamp > (SELECT MAX(load_timestamp) FROM ${self()})`) }

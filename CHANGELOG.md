@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-16
+
+### Changed
+
+- **Incremental Dataform tables**: Converted 7 tables from full rebuilds to incremental processing to reduce BigQuery costs
+  - `bgg_game_embeddings`: Only processes new embeddings since last run
+  - `bgg_description_embeddings`: Only processes new embeddings since last run
+  - `bgg_predictions`: Only processes new predictions since last run
+  - `bgg_complexity_predictions`: Only processes new predictions since last run
+  - `game_similarity_search`: Only processes games with new embeddings
+  - `games_active`: Only processes newly loaded/updated games
+  - `games_features`: Only processes newly loaded/updated games with optimized aggregation CTEs
+- **Cost optimization**: Expected to reduce monthly BigQuery analysis costs by ~90% by staying within 1TB free tier
+  - Previous: ~120-150 GB/day scanned (~1.76 TB/month, exceeding free tier)
+  - Expected: Only new records scanned per run (KB-MB instead of GB)
+
+### Migration Notes
+
+- First run after deployment will do a full table rebuild (normal incremental behavior)
+- Use `--full-refresh` flag in Dataform to force a complete rebuild if needed
+- Tables use `uniqueKey: ["game_id"]` for MERGE operations (upsert on game_id)
+
 ## [0.4.4] - 2026-01-29
 
 ### Added
@@ -151,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core functionality for BGG data pipeline
 - Documentation and setup instructions
 
+[0.5.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.1...v0.4.2

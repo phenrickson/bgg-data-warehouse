@@ -1,6 +1,7 @@
 config {
-  type: "table",
-  name: "games_active"
+  type: "incremental",
+  name: "games_active",
+  uniqueKey: ["game_id"]
 }
 
 WITH game_latest_timestamps AS (
@@ -39,3 +40,4 @@ FROM ${ref("games")} g
 INNER JOIN game_latest_timestamps lt
   ON g.game_id = lt.game_id
   AND g.load_timestamp = lt.latest_game_timestamp
+${when(incremental(), `WHERE g.load_timestamp > (SELECT MAX(load_timestamp) FROM ${self()})`) }

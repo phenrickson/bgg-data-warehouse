@@ -1,15 +1,11 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: "predictions",
-  name: "bgg_predictions"
+  name: "bgg_predictions",
+  uniqueKey: ["game_id"]
 }
 
-SELECT
-  p.* EXCEPT(rn),
-  fp.first_prediction_ts,
-  DATE_DIFF(CURRENT_DATE(), DATE(fp.first_prediction_ts), DAY) <= 1 AS is_new_1d,
-  DATE_DIFF(CURRENT_DATE(), DATE(fp.first_prediction_ts), DAY) <= 7 AS is_new_7d
-FROM (
+WITH source_data AS (
   SELECT
     job_id,
     game_id,
@@ -39,6 +35,15 @@ FROM (
     source_environment,
     ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY score_ts DESC, job_id DESC) as rn
   FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
-) p
+  WHERE TRUE
+    ${when(incremental(), `AND score_ts > (SELECT MAX(score_ts) FROM ${self()})`) }
+)
+
+SELECT
+  p.* EXCEPT(rn),
+  fp.first_prediction_ts,
+  DATE_DIFF(CURRENT_DATE(), DATE(fp.first_prediction_ts), DAY) <= 1 AS is_new_1d,
+  DATE_DIFF(CURRENT_DATE(), DATE(fp.first_prediction_ts), DAY) <= 7 AS is_new_7d
+FROM source_data p
 LEFT JOIN ${ref("game_first_prediction")} fp ON p.game_id = fp.game_id
 WHERE rn = 1

@@ -1,7 +1,8 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: "predictions",
   name: "bgg_game_embeddings",
+  uniqueKey: ["game_id"],
   description: "Latest game embeddings for similarity search, sourced from bgg-predictive-models. Only includes embeddings from the latest model version to ensure consistent vector space."
 }
 
@@ -9,10 +10,9 @@ config {
 WITH latest_version AS (
   SELECT MAX(embedding_version) as version
   FROM ${ref("bgg-predictive-models", "raw", "game_embeddings")}
-)
+),
 
-SELECT * EXCEPT(rn)
-FROM (
+source_data AS (
   SELECT
     game_id,
     name,
@@ -30,5 +30,9 @@ FROM (
     ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY created_ts DESC, job_id DESC) as rn
   FROM ${ref("bgg-predictive-models", "raw", "game_embeddings")}
   WHERE embedding_version = (SELECT version FROM latest_version)
+    ${when(incremental(), `AND created_ts > (SELECT MAX(created_ts) FROM ${self()})`) }
 )
+
+SELECT * EXCEPT(rn)
+FROM source_data
 WHERE rn = 1
