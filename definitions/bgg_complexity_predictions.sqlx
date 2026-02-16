@@ -1,11 +1,11 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: "predictions",
-  name: "bgg_complexity_predictions"
+  name: "bgg_complexity_predictions",
+  uniqueKey: ["game_id"]
 }
 
-SELECT * EXCEPT(rn)
-FROM (
+WITH source_data AS (
   SELECT
     job_id,
     game_id,
@@ -18,5 +18,10 @@ FROM (
     score_ts,
     ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY score_ts DESC, job_id DESC) as rn
   FROM ${ref("bgg-predictive-models", "raw", "complexity_predictions")}
+  WHERE TRUE
+    ${when(incremental(), `AND score_ts > (SELECT MAX(score_ts) FROM ${self()})`) }
 )
+
+SELECT * EXCEPT(rn)
+FROM source_data
 WHERE rn = 1

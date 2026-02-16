@@ -1,7 +1,8 @@
 config {
-  type: "table",
+  type: "incremental",
   schema: "analytics",
   name: "game_similarity_search",
+  uniqueKey: ["game_id"],
   description: "Game embeddings enriched with features for similarity search. Combines embeddings from predictions with game metadata for filtering by year, rating, complexity, etc."
 }
 
@@ -28,7 +29,10 @@ SELECT
   g.max_playtime,
   -- Display fields
   g.thumbnail,
-  g.image
+  g.image,
+  -- Timestamp for incremental processing
+  e.created_ts
 FROM ${ref("bgg_game_embeddings")} e
 INNER JOIN ${ref("games_features")} g ON e.game_id = g.game_id
 LEFT JOIN ${ref("bgg_complexity_predictions")} c ON e.game_id = c.game_id
+${when(incremental(), `WHERE e.created_ts > (SELECT COALESCE(MAX(created_ts), TIMESTAMP('1970-01-01')) FROM ${self()})`) }
