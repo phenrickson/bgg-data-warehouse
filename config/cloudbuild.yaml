@@ -8,6 +8,38 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:latest']
 
+  # Deploy Fetch Thing IDs Cloud Run Job - Create if not exists, otherwise update
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if gcloud run jobs describe bgg-fetch-thing-ids --region=us-central1 2>/dev/null; then
+          echo "Updating existing job: bgg-fetch-thing-ids"
+          gcloud run jobs update bgg-fetch-thing-ids \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
+            --args=src.pipeline.fetch_thing_ids \
+            --tasks=1 \
+            --max-retries=3 \
+            --task-timeout=1h \
+            --memory=2Gi \
+            --cpu=1 \
+            --region=us-central1 \
+            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com
+        else
+          echo "Creating new job: bgg-fetch-thing-ids"
+          gcloud run jobs create bgg-fetch-thing-ids \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
+            --args=src.pipeline.fetch_thing_ids \
+            --tasks=1 \
+            --max-retries=3 \
+            --task-timeout=1h \
+            --memory=2Gi \
+            --cpu=1 \
+            --region=us-central1 \
+            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com
+        fi
+
   # Deploy Fetch New Games Cloud Run Job - Create if not exists, otherwise update
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'

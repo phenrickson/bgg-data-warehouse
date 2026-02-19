@@ -1,7 +1,7 @@
 # Use Python 3.12 slim image
 FROM python:3.12-slim
 
-# Ensure apt can fetch packages
+# Ensure apt can fetch packages and install dependencies for Playwright/Chromium
 RUN apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get update && \
@@ -9,6 +9,23 @@ RUN apt-get clean && \
     ca-certificates \
     curl \
     build-essential \
+    # Playwright/Chromium dependencies
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -22,6 +39,9 @@ COPY . .
 
 # Install project dependencies
 RUN uv sync
+
+# Install Playwright browsers
+RUN uv run playwright install chromium
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
