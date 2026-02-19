@@ -2,10 +2,9 @@
 
 import datetime
 import logging
+import os
 from pathlib import Path
-from typing import List, Set, Dict, Optional
-from urllib.error import URLError
-from urllib.request import urlretrieve
+from typing import List, Set
 
 import polars as pl
 from dotenv import load_dotenv
@@ -28,8 +27,6 @@ THING_IDS_TABLE = "thing_ids"
 class IDFetcher:
     """Fetches and manages BoardGameGeek IDs."""
 
-    BGG_IDS_URL = "http://bgg.activityclub.org/bggdata/thingids.txt"
-
     def __init__(self) -> None:
         """Initialize the fetcher with BigQuery configuration."""
         self.config = get_bigquery_config()
@@ -37,57 +34,6 @@ class IDFetcher:
         self.client = bigquery.Client(project=self.project_id)
         self.dataset_id = RAW_DATASET
         self.table_id = THING_IDS_TABLE
-
-    def download_ids(self, output_dir: Path) -> Path:
-        """Download the BGG IDs file.
-
-        Args:
-            output_dir: Directory to save the downloaded file
-
-        Returns:
-            Path to the downloaded file
-
-        Raises:
-            URLError: If the download fails
-        """
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / "thingids.txt"
-
-        try:
-            logger.info(
-                "Downloading BGG IDs from %s to %s", self.BGG_IDS_URL, output_path.absolute()
-            )
-            urlretrieve(self.BGG_IDS_URL, output_path)
-            logger.info("Successfully downloaded BGG IDs to %s", output_path.absolute())
-            return output_path
-        except URLError as e:
-            logger.error("Failed to download BGG IDs: %s", e)
-            raise
-
-    def parse_ids(self, file_path: Path) -> List[dict]:
-        """Parse game IDs and types from the downloaded file.
-
-        Args:
-            file_path: Path to the IDs file
-
-        Returns:
-            List of dictionaries containing game IDs and their types
-        """
-        logger.info("Parsing game IDs from %s", file_path)
-        games = []
-        with open(file_path, "r") as f:
-            content = f.read()
-            logger.debug(
-                "File content: %s", content[:1000]
-            )  # Print first 1000 chars only in debug mode
-            # File contains "ID type" per line (e.g., "12345 boardgame" or "67890 boardgameexpansion")
-            for line in content.splitlines():
-                if line.strip() and len(line.split()) >= 2:
-                    parts = line.split()
-                    if parts[0].isdigit():
-                        games.append({"game_id": int(parts[0]), "type": parts[1]})
-        logger.info("Found %d game IDs", len(games))
-        return games
 
     def get_existing_ids(self) -> Set[tuple]:
         """Get existing game IDs and types from BigQuery.
@@ -130,7 +76,7 @@ class IDFetcher:
                 "type": [game["type"] for game in new_games],
                 "processed": [False] * len(new_games),
                 "process_timestamp": [None] * len(new_games),
-                "source": ["bgg.activityclub.org"] * len(new_games),
+                "source": ["bgg_sitemap"] * len(new_games),
                 "load_timestamp": [now] * len(new_games),
             }
         )
@@ -138,7 +84,6 @@ class IDFetcher:
         # Log DataFrame info before upload
         logger.info("DataFrame preview:")
         try:
-            # Convert to string and encode safely for Windows console
             preview = str(df.head())
             preview = preview.encode("cp1252", errors="replace").decode("cp1252")
             logger.info(preview)
@@ -185,22 +130,24 @@ class IDFetcher:
             # Clean up temp table
             self.client.delete_table(temp_table, not_found_ok=True)
 
-    def run(self) -> bool:
+    def run(self, use_browser: bool = True) -> bool:
         """Run the ID fetcher pipeline.
+
+        Args:
+            use_browser: Use browser-based fetching (default True, legacy param for compatibility)
 
         Returns:
             bool: True if new IDs were found and added, False otherwise
         """
         logger.info("Starting ID fetcher")
 
-        # Create temp directory for ID updates
-        temp_dir = Path("temp")
-        temp_dir.mkdir(parents=True, exist_ok=True)
-
         try:
-            # Download and parse IDs
-            ids_file = self.download_ids(temp_dir)
-            all_games = self.parse_ids(ids_file)
+            # Fetch IDs from BGG sitemaps
+            all_games = self._fetch_via_browser()
+
+            if not all_games:
+                logger.warning("No games fetched from BGG")
+                return False
 
             # Get existing IDs and find new ones
             existing_ids = self.get_existing_ids()
@@ -219,9 +166,22 @@ class IDFetcher:
         except Exception as e:
             logger.error(f"ID fetcher failed: {e}")
             raise
-        finally:
-            # Cleanup
-            if temp_dir.exists():
-                for file in temp_dir.glob("*"):
-                    file.unlink()
-                temp_dir.rmdir()
+
+    def _fetch_via_browser(self) -> List[dict]:
+        """Fetch game IDs directly from BGG using browser automation.
+
+        Returns:
+            List of game dicts with game_id and type
+        """
+        try:
+            from .id_fetcher_browser import BrowserIDFetcher
+        except ImportError:
+            logger.error(
+                "Browser-based fetching requires playwright. "
+                "Install with: uv add playwright && playwright install chromium"
+            )
+            raise
+
+        headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
+        fetcher = BrowserIDFetcher(headless=headless)
+        return fetcher.fetch_all_ids()

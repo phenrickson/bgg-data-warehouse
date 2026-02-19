@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-02-19
+
+### Added
+
+- **Browser-based BGG ID discovery**: New pipeline to scrape game IDs directly from BGG sitemaps using Playwright
+  - Replaces dependency on `bgg.activityclub.org/bggdata/thingids.txt` which stopped updating
+  - New `fetch_thing_ids` pipeline (`src/pipeline/fetch_thing_ids.py`)
+  - New `BrowserIDFetcher` module (`src/modules/id_fetcher_browser.py`) using Playwright/Chromium
+  - Bypasses Cloudflare protection on BGG sitemaps
+- **New Cloud Run job**: `bgg-fetch-thing-ids` for ID discovery
+- **Playwright dependency**: Added for browser automation
+
+### Changed
+
+- **Pipeline architecture**: Split ID fetching from response processing
+  - `fetch_thing_ids`: Discovers new game IDs from BGG sitemaps → uploads to `thing_ids`
+  - `fetch_new_games`: Fetches API responses for unfetched IDs → processes into normalized tables
+- **GitHub Actions workflow**: Now runs two jobs in sequence (`fetch-thing-ids` → `fetch-new-games`)
+- **Docker image**: Updated to include Playwright and Chromium dependencies
+- **ID source field**: New IDs now have `source = 'bgg_sitemap'` instead of `'bgg.activityclub.org'`
+
+### Removed
+
+- Dependency on `bgg.activityclub.org` for game ID discovery
+- ID fetching step from `fetch_new_games` pipeline (now handled by `fetch_thing_ids`)
+
 ## [0.5.0] - 2026-02-16
 
 ### Changed
@@ -173,6 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core functionality for BGG data pipeline
 - Documentation and setup instructions
 
+[0.6.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.2...v0.4.3
