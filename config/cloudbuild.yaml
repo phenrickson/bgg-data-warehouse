@@ -22,8 +22,8 @@ steps:
             --tasks=1 \
             --max-retries=3 \
             --task-timeout=1h \
-            --memory=2Gi \
-            --cpu=1 \
+            --memory=8Gi \
+            --cpu=2 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com
         else
@@ -34,8 +34,8 @@ steps:
             --tasks=1 \
             --max-retries=3 \
             --task-timeout=1h \
-            --memory=2Gi \
-            --cpu=1 \
+            --memory=8Gi \
+            --cpu=2 \
             --region=us-central1 \
             --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com
         fi

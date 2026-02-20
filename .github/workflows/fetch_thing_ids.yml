@@ -1,0 +1,70 @@
+name: Fetch Thing IDs
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Run daily at 6 AM UTC
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
+
+jobs:
+  fetch-thing-ids:
+    name: Fetch Thing IDs from BGG
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get pre-run counts
+        id: before
+        run: |
+          bq query --nouse_legacy_sql --format=csv \
+            "SELECT type, COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.thing_ids\` GROUP BY type ORDER BY type" \
+            | tail -n +2 > /tmp/before_counts.csv
+          TOTAL=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.thing_ids\`" | tail -1)
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+
+      - name: Execute Fetch Thing IDs Job
+        run: |
+          gcloud run jobs execute bgg-fetch-thing-ids \
+            --project=${GCP_PROJECT_ID} \
+            --region=${GCP_REGION} \
+            --wait
+
+      - name: Write job summary
+        if: always()
+        run: |
+          bq query --nouse_legacy_sql --format=csv \
+            "SELECT type, COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.thing_ids\` GROUP BY type ORDER BY type" \
+            | tail -n +2 > /tmp/after_counts.csv
+          TOTAL=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.thing_ids\`" | tail -1)
+          BEFORE=${{ steps.before.outputs.total }}
+          NEW_IDS=$(( TOTAL - ${BEFORE:-0} ))
+
+          echo "## Fetch Thing IDs Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| New IDs added | ${NEW_IDS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total IDs** | **${TOTAL}** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Counts by type" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Type | Before | After | New |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|-------|-----|" >> $GITHUB_STEP_SUMMARY
+          while IFS=, read -r type after_cnt; do
+            before_cnt=$(grep "^${type}," /tmp/before_counts.csv | cut -d, -f2)
+            before_cnt=${before_cnt:-0}
+            new_cnt=$(( after_cnt - before_cnt ))
+            echo "| ${type} | ${before_cnt} | ${after_cnt} | ${new_cnt} |" >> $GITHUB_STEP_SUMMARY
+          done < /tmp/after_counts.csv

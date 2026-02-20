@@ -23,9 +23,37 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Get pre-run counts
+        id: before
+        run: |
+          TOTAL_GAMES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.core.games\`" | tail -1)
+          RESPONSES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.fetched_responses\`" | tail -1)
+          echo "total_games=$TOTAL_GAMES" >> $GITHUB_OUTPUT
+          echo "responses=$RESPONSES" >> $GITHUB_OUTPUT
+
       - name: Execute Refresh Old Games Job
         run: |
           gcloud run jobs execute bgg-refresh-old-games \
             --project=${GCP_PROJECT_ID} \
             --region=${GCP_REGION} \
             --wait
+
+      - name: Write job summary
+        if: always()
+        run: |
+          TOTAL_GAMES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.core.games\`" | tail -1)
+          RESPONSES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.fetched_responses\`" | tail -1)
+          BEFORE_RESPONSES=${{ steps.before.outputs.responses }}
+          NEW_RESPONSES=$(( RESPONSES - ${BEFORE_RESPONSES:-0} ))
+
+          echo "## Refresh Old Games Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Responses refreshed | ${NEW_RESPONSES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total games | ${TOTAL_GAMES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total responses | ${RESPONSES} |" >> $GITHUB_STEP_SUMMARY

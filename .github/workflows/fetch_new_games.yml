@@ -1,0 +1,65 @@
+name: Run Fetch New Games
+
+on:
+  workflow_run:
+    workflows: ["Fetch Thing IDs"]
+    types:
+      - completed
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
+
+jobs:
+  fetch-new-games:
+    name: Fetch and Process New Games
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get pre-run counts
+        id: before
+        run: |
+          RESPONSES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.fetched_responses\` WHERE fetch_status = 'success'" | tail -1)
+          GAMES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.core.games\`" | tail -1)
+          echo "responses=$RESPONSES" >> $GITHUB_OUTPUT
+          echo "games=$GAMES" >> $GITHUB_OUTPUT
+
+      - name: Execute Fetch New Games Job
+        run: |
+          gcloud run jobs execute bgg-fetch-new-games \
+            --project=${GCP_PROJECT_ID} \
+            --region=${GCP_REGION} \
+            --wait
+
+      - name: Write job summary
+        if: always()
+        run: |
+          RESPONSES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.fetched_responses\` WHERE fetch_status = 'success'" | tail -1)
+          GAMES=$(bq query --nouse_legacy_sql --format=csv \
+            "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.core.games\`" | tail -1)
+          BEFORE_RESPONSES=${{ steps.before.outputs.responses }}
+          BEFORE_GAMES=${{ steps.before.outputs.games }}
+          NEW_RESPONSES=$(( RESPONSES - ${BEFORE_RESPONSES:-0} ))
+          NEW_GAMES=$(( GAMES - ${BEFORE_GAMES:-0} ))
+
+          echo "## Fetch New Games Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| New responses fetched | ${NEW_RESPONSES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| New games processed | ${NEW_GAMES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total responses | ${RESPONSES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total games | ${GAMES} |" >> $GITHUB_STEP_SUMMARY
