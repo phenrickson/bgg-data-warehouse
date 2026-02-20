@@ -6,6 +6,15 @@ resource "google_artifact_registry_repository" "bgg_images" {
   description   = "Docker images for BGG Data Warehouse"
   format        = "DOCKER"
   project       = var.project_id
+
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+
+    most_recent_versions {
+      keep_count = 5
+    }
+  }
 }
 
 resource "google_artifact_registry_repository" "bgg_dash_viewer" {
@@ -14,6 +23,15 @@ resource "google_artifact_registry_repository" "bgg_dash_viewer" {
   description   = "Docker images for BGG Dash Viewer"
   format        = "DOCKER"
   project       = var.project_id
+
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+
+    most_recent_versions {
+      keep_count = 5
+    }
+  }
 }
 
 # Cloud Run Jobs are created by the deploy workflow (config/cloudbuild.yaml)
