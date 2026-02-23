@@ -52,8 +52,8 @@ steps:
             --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
             --args=src.pipeline.fetch_new_games \
             --tasks=1 \
-            --max-retries=3 \
-            --task-timeout=3h \
+            --max-retries=1 \
+            --task-timeout=1h \
             --memory=2Gi \
             --cpu=1 \
             --region=us-central1 \
@@ -65,8 +65,8 @@ steps:
             --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
             --args=src.pipeline.fetch_new_games \
             --tasks=1 \
-            --max-retries=3 \
-            --task-timeout=3h \
+            --max-retries=1 \
+            --task-timeout=1h \
             --memory=2Gi \
             --cpu=1 \
             --region=us-central1 \
