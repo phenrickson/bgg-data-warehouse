@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-02-23
+
+### Fixed
+
+- **Sitemap scraper stability**: Individual sitemaps are now fetched via plain HTTP instead of the browser, eliminating memory crashes that caused incomplete fetches
+- **Type misclassification prevention**: Errors during sitemap fetching now abort the entire run instead of silently uploading partial results. Previously, a crash mid-run would upload only boardgame sitemaps (missing expansion/accessory overrides), causing expansions to be misclassified as boardgames
+- **Sitemap processing order**: Explicitly sort sitemaps (boardgame → expansion → accessory) to ensure correct last-write-wins type assignment, matching the activityclub.org Perl script behavior
+
+### Data Cleanup
+
+- Deleted 29,321 misclassified `thing_ids` rows from broken Feb 23 run
+- Deleted ~44K incorrectly fetched responses from `fetched_responses` and `raw_responses`
+
 ## [0.6.0] - 2026-02-19
 
 ### Added
@@ -199,6 +212,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core functionality for BGG data pipeline
 - Documentation and setup instructions
 
+[0.6.1]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/phenrickson/bgg-data-warehouse/compare/v0.4.3...v0.4.4
