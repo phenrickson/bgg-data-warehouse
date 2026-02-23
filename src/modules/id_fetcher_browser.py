@@ -4,12 +4,15 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Set
 
+import requests as http_requests
 from playwright.sync_api import sync_playwright, Browser, Page
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# User agent shared between browser and requests
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 
 
 class BrowserIDFetcher:
@@ -26,6 +29,12 @@ class BrowserIDFetcher:
     GAME_ID_PATTERN = re.compile(
         r'https://boardgamegeek\.com/boardgame(expansion|accessory|)/(\d+)'
     )
+
+    # Sitemap type ordering for correct type assignment.
+    # More specific types must come AFTER less specific types so they
+    # overwrite in the last-write-wins deduplication dict.
+    # This matches the activityclub.org Perl script behavior.
+    SITEMAP_TYPE_ORDER = {"boardgame": 0, "boardgameexpansion": 1, "boardgameaccessory": 2}
 
     def __init__(self, headless: bool = True):
         """Initialize the browser-based fetcher.
@@ -53,46 +62,71 @@ class BrowserIDFetcher:
             time.sleep(2)
         raise TimeoutError("Cloudflare challenge did not complete in time")
 
+    def _sitemap_sort_key(self, url: str) -> tuple:
+        """Sort key for sitemap URLs: boardgame < boardgameexpansion < boardgameaccessory.
+
+        Args:
+            url: Sitemap URL
+
+        Returns:
+            Tuple of (type_order, page_number) for sorting
+        """
+        match = self.SITEMAP_PATTERN.search(url)
+        if match:
+            suffix = match.group(1)  # '', 'expansion', or 'accessory'
+            sitemap_type = f"boardgame{suffix}"
+            type_order = self.SITEMAP_TYPE_ORDER.get(sitemap_type, 99)
+            # Extract page number from end of URL
+            page_num = int(url.rsplit("_", 1)[-1])
+            return (type_order, page_num)
+        return (99, 0)
+
     def fetch_sitemap_index(self, page: Page) -> list[str]:
         """Fetch and parse the sitemap index to get individual sitemap URLs.
+
+        Uses the browser to bypass Cloudflare on the index page.
 
         Args:
             page: Playwright page object
 
         Returns:
-            List of sitemap URLs for board games
+            List of sitemap URLs for board games, sorted by type
         """
         logger.info(f"Fetching sitemap index: {self.SITEMAP_INDEX_URL}")
         page.goto(self.SITEMAP_INDEX_URL)
         self._wait_for_cloudflare(page)
 
         content = page.content()
-        sitemap_urls = self.SITEMAP_PATTERN.findall(content)
 
-        # Reconstruct full URLs (findall returns the capture groups)
-        # We need to re-search to get full matches
         full_urls = []
         for match in re.finditer(self.SITEMAP_PATTERN, content):
             full_urls.append(match.group(0))
 
+        # Sort: boardgame sitemaps first, then expansion, then accessory
+        full_urls.sort(key=self._sitemap_sort_key)
+
         logger.info(f"Found {len(full_urls)} board game sitemaps")
+        for url in full_urls:
+            logger.info(f"  {url}")
         return full_urls
 
-    def fetch_sitemap_page(self, page: Page, url: str) -> list[dict]:
-        """Fetch a single sitemap page and extract game IDs.
+    def fetch_sitemap_page(self, url: str) -> list[dict]:
+        """Fetch a single sitemap page via HTTP and extract game IDs.
+
+        Individual sitemap XML pages are not behind Cloudflare,
+        so plain HTTP requests work and avoid browser memory issues.
 
         Args:
-            page: Playwright page object
             url: Sitemap URL to fetch
 
         Returns:
             List of dicts with game_id and type
         """
         logger.info(f"Fetching sitemap: {url}")
-        page.goto(url)
-        self._wait_for_cloudflare(page)
+        resp = http_requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=60)
+        resp.raise_for_status()
 
-        content = page.content()
+        content = resp.text
         games = []
 
         for match in re.finditer(self.GAME_ID_PATTERN, content):
@@ -107,39 +141,39 @@ class BrowserIDFetcher:
     def fetch_all_ids(self) -> list[dict]:
         """Fetch all game IDs from BGG sitemaps.
 
+        Uses browser only for the sitemap index (Cloudflare protected),
+        then plain HTTP for individual sitemaps (not Cloudflare protected).
+        Sitemaps are processed in order so that more specific types
+        (expansion, accessory) overwrite less specific types (boardgame).
+
         Returns:
             List of dicts with game_id and type
         """
-        all_games: dict[int, str] = {}  # game_id -> type (deduped)
+        all_games: dict[int, str] = {}  # game_id -> type (deduped, last-write-wins)
 
+        # Step 1: Use browser only for the Cloudflare-protected sitemap index
         with sync_playwright() as p:
-            logger.info("Launching browser...")
+            logger.info("Launching browser for sitemap index...")
             browser = p.chromium.launch(headless=self.headless)
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-            )
+            context = browser.new_context(user_agent=USER_AGENT)
             page = context.new_page()
 
             try:
-                # Get sitemap index
                 sitemap_urls = self.fetch_sitemap_index(page)
-
-                # Fetch each sitemap
-                for i, sitemap_url in enumerate(sitemap_urls):
-                    logger.info(f"Processing sitemap {i+1}/{len(sitemap_urls)}")
-                    try:
-                        games = self.fetch_sitemap_page(page, sitemap_url)
-                        for game in games:
-                            all_games[game["game_id"]] = game["type"]
-
-                        # Be nice to the server
-                        time.sleep(1)
-                    except Exception as e:
-                        logger.error(f"Error fetching {sitemap_url}: {e}")
-                        continue
-
             finally:
                 browser.close()
+                logger.info("Browser closed")
+
+        # Step 2: Fetch individual sitemaps via plain HTTP (no browser needed)
+        # All sitemaps must succeed — partial results cause type misclassification
+        for i, sitemap_url in enumerate(sitemap_urls):
+            logger.info(f"Processing sitemap {i+1}/{len(sitemap_urls)}")
+            games = self.fetch_sitemap_page(sitemap_url)
+            for game in games:
+                all_games[game["game_id"]] = game["type"]
+
+            # Be nice to the server
+            time.sleep(1)
 
         # Convert back to list format
         result = [{"game_id": gid, "type": gtype} for gid, gtype in all_games.items()]
