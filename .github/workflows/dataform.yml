@@ -2,7 +2,7 @@ name: Run Dataform
 
 on:
   workflow_run:
-    workflows: ["Run Fetch New Games", "Run Refresh Old Games"]
+    workflows: ["Run Fetch New Games", "Run Refresh Old Games", "Run Fetch Games"]
     types: [completed]
 
   # Triggered by ML pipeline
