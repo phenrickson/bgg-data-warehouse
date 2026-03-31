@@ -1,0 +1,53 @@
+name: Run Fetch Games
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_ids:
+        description: 'Comma-separated game IDs to fetch (e.g., 467694,12345)'
+        required: true
+        type: string
+
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
+
+jobs:
+  fetch-games:
+    name: Fetch Specific Games
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate input
+        run: |
+          if [ -z "${{ github.event.inputs.game_ids }}" ]; then
+            echo "Error: No game IDs provided"
+            exit 1
+          fi
+          echo "Fetching games: ${{ github.event.inputs.game_ids }}"
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute Fetch Games Job
+        run: |
+          gcloud run jobs execute bgg-fetch-games \
+            --project=${GCP_PROJECT_ID} \
+            --region=${GCP_REGION} \
+            --update-env-vars=GAME_IDS=${{ github.event.inputs.game_ids }} \
+            --wait
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## Fetch Games Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Game IDs requested | ${{ github.event.inputs.game_ids }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
