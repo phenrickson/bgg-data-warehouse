@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-03-31
+
+### Fixed
+
+- **Sitemap fetcher blocked by Cloudflare**: BGG now blocks plain HTTP requests to individual sitemap pages with 403 Forbidden. Switched from `requests` to fetching all sitemaps through the Playwright browser session, which bypasses bot detection
+- **Retry logic for sitemap fetches**: Added retry with exponential backoff (3 attempts, 5s/10s/20s) for transient failures when fetching individual sitemaps
+
 ## [0.6.1] - 2026-02-23
 
 ### Fixed

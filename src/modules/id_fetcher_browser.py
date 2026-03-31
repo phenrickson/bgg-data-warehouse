@@ -5,7 +5,6 @@ import re
 import time
 from pathlib import Path
 
-import requests as http_requests
 from playwright.sync_api import sync_playwright, Browser, Page
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +18,8 @@ class BrowserIDFetcher:
     """Fetches BGG game IDs by scraping sitemaps with a real browser."""
 
     SITEMAP_INDEX_URL = "https://boardgamegeek.com/sitemapindex"
+    MAX_RETRIES = 3
+    RETRY_BACKOFF_BASE = 5  # seconds
 
     # Pattern to match sitemap URLs for board games
     SITEMAP_PATTERN = re.compile(
@@ -110,39 +111,56 @@ class BrowserIDFetcher:
             logger.info(f"  {url}")
         return full_urls
 
-    def fetch_sitemap_page(self, url: str) -> list[dict]:
-        """Fetch a single sitemap page via HTTP and extract game IDs.
+    def fetch_sitemap_page(self, page: Page, url: str) -> list[dict]:
+        """Fetch a single sitemap page via browser and extract game IDs.
 
-        Individual sitemap XML pages are not behind Cloudflare,
-        so plain HTTP requests work and avoid browser memory issues.
+        Uses the browser to bypass Cloudflare/bot detection.
+        Retries with exponential backoff on failures.
 
         Args:
+            page: Playwright page to reuse for navigation
             url: Sitemap URL to fetch
 
         Returns:
             List of dicts with game_id and type
         """
-        logger.info(f"Fetching sitemap: {url}")
-        resp = http_requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=60)
-        resp.raise_for_status()
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                logger.info(f"Fetching sitemap: {url}")
+                resp = page.goto(url)
+                if resp and resp.status >= 400:
+                    raise RuntimeError(f"HTTP {resp.status} for {url}")
 
-        content = resp.text
-        games = []
+                content = page.content()
+                games = []
 
-        for match in re.finditer(self.GAME_ID_PATTERN, content):
-            game_type_suffix = match.group(1)  # '', 'expansion', or 'accessory'
-            game_id = int(match.group(2))
-            game_type = f"boardgame{game_type_suffix}"
-            games.append({"game_id": game_id, "type": game_type})
+                for match in re.finditer(self.GAME_ID_PATTERN, content):
+                    game_type_suffix = match.group(1)
+                    game_id = int(match.group(2))
+                    game_type = f"boardgame{game_type_suffix}"
+                    games.append({"game_id": game_id, "type": game_type})
 
-        logger.info(f"Found {len(games)} games in {url}")
-        return games
+                logger.info(f"Found {len(games)} games in {url}")
+                return games
+
+            except Exception as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    wait = self.RETRY_BACKOFF_BASE * (2 ** attempt)
+                    logger.warning(
+                        f"Error fetching {url}: {e}, "
+                        f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})"
+                    )
+                    time.sleep(wait)
+
+        raise last_error
 
     def fetch_all_ids(self) -> list[dict]:
         """Fetch all game IDs from BGG sitemaps.
 
-        Uses browser only for the sitemap index (Cloudflare protected),
-        then plain HTTP for individual sitemaps (not Cloudflare protected).
+        Uses a single browser session for both the sitemap index and
+        individual sitemaps to bypass Cloudflare/bot detection.
         Sitemaps are processed in order so that more specific types
         (expansion, accessory) overwrite less specific types (boardgame).
 
@@ -151,29 +169,29 @@ class BrowserIDFetcher:
         """
         all_games: dict[int, str] = {}  # game_id -> type (deduped, last-write-wins)
 
-        # Step 1: Use browser only for the Cloudflare-protected sitemap index
         with sync_playwright() as p:
-            logger.info("Launching browser for sitemap index...")
+            logger.info("Launching browser...")
             browser = p.chromium.launch(headless=self.headless)
             context = browser.new_context(user_agent=USER_AGENT)
             page = context.new_page()
 
             try:
+                # Step 1: Fetch the Cloudflare-protected sitemap index
                 sitemap_urls = self.fetch_sitemap_index(page)
+
+                # Step 2: Fetch individual sitemaps via the same browser session
+                # All sitemaps must succeed — partial results cause type misclassification
+                for i, sitemap_url in enumerate(sitemap_urls):
+                    logger.info(f"Processing sitemap {i+1}/{len(sitemap_urls)}")
+                    games = self.fetch_sitemap_page(page, sitemap_url)
+                    for game in games:
+                        all_games[game["game_id"]] = game["type"]
+
+                    # Be nice to the server
+                    time.sleep(1)
             finally:
                 browser.close()
                 logger.info("Browser closed")
-
-        # Step 2: Fetch individual sitemaps via plain HTTP (no browser needed)
-        # All sitemaps must succeed — partial results cause type misclassification
-        for i, sitemap_url in enumerate(sitemap_urls):
-            logger.info(f"Processing sitemap {i+1}/{len(sitemap_urls)}")
-            games = self.fetch_sitemap_page(sitemap_url)
-            for game in games:
-                all_games[game["game_id"]] = game["type"]
-
-            # Be nice to the server
-            time.sleep(1)
 
         # Convert back to list format
         result = [{"game_id": gid, "type": gtype} for gid, gtype in all_games.items()]
