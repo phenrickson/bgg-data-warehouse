@@ -14,7 +14,7 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 
-from ..modules.response_fetcher import ResponseFetcher
+from ..modules.response_refresher import ResponseRefresher
 from ..modules.response_processor import ResponseProcessor
 from ..utils.logging_config import setup_logging
 
@@ -68,11 +68,9 @@ def main() -> None:
     logger.info("=" * 80)
     logger.info("Step 1: Fetching responses from BGG API")
     logger.info("=" * 80)
-    response_fetcher = ResponseFetcher(
-        batch_size=len(game_ids),
-        chunk_size=20,
-    )
-    responses_fetched = response_fetcher.run(game_ids=game_ids)
+    refresher = ResponseRefresher(chunk_size=20)
+    games_to_refresh = [{"game_id": gid} for gid in game_ids]
+    responses_fetched = refresher.fetch_batch(games_to_refresh)
 
     if responses_fetched:
         logger.info("Responses fetched - proceeding to process them")
