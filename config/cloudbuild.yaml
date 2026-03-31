@@ -108,6 +108,40 @@ steps:
             --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
+  # Deploy Fetch Games (on-demand) Cloud Run Job - Create if not exists, otherwise update
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if gcloud run jobs describe bgg-fetch-games --region=us-central1 2>/dev/null; then
+          echo "Updating existing job: bgg-fetch-games"
+          gcloud run jobs update bgg-fetch-games \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
+            --args=src.pipeline.fetch_games \
+            --tasks=1 \
+            --max-retries=1 \
+            --task-timeout=30m \
+            --memory=2Gi \
+            --cpu=1 \
+            --region=us-central1 \
+            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+            --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
+        else
+          echo "Creating new job: bgg-fetch-games"
+          gcloud run jobs create bgg-fetch-games \
+            --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
+            --args=src.pipeline.fetch_games \
+            --tasks=1 \
+            --max-retries=1 \
+            --task-timeout=30m \
+            --memory=2Gi \
+            --cpu=1 \
+            --region=us-central1 \
+            --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+            --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
+        fi
+
 # Images to push to Container Registry
 images:
   - 'gcr.io/$PROJECT_ID/bgg-processor:latest'
