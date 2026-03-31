@@ -19,6 +19,10 @@ on:
 
   workflow_dispatch:
 
+concurrency:
+  group: dataform
+  cancel-in-progress: false
+
 env:
   GCP_PROJECT_ID: bgg-data-warehouse
   GCP_REGION: us-central1
