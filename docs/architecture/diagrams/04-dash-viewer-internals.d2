@@ -1,0 +1,145 @@
+direction: right
+
+classes: {
+  datasource: {
+    style: {
+      fill: "#1e1e2e"
+      stroke: "#ffd54f"
+      font-color: "#ffd54f"
+      border-radius: 4
+    }
+  }
+  layer: {
+    style: {
+      fill: "#0d1b2a"
+      stroke: "#4db6ac"
+      font-color: "#4db6ac"
+      border-radius: 6
+    }
+  }
+  page: {
+    style: {
+      fill: "#0d2e1a"
+      stroke: "#69f0ae"
+      font-color: "#69f0ae"
+      border-radius: 6
+    }
+  }
+  component: {
+    style: {
+      fill: "#1a1a2e"
+      stroke: "#80cbc4"
+      font-color: "#80cbc4"
+      border-radius: 6
+    }
+  }
+  auth: {
+    style: {
+      fill: "#1a1a2e"
+      stroke: "#e94560"
+      font-color: "#e94560"
+      border-radius: 6
+    }
+  }
+}
+
+# ── BigQuery Tables ──
+
+data: "BIGQUERY DATA SOURCES" {
+  style: {
+    fill: "#12121a"
+    stroke: "#ffd54f"
+    font-color: "#ffd54f"
+    border-radius: 12
+  }
+  games_active: "analytics.games_active" { class: datasource }
+  games_features: "analytics.games_features" { class: datasource }
+  filter_options: "analytics.filter_options" { class: datasource }
+  player_counts: "core.player_counts" { class: datasource }
+  similarity: "analytics.similarity_search" { class: datasource }
+  predictions: "analytics.bgg_predictions" { class: datasource }
+  coordinates: "analytics.game_coordinates" { class: datasource }
+}
+
+# ── Data Layer ──
+
+data_layer: "DATA LAYER" {
+  style: {
+    fill: "#0a1520"
+    stroke: "#4db6ac"
+    font-color: "#4db6ac"
+    border-radius: 12
+  }
+  client: "BigQueryClient\nget_games()\nget_game_details()\nget_filter_options()\nget_predictions()\nget_coordinates()" { class: layer }
+  cache: "Filesystem Cache\n.cache-data/\n4-hour TTL" { class: layer }
+
+  client -> cache: "memoize"
+}
+
+# ── App Layer ──
+
+app: "APPLICATION LAYER" {
+  style: {
+    fill: "#12121a"
+    stroke: "#69f0ae"
+    font-color: "#69f0ae"
+    border-radius: 12
+  }
+  server: "Flask + Dash\n(Gunicorn)" { class: page }
+  auth: "Authentication\nFlask-Login + bcrypt" { class: auth }
+  callbacks: "Callbacks\nsearch, filter, ratings\npredictions, similarity\nmonitoring" { class: component }
+  components: "Shared Components\nfilters, AG Grid\ngame cards, metrics" { class: component }
+
+  auth -> server: "login required"
+  server -> callbacks
+  components -> callbacks
+}
+
+# ── Pages ──
+
+pages: "PAGES" {
+  style: {
+    fill: "#0a200d"
+    stroke: "#69f0ae"
+    font-color: "#69f0ae"
+    border-radius: 12
+  }
+  landing: "Landing (/)" { class: page }
+  search: "Game Search" { class: page }
+  details: "Game Details" { class: page }
+  ratings: "Ratings Dashboard" { class: page }
+  new_games: "New Games" { class: page }
+  predictions: "Predictions" { class: page }
+  similarity: "Game Similarity" { class: page }
+  monitoring: "Monitoring" { class: page }
+}
+
+# ── Deployment ──
+
+deploy: "DEPLOYMENT" {
+  style: {
+    fill: "#12121a"
+    stroke: "#78909c"
+    font-color: "#78909c"
+    border-radius: 12
+  }
+  cloud_run: "Cloud Run\n2GB, 1 CPU\nmax 10 instances" { class: component }
+  github: "GitHub Actions\npush to main" {
+    style: {
+      fill: "#1a1a2e"
+      stroke: "#78909c"
+      font-color: "#78909c"
+      border-radius: 6
+      stroke-dash: 3
+    }
+  }
+
+  github -> cloud_run: "deploy"
+}
+
+# ── Connections ──
+
+data -> data_layer.client: { style: { stroke: "#ffd54f" } }
+data_layer.client -> app.callbacks: { style: { stroke: "#4db6ac" } }
+app.callbacks -> pages: { style: { stroke: "#69f0ae" } }
+deploy.cloud_run -> app.server: "serves" { style: { stroke: "#78909c"; stroke-dash: 5; font-color: "#90a4ae" } }

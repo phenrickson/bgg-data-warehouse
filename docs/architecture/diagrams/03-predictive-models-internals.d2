@@ -1,0 +1,173 @@
+direction: right
+
+classes: {
+  source: {
+    style: {
+      fill: "#0d1b2a"
+      stroke: "#64ffda"
+      font-color: "#64ffda"
+      border-radius: 6
+    }
+  }
+  model: {
+    style: {
+      fill: "#1a0d2e"
+      stroke: "#bb86fc"
+      font-color: "#bb86fc"
+      border-radius: 6
+    }
+  }
+  service: {
+    style: {
+      fill: "#1a0d2e"
+      stroke: "#ce93d8"
+      font-color: "#ce93d8"
+      border-radius: 6
+    }
+  }
+  store: {
+    style: {
+      fill: "#1e1e2e"
+      stroke: "#ffd54f"
+      font-color: "#ffd54f"
+      border-radius: 4
+    }
+  }
+  output: {
+    style: {
+      fill: "#1e1e2e"
+      stroke: "#69f0ae"
+      font-color: "#69f0ae"
+      border-radius: 4
+    }
+  }
+}
+
+# ── Input ──
+
+input: "FEATURES" {
+  style: {
+    fill: "#0a1520"
+    stroke: "#64ffda"
+    font-color: "#64ffda"
+    border-radius: 12
+  }
+  bq: "analytics.games_features\n(from bgg-data-warehouse)" { class: source }
+  categorical: "Categorical\ntarget encoding" { class: source }
+  numerical: "Numerical\nlog, binning" { class: source }
+  game_embed: "Game Embeddings\nSVD, 64-dim" { class: source }
+  text_embed: "Text Embeddings\nPMI, 100-dim" { class: source }
+
+  bq -> categorical
+  bq -> numerical
+  bq -> game_embed
+  bq -> text_embed
+}
+
+# ── Models ──
+
+models: "TRAINING PIPELINE" {
+  style: {
+    fill: "#130a20"
+    stroke: "#bb86fc"
+    font-color: "#bb86fc"
+    border-radius: 12
+  }
+  complexity: "Complexity\nARD Regression" { class: model }
+  hurdle: "Hurdle\nLogistic Regression" { class: model }
+  rating: "Rating\nARD Regression" { class: model }
+  users_rated: "Users Rated\nARD Regression" { class: model }
+  geek_rating: "Geek Rating\nARD Regression" { class: model }
+  simulation: "Bayesian Simulation\n1000 posterior samples\ncredible intervals" { class: model }
+
+  complexity -> rating: "pred as\nfeature" { style: { stroke: "#bb86fc"; font-color: "#90a4ae" } }
+  complexity -> users_rated: "pred as\nfeature" { style: { stroke: "#bb86fc"; font-color: "#90a4ae" } }
+  rating -> geek_rating: { style: { stroke: "#bb86fc" } }
+  users_rated -> geek_rating: { style: { stroke: "#bb86fc" } }
+  hurdle -> geek_rating: { style: { stroke: "#bb86fc" } }
+
+  complexity -> simulation: { style: { stroke: "#9575cd" } }
+  rating -> simulation: { style: { stroke: "#9575cd" } }
+  users_rated -> simulation: { style: { stroke: "#9575cd" } }
+  geek_rating -> simulation: { style: { stroke: "#9575cd" } }
+}
+
+# ── Registry ──
+
+registry: "MODEL REGISTRY (GCS)" {
+  style: {
+    fill: "#12121a"
+    stroke: "#ffd54f"
+    font-color: "#ffd54f"
+    border-radius: 12
+  }
+  experiments: "Experiments" { class: store }
+  registered: "Registered Models\npipeline.pkl" { class: store }
+
+  experiments -> registered: "promote best"
+}
+
+# ── Serving ──
+
+serving: "SERVING (Cloud Run)" {
+  style: {
+    fill: "#130a20"
+    stroke: "#ce93d8"
+    font-color: "#ce93d8"
+    border-radius: 12
+  }
+  scoring: "Scoring Service\n/predict_games\n/simulate_games\n/explain_game" { class: service }
+  embed_svc: "Embeddings Service" { class: service }
+  text_svc: "Text Embeddings Service" { class: service }
+}
+
+# ── Output ──
+
+output: "OUTPUT (BigQuery)" {
+  style: {
+    fill: "#12121a"
+    stroke: "#69f0ae"
+    font-color: "#69f0ae"
+    border-radius: 12
+  }
+  predictions: "ml_predictions_landing\n+ credible intervals" { class: output }
+  game_embed: "game_embeddings" { class: output }
+  desc_embed: "description_embeddings" { class: output }
+}
+
+# ── Consumers ──
+
+consumers: "CONSUMERS" {
+  style: {
+    fill: "#12121a"
+    stroke: "#78909c"
+    font-color: "#78909c"
+    border-radius: 12
+  }
+  dataform: "bgg-data-warehouse\nDataform" { class: source }
+  dash: "bgg-dash-viewer" {
+    style: {
+      fill: "#0d2e1a"
+      stroke: "#69f0ae"
+      font-color: "#69f0ae"
+      border-radius: 6
+    }
+  }
+}
+
+# ── Cross-section Connections ──
+
+input -> models: { style: { stroke: "#4db6ac" } }
+
+models.simulation -> registry.experiments: { style: { stroke: "#ffd54f" } }
+
+registry.registered -> serving.scoring: "load models" { style: { stroke: "#ce93d8"; font-color: "#90a4ae" } }
+input.bq -> serving.scoring: "load features" { style: { stroke: "#64ffda"; font-color: "#90a4ae" } }
+
+serving.scoring -> output.predictions: { style: { stroke: "#69f0ae" } }
+serving.embed_svc -> output.game_embed: { style: { stroke: "#69f0ae" } }
+serving.text_svc -> output.desc_embed: { style: { stroke: "#69f0ae" } }
+
+output.predictions -> consumers.dataform: { style: { stroke: "#64ffda"; stroke-dash: 3 } }
+output.predictions -> consumers.dash: { style: { stroke: "#69f0ae"; stroke-dash: 3 } }
+output.game_embed -> consumers.dataform: { style: { stroke: "#64ffda"; stroke-dash: 3 } }

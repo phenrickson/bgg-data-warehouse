@@ -1,0 +1,157 @@
+direction: right
+
+classes: {
+  warehouse: {
+    style: {
+      fill: "#0d1b2a"
+      stroke: "#64ffda"
+      font-color: "#64ffda"
+      border-radius: 6
+    }
+  }
+  ml: {
+    style: {
+      fill: "#1a0d2e"
+      stroke: "#bb86fc"
+      font-color: "#bb86fc"
+      border-radius: 6
+    }
+  }
+  viewer: {
+    style: {
+      fill: "#0d2e1a"
+      stroke: "#69f0ae"
+      font-color: "#69f0ae"
+      border-radius: 6
+    }
+  }
+  ext: {
+    style: {
+      fill: "#1a1a2e"
+      stroke: "#e94560"
+      font-color: "#e94560"
+      border-radius: 6
+    }
+  }
+  store: {
+    style: {
+      fill: "#1e1e2e"
+      stroke: "#ffd54f"
+      font-color: "#ffd54f"
+      border-radius: 4
+    }
+  }
+}
+
+# ── External ──
+
+bgg_api: "BGG XML API v2" { class: ext }
+bgg_site: "BGG Sitemaps" { class: ext }
+
+# ── Data Warehouse ──
+
+dw: "BGG DATA WAREHOUSE" {
+  style: {
+    fill: "#0a1520"
+    stroke: "#64ffda"
+    font-color: "#64ffda"
+    border-radius: 12
+  }
+
+  fetch_ids: "fetch-thing-ids\n(Cloud Run)" { class: warehouse }
+  fetch_new: "fetch-new-games\n(Cloud Run)" { class: warehouse }
+  refresh: "refresh-old-games\n(Cloud Run)" { class: warehouse }
+  dataform: "Dataform\nTransforms" { class: warehouse }
+
+  raw: "raw\nthing_ids, raw_responses\nfetched, processed" { class: store }
+  core: "core\ngames, rankings\nmechanics, categories" { class: store }
+  analytics: "analytics\ngames_features\ngames_active" { class: store }
+
+  fetch_ids -> raw
+  fetch_new -> raw
+  refresh -> raw
+  raw -> core: "parse &\nnormalize"
+  core -> dataform
+  dataform -> analytics
+}
+
+# ── Predictive Models ──
+
+ml: "BGG PREDICTIVE MODELS" {
+  style: {
+    fill: "#130a20"
+    stroke: "#bb86fc"
+    font-color: "#bb86fc"
+    border-radius: 12
+  }
+
+  training: "Training Pipeline\n(Cloud Run Job)\n5 outcome models" { class: ml }
+  embeddings: "Embeddings\ngame + text" { class: ml }
+  scoring: "Scoring Service\n(FastAPI / Cloud Run)" { class: ml }
+  gcs: "GCS\nmodels & experiments" { class: store }
+  bq: "BigQuery\nml_predictions_landing\ngame_embeddings" { class: store }
+
+  training -> gcs: "register"
+  gcs -> scoring: "load"
+  scoring -> bq: "predictions"
+  embeddings -> bq: "embeddings"
+}
+
+# ── Dash Viewer ──
+
+viewer: "BGG DASH VIEWER" {
+  style: {
+    fill: "#0a200d"
+    stroke: "#69f0ae"
+    font-color: "#69f0ae"
+    border-radius: 12
+  }
+
+  app: "Dash Web App\n(Cloud Run)" { class: viewer }
+  search: "Game Search" { class: viewer }
+  ratings: "Ratings" { class: viewer }
+  predictions: "Predictions" { class: viewer }
+  similarity: "Similarity" { class: viewer }
+  monitoring: "Monitoring" { class: viewer }
+
+  app -> search
+  app -> ratings
+  app -> predictions
+  app -> similarity
+  app -> monitoring
+}
+
+# ── Cross-project Connections ──
+
+bgg_site -> dw.fetch_ids: "game IDs" {
+  style: { stroke: "#e94560"; font-color: "#90a4ae" }
+}
+bgg_api -> dw.fetch_new: "XML data" {
+  style: { stroke: "#e94560"; font-color: "#90a4ae" }
+}
+bgg_api -> dw.refresh: {
+  style: { stroke: "#e94560" }
+}
+
+dw.analytics -> ml.training: "games_features" {
+  style: { stroke: "#64ffda"; font-color: "#90a4ae" }
+}
+dw.analytics -> ml.scoring: "features" {
+  style: { stroke: "#64ffda"; font-color: "#90a4ae" }
+}
+
+ml.bq -> dw.dataform: "cross-project\nBigQuery read" {
+  style: { stroke: "#bb86fc"; font-color: "#90a4ae"; stroke-dash: 3 }
+}
+
+dw.analytics -> viewer.app: "analytics\ntables" {
+  style: { stroke: "#69f0ae"; font-color: "#90a4ae" }
+}
+ml.bq -> viewer.app: "predictions &\nembeddings" {
+  style: { stroke: "#bb86fc"; font-color: "#90a4ae"; stroke-dash: 3 }
+}
+
+# GitHub Actions triggers
+dw -> ml: "repository_dispatch\n(after Dataform)" {
+  style: { stroke: "#78909c"; font-color: "#78909c"; stroke-dash: 5 }
+}

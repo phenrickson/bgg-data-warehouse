@@ -1,0 +1,162 @@
+direction: right
+
+classes: {
+  pipeline: {
+    style: {
+      fill: "#0d1b2a"
+      stroke: "#64ffda"
+      font-color: "#64ffda"
+      border-radius: 6
+    }
+  }
+  table: {
+    style: {
+      fill: "#1e1e2e"
+      stroke: "#ffd54f"
+      font-color: "#ffd54f"
+      border-radius: 4
+    }
+  }
+  ext: {
+    style: {
+      fill: "#1a1a2e"
+      stroke: "#e94560"
+      font-color: "#e94560"
+      border-radius: 6
+    }
+  }
+  schedule: {
+    style: {
+      fill: "#1a1a2e"
+      stroke: "#78909c"
+      font-color: "#78909c"
+      border-radius: 6
+      stroke-dash: 3
+    }
+  }
+}
+
+# ── Sources ──
+
+sources: "SOURCES" {
+  style: {
+    fill: "#12121a"
+    stroke: "#e94560"
+    font-color: "#e94560"
+    border-radius: 12
+  }
+  bgg_api: "BGG XML API v2" { class: ext }
+  bgg_sitemaps: "BGG Sitemaps" { class: ext }
+  ml_project: "bgg-predictive-models\n(cross-project BQ)" { class: ext }
+}
+
+# ── Pipelines ──
+
+pipelines: "PIPELINES (Cloud Run)" {
+  style: {
+    fill: "#0a1520"
+    stroke: "#4db6ac"
+    font-color: "#4db6ac"
+    border-radius: 12
+  }
+  fetch_ids: "fetch_thing_ids\n2 CPU, 8GB" { class: pipeline }
+  fetch_new: "fetch_new_games\n1 CPU, 2GB" { class: pipeline }
+  refresh: "refresh_old_games\n1 CPU, 2GB" { class: pipeline }
+}
+
+# ── Raw ──
+
+raw: "RAW" {
+  style: {
+    fill: "#12121a"
+    stroke: "#ffd54f"
+    font-color: "#ffd54f"
+    border-radius: 12
+  }
+  thing_ids: "thing_ids" { class: table }
+  raw_responses: "raw_responses" { class: table }
+  fetched: "fetched_responses" { class: table }
+  processed: "processed_responses" { class: table }
+  request_log: "request_log" { class: table }
+}
+
+# ── Core ──
+
+core: "CORE" {
+  style: {
+    fill: "#12121a"
+    stroke: "#64ffda"
+    font-color: "#64ffda"
+    border-radius: 12
+  }
+  games: "games" { class: table }
+  rankings: "rankings" { class: table }
+  player_counts: "player_counts" { class: table }
+  categories: "categories" { class: table }
+  mechanics: "mechanics" { class: table }
+  designers: "designers" { class: table }
+  publishers: "publishers" { class: table }
+  families: "families" { class: table }
+}
+
+# ── Analytics ──
+
+analytics: "ANALYTICS (Dataform)" {
+  style: {
+    fill: "#12121a"
+    stroke: "#80cbc4"
+    font-color: "#80cbc4"
+    border-radius: 12
+  }
+  games_active: "games_active" { class: table }
+  games_features: "games_features" { class: table }
+  deployed_models: "deployed_models" { class: table }
+  similarity: "game_similarity_search" { class: table }
+  filters: "filter_options_combined" { class: table }
+}
+
+# ── Schedules ──
+
+schedules: "SCHEDULES" {
+  style: {
+    fill: "#12121a"
+    stroke: "#78909c"
+    font-color: "#78909c"
+    border-radius: 12
+  }
+  cron_ids: "Daily 6AM UTC" { class: schedule }
+  cron_fetch: "After fetch_ids" { class: schedule }
+  cron_refresh: "Daily 7AM UTC" { class: schedule }
+  cron_dataform: "After data updates" { class: schedule }
+}
+
+# ── Connections ──
+
+sources.bgg_sitemaps -> pipelines.fetch_ids: { style: { stroke: "#e94560" } }
+sources.bgg_api -> pipelines.fetch_new: "20/req, 2 req/s" { style: { stroke: "#e94560"; font-color: "#90a4ae" } }
+sources.bgg_api -> pipelines.refresh: { style: { stroke: "#e94560" } }
+
+pipelines.fetch_ids -> raw.thing_ids: { style: { stroke: "#64ffda" } }
+pipelines.fetch_new -> raw.raw_responses: { style: { stroke: "#64ffda" } }
+pipelines.fetch_new -> raw.fetched: { style: { stroke: "#64ffda" } }
+pipelines.refresh -> raw.raw_responses: { style: { stroke: "#64ffda" } }
+
+raw.raw_responses -> core.games: "parse & normalize" { style: { stroke: "#ffd54f"; font-color: "#90a4ae" } }
+raw.raw_responses -> core.rankings: { style: { stroke: "#ffd54f" } }
+raw.raw_responses -> core.categories: { style: { stroke: "#ffd54f" } }
+raw.raw_responses -> core.mechanics: { style: { stroke: "#ffd54f" } }
+raw.raw_responses -> core.designers: { style: { stroke: "#ffd54f" } }
+raw.raw_responses -> core.publishers: { style: { stroke: "#ffd54f" } }
+
+core.games -> analytics.games_active: { style: { stroke: "#80cbc4" } }
+core.games -> analytics.games_features: { style: { stroke: "#80cbc4" } }
+core.categories -> analytics.games_features: { style: { stroke: "#80cbc4" } }
+core.mechanics -> analytics.games_features: { style: { stroke: "#80cbc4" } }
+core.categories -> analytics.filters: { style: { stroke: "#80cbc4" } }
+
+sources.ml_project -> analytics.deployed_models: "predictions" { style: { stroke: "#bb86fc"; font-color: "#90a4ae"; stroke-dash: 3 } }
+sources.ml_project -> analytics.similarity: "embeddings" { style: { stroke: "#bb86fc"; font-color: "#90a4ae"; stroke-dash: 3 } }
+
+schedules.cron_ids -> pipelines.fetch_ids: { style: { stroke: "#78909c"; stroke-dash: 5 } }
+schedules.cron_fetch -> pipelines.fetch_new: { style: { stroke: "#78909c"; stroke-dash: 5 } }
+schedules.cron_refresh -> pipelines.refresh: { style: { stroke: "#78909c"; stroke-dash: 5 } }
