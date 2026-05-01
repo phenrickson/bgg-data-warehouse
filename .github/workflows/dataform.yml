@@ -7,7 +7,7 @@ on:
 
   # Triggered by ML pipeline
   repository_dispatch:
-    types: [complexity_complete, embeddings_complete]
+    types: [complexity_complete, text_embeddings_complete, embeddings_complete]
 
   push:
     branches:
@@ -88,6 +88,10 @@ jobs:
             if [ "${{ github.event.action }}" == "complexity_complete" ]; then
               # Complexity predictions done, tell ML to continue with scoring
               EVENT_TYPE="dataform_complexity_ready"
+            elif [ "${{ github.event.action }}" == "text_embeddings_complete" ]; then
+              # Text embeddings propagated to predictions.bgg_description_embeddings;
+              # tell ML to continue with game embeddings
+              EVENT_TYPE="dataform_text_embeddings_ready"
             else
               # embeddings_complete - end of pipeline, no dispatch
               echo "Pipeline complete (embeddings_complete). No further dispatch needed."
