@@ -78,6 +78,43 @@ jobs:
 
           echo "Response: ${EXECUTION}"
 
+          INVOCATION_NAME=$(echo "${EXECUTION}" | jq -r '.name')
+          if [ -z "${INVOCATION_NAME}" ] || [ "${INVOCATION_NAME}" == "null" ]; then
+            echo "Failed to start workflow invocation"
+            exit 1
+          fi
+
+          # Poll until terminal state. The workflowInvocations POST returns
+          # immediately with state=RUNNING; downstream consumers (e.g. game
+          # embeddings) read tables this workflow refreshes, so we MUST wait
+          # for SUCCEEDED before letting the job exit.
+          for i in $(seq 1 90); do
+            sleep 10
+            ACCESS_TOKEN=$(gcloud auth print-access-token)
+            STATUS=$(curl -s "https://dataform.googleapis.com/v1beta1/${INVOCATION_NAME}" \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" | jq -r '.state')
+            echo "Poll $i: state=${STATUS}"
+            case "${STATUS}" in
+              SUCCEEDED)
+                echo "Dataform workflow invocation succeeded"
+                exit 0
+                ;;
+              FAILED|CANCELLED)
+                echo "Dataform workflow invocation ended with state=${STATUS}"
+                exit 1
+                ;;
+              RUNNING|CANCELING)
+                ;;
+              *)
+                echo "Unexpected state: ${STATUS}"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for Dataform workflow invocation to finish"
+          exit 1
+
       - name: Notify ML Pipeline
         if: success() && github.ref == 'refs/heads/main'
         env:
