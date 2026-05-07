@@ -1,0 +1,56 @@
+config {
+  type: "incremental",
+  schema: "predictions",
+  name: "user_collection_predictions",
+  uniqueKey: ["username", "game_id", "outcome"]
+}
+
+WITH active_models AS (
+  SELECT
+    username,
+    outcome,
+    model_version,
+    finalize_through_year,
+    registered_at
+  FROM ${ref("bgg-predictive-models", "raw", "collection_models_registry")}
+  WHERE status = 'active'
+),
+landing_for_active AS (
+  SELECT
+    p.username,
+    p.game_id,
+    p.outcome,
+    p.predicted_prob,
+    p.predicted_label,
+    p.threshold,
+    p.model_name,
+    p.model_version,
+    p.score_ts,
+    p.job_id,
+    ROW_NUMBER() OVER (
+      PARTITION BY p.username, p.game_id, p.outcome
+      ORDER BY p.score_ts DESC, p.job_id DESC
+    ) AS rn
+  FROM ${ref("bgg-predictive-models", "raw", "collection_predictions_landing")} p
+  INNER JOIN active_models a
+    ON  a.username      = p.username
+    AND a.outcome       = p.outcome
+    AND a.model_version = p.model_version
+  WHERE TRUE
+    ${when(incremental(), `AND p.score_ts > (SELECT MAX(score_ts) FROM ${self()})`)}
+)
+SELECT
+  l.username,
+  l.game_id,
+  l.outcome,
+  l.predicted_prob,
+  l.predicted_label,
+  l.threshold,
+  l.model_name,
+  l.model_version,
+  l.score_ts,
+  a.finalize_through_year,
+  a.registered_at
+FROM landing_for_active l
+INNER JOIN active_models a USING (username, outcome, model_version)
+WHERE l.rn = 1
