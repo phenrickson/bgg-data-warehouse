@@ -352,6 +352,30 @@
     }
   },
   {
+    "id": "predictions__user_collection_predictions",
+    "label": "predictions.user_collection_predictions",
+    "group": "predictions",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "raw__collection_models_registry",
+    "label": "raw.collection_models_registry",
+    "group": "raw",
+    "font": {
+      "size": 12
+    }
+  },
+  {
+    "id": "raw__collection_predictions_landing",
+    "label": "raw.collection_predictions_landing",
+    "group": "raw",
+    "font": {
+      "size": 12
+    }
+  },
+  {
     "id": "raw__complexity_predictions",
     "label": "raw.complexity_predictions",
     "group": "raw",
@@ -644,54 +668,66 @@
   },
   {
     "id": 40,
+    "from": "raw__collection_models_registry",
+    "to": "predictions__user_collection_predictions",
+    "arrows": "to"
+  },
+  {
+    "id": 41,
+    "from": "raw__collection_predictions_landing",
+    "to": "predictions__user_collection_predictions",
+    "arrows": "to"
+  },
+  {
+    "id": 42,
     "from": "raw__complexity_predictions",
     "to": "predictions__bgg_complexity_predictions",
     "arrows": "to"
   },
   {
-    "id": 41,
+    "id": 43,
     "from": "raw__description_embeddings",
     "to": "monitoring__deployed_models",
     "arrows": "to"
   },
   {
-    "id": 42,
+    "id": 44,
     "from": "raw__description_embeddings",
     "to": "predictions__bgg_description_embeddings",
     "arrows": "to"
   },
   {
-    "id": 43,
+    "id": 45,
     "from": "raw__game_coordinates",
     "to": "predictions__bgg_game_coordinates",
     "arrows": "to"
   },
   {
-    "id": 44,
-    "from": "raw__game_embeddings",
-    "to": "monitoring__deployed_models",
-    "arrows": "to"
-  },
-  {
-    "id": 45,
-    "from": "raw__game_embeddings",
-    "to": "predictions__bgg_game_embeddings",
-    "arrows": "to"
-  },
-  {
     "id": 46,
-    "from": "raw__ml_predictions_landing",
+    "from": "raw__game_embeddings",
     "to": "monitoring__deployed_models",
     "arrows": "to"
   },
   {
     "id": 47,
+    "from": "raw__game_embeddings",
+    "to": "predictions__bgg_game_embeddings",
+    "arrows": "to"
+  },
+  {
+    "id": 48,
+    "from": "raw__ml_predictions_landing",
+    "to": "monitoring__deployed_models",
+    "arrows": "to"
+  },
+  {
+    "id": 49,
     "from": "raw__ml_predictions_landing",
     "to": "predictions__bgg_predictions",
     "arrows": "to"
   },
   {
-    "id": 48,
+    "id": 50,
     "from": "raw__ml_predictions_landing",
     "to": "predictions__game_first_prediction",
     "arrows": "to"
