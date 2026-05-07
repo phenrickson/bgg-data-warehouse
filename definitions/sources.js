@@ -52,3 +52,15 @@ declare({
   schema: "raw",
   name: "game_coordinates"
 });
+
+declare({
+  database: "bgg-predictive-models",
+  schema: "raw",
+  name: "collection_predictions_landing"
+});
+
+declare({
+  database: "bgg-predictive-models",
+  schema: "raw",
+  name: "collection_models_registry"
+});
