@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
@@ -22,6 +25,16 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          uv sync
+          uv run playwright install --with-deps chromium
 
       - name: Get pre-run counts
         id: before
@@ -33,12 +46,9 @@ jobs:
             "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.thing_ids\`" | tail -1)
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
 
-      - name: Execute Fetch Thing IDs Job
+      - name: Fetch Thing IDs
         run: |
-          gcloud run jobs execute bgg-fetch-thing-ids \
-            --project=${GCP_PROJECT_ID} \
-            --region=${GCP_REGION} \
-            --wait
+          uv run python -m src.pipeline.fetch_thing_ids
 
       - name: Write job summary
         if: always()
