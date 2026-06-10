@@ -22,6 +22,7 @@ dependencies = [
     "google-auth>=2.40.3",
     "google-cloud-bigquery-datatransfer>=3.20.0",
     "playwright>=1.58.0",
+    "playwright-stealth>=2.0.3",
 ]
 
 [project.optional-dependencies]
@@ -53,3 +54,6 @@ target-version = ["py312"]
 line-length = 100
 target-version = "py312"
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
+
+[dependency-groups]
+dev = []
