@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, Browser, Page
+from playwright_stealth import Stealth
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -169,7 +170,9 @@ class BrowserIDFetcher:
         """
         all_games: dict[int, str] = {}  # game_id -> type (deduped, last-write-wins)
 
-        with sync_playwright() as p:
+        # Stealth evasions (hide navigator.webdriver, patch WebGL/plugins/etc.)
+        # make Cloudflare's managed challenge resolve from flagged egress IPs.
+        with Stealth().use_sync(sync_playwright()) as p:
             logger.info("Launching browser...")
             browser = p.chromium.launch(headless=self.headless)
             context = browser.new_context(user_agent=USER_AGENT)
