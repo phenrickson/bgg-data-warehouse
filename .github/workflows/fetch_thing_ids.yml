@@ -34,7 +34,10 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync
-          uv run playwright install --with-deps chromium
+          # Real Google Chrome (genuine TLS/WebGL fingerprint) clears Cloudflare's
+          # managed challenge more reliably than bundled Chromium from datacenter IPs.
+          uv run playwright install --with-deps chrome
+          sudo apt-get install -y xvfb
 
       - name: Get pre-run counts
         id: before
@@ -47,8 +50,11 @@ jobs:
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
 
       - name: Fetch Thing IDs
+        env:
+          BROWSER_CHANNEL: chrome     # use real Google Chrome, not bundled Chromium
+          BROWSER_HEADLESS: "false"   # headed under xvfb beats headless detection
         run: |
-          uv run python -m src.pipeline.fetch_thing_ids
+          xvfb-run -a uv run python -m src.pipeline.fetch_thing_ids
 
       - name: Write job summary
         if: always()

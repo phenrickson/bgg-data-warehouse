@@ -1,6 +1,7 @@
 """Module for fetching BoardGameGeek IDs using browser automation to bypass Cloudflare."""
 
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -171,10 +172,14 @@ class BrowserIDFetcher:
         all_games: dict[int, str] = {}  # game_id -> type (deduped, last-write-wins)
 
         # Stealth evasions (hide navigator.webdriver, patch WebGL/plugins/etc.)
-        # make Cloudflare's managed challenge resolve from flagged egress IPs.
+        # plus real Chrome (genuine TLS/WebGL fingerprint) running headed under
+        # a virtual display make Cloudflare's managed challenge resolve from
+        # flagged datacenter egress IPs. Channel/headless are env-controlled so
+        # the runner can use real Chrome + xvfb while local dev stays flexible.
+        channel = os.getenv("BROWSER_CHANNEL") or None  # e.g. "chrome"
         with Stealth().use_sync(sync_playwright()) as p:
-            logger.info("Launching browser...")
-            browser = p.chromium.launch(headless=self.headless)
+            logger.info("Launching browser (channel=%s, headless=%s)...", channel, self.headless)
+            browser = p.chromium.launch(channel=channel, headless=self.headless)
             context = browser.new_context(user_agent=USER_AGENT)
             page = context.new_page()
 
