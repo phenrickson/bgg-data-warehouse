@@ -24,8 +24,11 @@ function Log($msg) {
 Set-Location $RepoRoot
 Log "=== Home-box fetch_thing_ids run starting ==="
 
-# Optional: stay current with main (comment out for manual-rebuild discipline).
-git pull --ff-only 2>&1 | Tee-Object -FilePath $LogFile -Append
+# Stay current with main. Run native git via cmd so its stderr (progress
+# output) is redirected to the log without PowerShell's Stop preference
+# treating it as a terminating error.
+Log "Updating repo (git pull --ff-only)..."
+cmd /c "git pull --ff-only >> `"$LogFile`" 2>&1"
 
 if (-not (Test-Path $SaKey))   { Log "FATAL: missing $SaKey";   exit 1 }
 if (-not (Test-Path $PatFile)) { Log "FATAL: missing $PatFile"; exit 1 }
@@ -34,7 +37,11 @@ if (-not (Test-Path $PatFile)) { Log "FATAL: missing $PatFile"; exit 1 }
 $env:GOOGLE_APPLICATION_CREDENTIALS = $SaKey
 
 Log "Running scrape..."
-uv run python -m src.pipeline.fetch_thing_ids 2>&1 | Tee-Object -FilePath $LogFile -Append
+# Run via cmd so the native command's combined output goes cleanly to the log
+# and its exit code is read from $LASTEXITCODE. PowerShell 5.1 mangles native
+# `2>&1` (wraps stderr as ErrorRecords and, under ErrorActionPreference Stop,
+# aborts on the first stderr line - which Python logging emits immediately).
+cmd /c "uv run python -m src.pipeline.fetch_thing_ids >> `"$LogFile`" 2>&1"
 $code = $LASTEXITCODE
 
 if ($code -ne 0) {
