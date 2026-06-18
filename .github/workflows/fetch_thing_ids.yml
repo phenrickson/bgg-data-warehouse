@@ -1,8 +1,9 @@
 name: Fetch Thing IDs
 
 on:
-  schedule:
-    - cron: '0 6 * * *'  # Run daily at 6 AM UTC
+  # Scheduled scraping moved to the residential-IP home box (Cloudflare blocks
+  # datacenter egress). This workflow is now a manual fallback only.
+  # See docs/superpowers/specs/2026-06-18-home-box-scrape-design.md
   workflow_dispatch:
 
 env:

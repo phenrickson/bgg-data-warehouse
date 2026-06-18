@@ -5,6 +5,8 @@ on:
     workflows: ["Fetch Thing IDs"]
     types:
       - completed
+  repository_dispatch:
+    types: [thing_ids_fetched]
   workflow_dispatch:
 
 env:
@@ -15,7 +17,7 @@ jobs:
   fetch-new-games:
     name: Fetch and Process New Games
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Google Cloud Auth

@@ -1,0 +1,44 @@
+name: Scrape Heartbeat
+
+# The home box is the only scheduled scraper; with fetch_thing_ids' schedule
+# removed there is no daily red-X on failure. This warns if the box hasn't
+# successfully dispatched within the threshold (box offline, scrape error, etc).
+# See docs/superpowers/specs/2026-06-18-home-box-scrape-design.md
+on:
+  schedule:
+    - cron: '0 12 * * *'  # 6h after the box's 06:00 UTC slot
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+jobs:
+  check-heartbeat:
+    name: Warn if no recent box dispatch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for a recent dispatch-triggered Fetch New Games run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THRESHOLD_HOURS: '26'  # normal age ~6h; a single missed daily run = ~30h, trips cleanly
+        run: |
+          # Most recent "Run Fetch New Games" run triggered by repository_dispatch.
+          LAST=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/fetch_new_games.yml/runs?event=repository_dispatch&per_page=1" \
+            --jq '.workflow_runs[0].created_at // empty')
+
+          if [ -z "$LAST" ]; then
+            echo "::error::No repository_dispatch-triggered Fetch New Games run found at all."
+            exit 1
+          fi
+
+          LAST_EPOCH=$(date -d "$LAST" +%s)
+          NOW_EPOCH=$(date +%s)
+          AGE_HOURS=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+          echo "Last box dispatch: $LAST (${AGE_HOURS}h ago)"
+
+          if [ "$AGE_HOURS" -gt "$THRESHOLD_HOURS" ]; then
+            echo "::error::No box dispatch in ${AGE_HOURS}h (> ${THRESHOLD_HOURS}h). Check the home box."
+            exit 1
+          fi
+          echo "Heartbeat OK."
