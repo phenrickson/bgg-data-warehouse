@@ -68,3 +68,43 @@ resource "google_service_account_iam_member" "bgg_pipeline_act_as_self" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.bgg_pipeline.email}"
 }
+
+# =============================================================================
+# Home-box thing_ids scraper — dedicated least-privilege service account.
+#
+# The fetch_thing_ids scrape runs on a residential-IP home box (Cloudflare
+# blocks datacenter egress). This SA is scoped to raw-dataset write only, so a
+# leaked box key cannot touch GCS / Cloud Run / other datasets, and it rotates
+# independently of the broad CI key (GCP_SA_KEY_BGG_DW / bgg_pipeline).
+# See docs/superpowers/specs/2026-06-18-home-box-scrape-design.md
+# =============================================================================
+
+resource "google_service_account" "thing_ids_scraper" {
+  account_id   = "bgg-thing-ids-scraper"
+  display_name = "BGG thing_ids home-box scraper"
+  description  = "Least-privilege SA for the residential-IP fetch_thing_ids scrape"
+  project      = var.project_id
+}
+
+# Run BigQuery query/load jobs (jobUser has no narrower scope than project).
+resource "google_project_iam_member" "thing_ids_scraper_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.thing_ids_scraper.email}"
+}
+
+# BigQuery Storage Read API — IDFetcher.get_existing_ids() uses .to_dataframe().
+resource "google_project_iam_member" "thing_ids_scraper_read_session" {
+  project = var.project_id
+  role    = "roles/bigquery.readSessionUser"
+  member  = "serviceAccount:${google_service_account.thing_ids_scraper.email}"
+}
+
+# Read/write/create tables in the `raw` dataset ONLY (temp table + MERGE into
+# thing_ids). Dataset-scoped, NOT a project-level grant.
+resource "google_bigquery_dataset_iam_member" "thing_ids_scraper_raw_editor" {
+  dataset_id = google_bigquery_dataset.bgg_raw.dataset_id
+  project    = var.project_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.thing_ids_scraper.email}"
+}
