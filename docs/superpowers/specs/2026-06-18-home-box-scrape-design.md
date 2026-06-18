@@ -1,7 +1,7 @@
-# Home-box scrape via cron + repository_dispatch
+# Home-box scrape via Task Scheduler + repository_dispatch
 
-**Status:** Design in progress. Section 1 (architecture) approved. Sections 2–4 are
-drafted from decided answers but NOT yet reviewed/approved — see "Open questions".
+**Status:** Design APPROVED. All sections reviewed; open questions resolved (see
+"Resolved decisions"). Ready for an implementation plan.
 
 **Branch:** `feature/home-box-scrape`
 
@@ -22,7 +22,7 @@ datacenter IPs:
 
 From a **residential IP** the scrape works trivially (even a no-browser `curl_cffi` GET
 returns 200). So the fix is residential egress, not more browser cleverness. A home box
-is available to host it.
+(the maintainer's always-on Windows 11 machine) is available to host it.
 
 Constraint: **the repo is public**, so a registered GitHub self-hosted runner is unsafe
 (fork PRs could execute arbitrary code on the home machine). The chosen architecture
@@ -31,13 +31,13 @@ avoids running any GitHub-controlled code on the box.
 ## Section 1 — Architecture & data flow (APPROVED)
 
 ```
-Home box (cron @ 06:00 UTC, residential IP)
-  └─ docker run pipeline-image:
-       • GOOGLE_APPLICATION_CREDENTIALS → mounted SA key
-       • runs: python -m src.pipeline.fetch_thing_ids
+Home box (Windows 11, Task Scheduler @ 06:00 UTC, residential IP)
+  └─ wrapper script:
+       • GOOGLE_APPLICATION_CREDENTIALS → credentials/sa-key.json (scoped SA)
+       • runs: uv run python -m src.pipeline.fetch_thing_ids
        • stealth + bundled Chromium clears Cloudflare (residential IP)
        • merges new IDs into bgg-data-warehouse.raw.thing_ids
-  └─ on success: curl GitHub API → repository_dispatch {event_type: thing_ids_fetched}
+  └─ on exit 0: curl GitHub API → repository_dispatch {event_type: thing_ids_fetched}
         │
         ▼
 GitHub Actions: Run Fetch New Games  (now also triggers on repository_dispatch)
@@ -50,23 +50,28 @@ The box is the only scheduled scraper. GitHub executes nothing *on* the box — 
 *receives* an API call — so the public-repo fork-PR attack surface never touches the home
 machine. The downstream Actions chain is unchanged except for one added trigger.
 
-## Decided parameters
+## Resolved decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Architecture | Cron + `repository_dispatch` | No GitHub code runs on the box → eliminates public-repo runner risk |
-| Runtime on box | Docker (reuse `docker/Dockerfile.pipeline`) | Pins Python/Chromium/system-libs → survives host OS drift for years |
-| BigQuery auth | Service-account key file on the box | Works unattended; same identity family as `GCP_SA_KEY_BGG_DW` |
+| Architecture | Task Scheduler + `repository_dispatch` | No GitHub code runs on the box → eliminates public-repo runner risk |
+| Runtime on box | **Native `uv run`** (not Docker) | Box is a Windows machine the maintainer actively maintains; Docker Desktop needs an interactive session (perpetual login + daemon-must-be-up). Native is simpler, has no daemon dependency, and already proven by the interim manual runs. |
+| BigQuery auth | **Dedicated least-privilege SA key** in `credentials/` | Bounds blast radius if the home-box key leaks (BQ-write to `raw` only — no GCS/Cloud Run/other datasets); rotates independently of CI's `GCP_SA_KEY_BGG_DW`. |
+| Box | Maintainer's always-on Windows 11 desktop | Must be powered on, logged in, and awake at 06:00 UTC (~22:00 PT / 01:00 ET prior day). |
 | Downstream trigger | Add `repository_dispatch` to `fetch_new_games.yml` alongside existing `workflow_run` | Minimal change; chain runs unchanged; only fires on box success |
-| Old GitHub workflow | `fetch_thing_ids.yml`: remove `schedule:`, keep `workflow_dispatch` fallback; revert real-chrome/xvfb experiment to simpler version | Stops daily red noise without deleting work |
+| Old GitHub workflow | `fetch_thing_ids.yml`: remove `schedule:`, keep `workflow_dispatch` fallback | Stops daily red noise without deleting work. (The real-chrome/xvfb experiment lives only on the unmerged `fix/cloudflare-real-chrome` branch — `main` already has the simple stealth version, so no revert needed here.) |
+| Failure visibility | GitHub **heartbeat workflow** | Scheduled workflow warns if `raw.thing_ids` hasn't been written recently — replaces the red-X signal lost when the scheduled scrape is disabled. |
 
-## Section 2 — Dispatch handshake (DRAFT, not approved)
+## Section 2 — Dispatch handshake (APPROVED)
 
 - Box, on successful merge, calls:
   `POST /repos/phenrickson/bgg-data-warehouse/dispatches`
   with `{"event_type": "thing_ids_fetched"}`.
-- Auth: a GitHub PAT (fine-grained, scoped to this repo, "Contents: read" + the
-  permission required to send dispatches) stored on the box (env/secrets file, not in repo).
+- Auth: a **fine-grained GitHub PAT** scoped to this repo with **Contents: write** +
+  **Metadata: read** (the create-a-repository-dispatch-event endpoint requires
+  `contents: write` — read-only is NOT sufficient). Stored on the box at
+  `credentials/github-pat.txt` (gitignored; see Section 3), read by the host wrapper —
+  never injected anywhere GitHub controls.
 - `fetch_new_games.yml` adds:
   ```yaml
   on:
@@ -74,44 +79,85 @@ machine. The downstream Actions chain is unchanged except for one added trigger.
     repository_dispatch: { types: [thing_ids_fetched] }                   # new
     workflow_dispatch:                                                     # existing
   ```
-- The job's `if:` guard must accept the new event (currently gates on
-  `workflow_run.conclusion == 'success'` / `workflow_dispatch`); add
-  `github.event_name == 'repository_dispatch'`.
+- The job's `if:` guard currently gates on
+  `github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'`;
+  add `|| github.event_name == 'repository_dispatch'`.
 
-## Section 3 — Box setup (DRAFT, not approved)
+## Section 3 — Box setup (APPROVED, Windows native)
 
-- Install Docker on the home box (OS TBD — see open questions).
-- Build or pull the `docker/Dockerfile.pipeline` image.
-- Place the SA key JSON at a fixed path; mount read-only into the container.
-- Place config: the container needs `config/bigquery.yaml` (baked into the image already
-  via `COPY . .`) — confirm no host config needed.
-- Cron entry (~06:00 UTC) runs a small wrapper script:
-  1. `docker run` the fetch (creds mounted, network access)
-  2. on exit 0, `curl` the `repository_dispatch`
-  3. log output somewhere on the box for debugging
-- Idempotency: the pipeline already dedups via MERGE, so a re-run is safe.
+The box is a Windows 11 machine; runtime is native `uv run` (no Docker), driven by Task
+Scheduler.
 
-## Section 4 — Old workflow changes (DRAFT, not approved)
+**Secrets** — a gitignored `credentials/` directory at the repo root (already covered by
+`.gitignore`: both `credentials/` and `*.json`). Lock it down with NTFS ACLs to the
+maintainer's account only.
 
-- `fetch_thing_ids.yml`: delete the `schedule:` block; keep `workflow_dispatch`.
-- Revert the `BROWSER_CHANNEL=chrome` / xvfb / real-chrome experiment back to the
-  bundled-Chromium + stealth version (the `feature/home-box-scrape` branch is off `main`,
-  which already has stealth; the real-chrome experiment lives only on
-  `fix/cloudflare-real-chrome` and was never merged — confirm no cleanup needed on main).
+- `credentials/sa-key.json` — the scoped SA key (Section "Least-privilege SA" below).
+  Used by the scrape via `GOOGLE_APPLICATION_CREDENTIALS`.
+- `credentials/github-pat.txt` — the fine-grained PAT (one line). Read by the wrapper for
+  the dispatch call only.
 
-## Open questions (resolve when resuming)
+**Toolchain** — confirm `uv` is installed and `uv run playwright install chromium` has
+provisioned the bundled Chromium on the box. (`config/bigquery.yaml` is already in the
+repo working tree, so no extra config placement is needed.)
 
-1. **Box OS/hardware** — what is the home box (Pi / Linux desktop / macOS / always-on
-   server)? Determines Docker install details and cron mechanics. Must be on & online at
-   06:00 UTC.
-2. **PAT scope & storage** — fine-grained vs classic; exact permission needed to send
-   `repository_dispatch`; where on the box the token lives.
-3. **SA identity** — reuse the existing `GCP_SA_KEY_BGG_DW` service account, or mint a new
-   least-privilege SA with only BQ write to the warehouse? (Least-privilege preferred.)
-4. **Failure visibility** — if the box's cron fails (box offline, scrape error), how do we
-   find out? (No GitHub red X anymore since the scheduled workflow is disabled.) Options:
-   box-side alert, a heartbeat, or a GitHub workflow that warns if no dispatch arrived.
-5. **Confirm** Sections 2–4 with the user before writing the implementation plan.
+**Wrapper script** (PowerShell), run by Task Scheduler ~06:00 UTC:
+
+1. `cd` to the repo; optionally `git pull` to stay current with `main`.
+2. Set `GOOGLE_APPLICATION_CREDENTIALS` to `credentials/sa-key.json` for this process only
+   (not a global/system env var).
+3. `uv run python -m src.pipeline.fetch_thing_ids`.
+4. On exit 0, read the PAT and `curl` the `repository_dispatch`.
+5. Append stdout/stderr to a log file on the box for debugging.
+
+**Task Scheduler config** — trigger at 06:00 UTC; "Run only when user is logged on" (native
+process, no Docker daemon needed); "Wake the computer to run this task"; and Windows
+sleep/fast-startup settings adjusted so the box is reliably awake. The box must stay
+powered on and logged in at that hour.
+
+**Idempotency** — the pipeline dedups via `MERGE`, so a re-run (or a missed-then-catch-up
+run) is safe.
+
+## Least-privilege SA (APPROVED, Terraform)
+
+New Terraform-managed service account, scoped to exactly what the scrape does (read
+existing IDs, load a temp table, `MERGE` into `raw.thing_ids`, delete the temp table):
+
+- `google_service_account` (e.g. `bgg-thing-ids-scraper`).
+- `roles/bigquery.jobUser` at project level — run query/load jobs.
+- `roles/bigquery.readSessionUser` at project level — the code's `.to_dataframe()` uses the
+  BigQuery Storage Read API.
+- `roles/bigquery.dataEditor` scoped to the **`raw` dataset only** via
+  `google_bigquery_dataset_iam_member` referencing `google_bigquery_dataset.bgg_raw` — NOT
+  a project-level grant.
+- A key for the SA, exported and placed at `credentials/sa-key.json` on the box.
+
+A leaked copy of this key can touch only the `raw` dataset and BQ job execution — no GCS,
+no Cloud Run, no other datasets — and is rotatable without affecting CI.
+
+## Section 4 — Old workflow changes (APPROVED)
+
+- `fetch_thing_ids.yml`: delete the `schedule:` block; keep `workflow_dispatch` as a manual
+  fallback.
+- No code revert needed on `main`: the real-chrome/xvfb experiment was never merged (it
+  lives only on `fix/cloudflare-real-chrome`); `main` already runs the bundled-Chromium +
+  stealth version.
+
+## Section 5 — Failure visibility (APPROVED, heartbeat)
+
+With the scheduled scrape disabled, GitHub no longer shows a daily red X on failure. A
+scheduled **heartbeat workflow** replaces that signal:
+
+- Runs on a `schedule:` (e.g. a few hours after the box's 06:00 UTC slot).
+- Queries the freshness of `raw.thing_ids` (e.g. `MAX(load_timestamp)`); if no write has
+  landed within a staleness threshold (e.g. ~36h, allowing for "no new IDs" days — TBD in
+  implementation), the workflow fails so it surfaces as a notification.
+- Uses the existing `GCP_SA_KEY_BGG_DW` (read-only query in CI is fine; the scoped SA is
+  for the box only).
+- Threshold tuning note: "no new IDs found" is a *successful* run that may still write a
+  `load_timestamp`-bearing row only when there ARE new IDs — confirm during implementation
+  whether to heartbeat on table writes or on a dedicated run-marker, so a legitimately
+  empty day doesn't false-alarm.
 
 ## Out of scope
 
@@ -122,7 +168,8 @@ machine. The downstream Actions chain is unchanged except for one added trigger.
 
 ## Verification (manual stop-gap, already working)
 
-Until the box is set up, the maintainer runs the scrape locally from a residential IP:
-`use-personal` → `uv run python -m src.pipeline.fetch_thing_ids`, then manually dispatches
-`Run Fetch New Games`. This is the interim process and validates the residential-IP premise
-(local runs on 06-15 and 06-18 succeeded: 71 and 117 new IDs merged respectively).
+Until the box automation is set up, the maintainer runs the scrape locally from a
+residential IP: `use-personal` → `uv run python -m src.pipeline.fetch_thing_ids`, then
+manually dispatches `Run Fetch New Games`. This is the interim process and validates the
+residential-IP premise (local runs on 06-15 and 06-18 succeeded: 71 and 117 new IDs merged
+respectively).
