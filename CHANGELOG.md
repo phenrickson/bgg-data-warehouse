@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-07-15
+
+### Changed
+
+- **Scheduled ID scraping moved to a residential-IP "home box"**: BGG's Cloudflare protection blocks datacenter egress, so `fetch_thing_ids` no longer runs on a schedule in GitHub Actions. A residential-IP box runs the scrape via Task Scheduler and, on success, fires a `repository_dispatch` (`thing_ids_fetched`) that resumes the downstream `Fetch New Games → Run Dataform` chain. `fetch_thing_ids.yml` remains as a manual `workflow_dispatch` fallback. (#75, #76)
+- **Scrape Heartbeat workflow**: warns if no successful home-box dispatch lands within ~26h (box offline, scrape error, etc.), replacing the daily red-X that the removed schedule used to provide. (#76)
+
+### Fixed
+
+- **Cloudflare bot detection on sitemaps**: fetch the sitemap index and pages through a stealth browser session instead of plain HTTP. (#75)
+- **Home-box wrapper reliability**: run native commands via `cmd` so PowerShell 5.1 doesn't treat native stderr as a terminating error (#77); write the run log as consistent UTF-8 (#78).
+- **Scrape starved by Modern Standby**: the home mini PC was dropping into low-power standby mid-run, killing network connectivity and failing the fetch. The wrapper now holds a `SetThreadExecutionState` wake-lock for the duration of the run, and `fetch_sitemap_index` retries with exponential backoff and uses `wait_until="domcontentloaded"` instead of hanging on `load`. (#79)
+
+### Added
+
+- **Claude Code skills** under `.claude/skills/` (developer tooling, no runtime change): `brainstorming`, `planning`, `debugging`, `write-tests`, `explain-codebase`, `data-exploration`, `dataform-model`, `release`. (#80)
+
 ## [0.6.4] - 2026-05-04
 
 ### Added
