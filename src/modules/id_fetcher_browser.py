@@ -86,7 +86,11 @@ class BrowserIDFetcher:
     def fetch_sitemap_index(self, page: Page) -> list[str]:
         """Fetch and parse the sitemap index to get individual sitemap URLs.
 
-        Uses the browser to bypass Cloudflare on the index page.
+        Uses the browser to bypass Cloudflare on the index page. This is the
+        first and most critical navigation of the run - if it fails, nothing
+        downstream can proceed - so it retries with exponential backoff just
+        like fetch_sitemap_page rather than letting a single transient blip
+        (a network hiccup or a Cloudflare interstitial) kill the whole scrape.
 
         Args:
             page: Playwright page object
@@ -94,23 +98,51 @@ class BrowserIDFetcher:
         Returns:
             List of sitemap URLs for board games, sorted by type
         """
-        logger.info(f"Fetching sitemap index: {self.SITEMAP_INDEX_URL}")
-        page.goto(self.SITEMAP_INDEX_URL)
-        self._wait_for_cloudflare(page)
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                logger.info(f"Fetching sitemap index: {self.SITEMAP_INDEX_URL}")
+                # wait_until="domcontentloaded" (not the default "load"): we only
+                # need the parsed HTML to regex out sitemap URLs. Waiting for
+                # every subresource to finish can hang indefinitely behind a
+                # Cloudflare challenge - that "load"-timeout is what stalled the
+                # 2026-07-14/15 runs.
+                page.goto(self.SITEMAP_INDEX_URL, wait_until="domcontentloaded")
+                self._wait_for_cloudflare(page)
 
-        content = page.content()
+                content = page.content()
 
-        full_urls = []
-        for match in re.finditer(self.SITEMAP_PATTERN, content):
-            full_urls.append(match.group(0))
+                full_urls = []
+                for match in re.finditer(self.SITEMAP_PATTERN, content):
+                    full_urls.append(match.group(0))
 
-        # Sort: boardgame sitemaps first, then expansion, then accessory
-        full_urls.sort(key=self._sitemap_sort_key)
+                # A 200 with no sitemap URLs means we got a block/challenge page
+                # rather than the real index - treat it as a retryable failure.
+                if not full_urls:
+                    raise RuntimeError(
+                        "No sitemap URLs found on index page "
+                        "(possible Cloudflare block or empty response)"
+                    )
 
-        logger.info(f"Found {len(full_urls)} board game sitemaps")
-        for url in full_urls:
-            logger.info(f"  {url}")
-        return full_urls
+                # Sort: boardgame sitemaps first, then expansion, then accessory
+                full_urls.sort(key=self._sitemap_sort_key)
+
+                logger.info(f"Found {len(full_urls)} board game sitemaps")
+                for url in full_urls:
+                    logger.info(f"  {url}")
+                return full_urls
+
+            except Exception as e:
+                last_error = e
+                if attempt < self.MAX_RETRIES - 1:
+                    wait = self.RETRY_BACKOFF_BASE * (2 ** attempt)
+                    logger.warning(
+                        f"Error fetching sitemap index: {e}, "
+                        f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})"
+                    )
+                    time.sleep(wait)
+
+        raise last_error
 
     def fetch_sitemap_page(self, page: Page, url: str) -> list[dict]:
         """Fetch a single sitemap page via browser and extract game IDs.
