@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-07-15
+
+### Removed
+
+- **Retired the in-repo Streamlit dashboard**: the consumer-facing app is now the separate `bgg-dash-viewer` project, which reads the `analytics`/`predictions` datasets directly. Removed `src/visualization/`, `docker/Dockerfile.dashboard`, the `deploy-dashboard.yml` workflow, and the now-unused `streamlit`/`plotly` dependencies.
+
+### Documentation
+
+- Refreshed `README.md` and `docs/architecture.md` to the current pipeline (home-box scrape, event-driven `repository_dispatch` chain, four pipelines, ML/predictions integration), fixing stale commands, Cloud Run job names, and secret names. Corrected the `docs/bgg_api.md` authentication note (BGG's XML API2 is public) and removed the obsolete `docs/dashboard_deployment.md`.
+
 ## [0.6.5] - 2026-07-15
 
 ### Changed

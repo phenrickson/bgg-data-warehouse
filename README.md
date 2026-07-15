@@ -1,157 +1,173 @@
 # BGG Data Warehouse
 
-A data pipeline for collecting, processing, and analyzing BoardGameGeek game data using BigQuery.
+A data pipeline that collects BoardGameGeek (BGG) game data, lands it in BigQuery,
+and transforms it into a normalized warehouse plus analytics and ML-prediction
+tables for downstream consumers.
 
 ## Overview
 
-This project collects board game data from BoardGameGeek's API, stores raw responses in BigQuery, and processes them into a normalized data warehouse for analysis.
+1. **Discover IDs** — new game IDs are found by scraping BGG's sitemaps (which sit
+   behind Cloudflare) and upserted into `raw.thing_ids`.
+2. **Fetch** — game data is fetched from BGG's public XML API2 and stored as raw XML
+   in BigQuery.
+3. **Process** — raw responses are parsed into normalized `core` tables.
+4. **Transform** — [Dataform](https://cloud.google.com/dataform) models build the
+   `analytics` and `predictions` datasets.
+5. **Enrich** — ML predictions and embeddings from the sibling
+   [`bgg-predictive-models`](https://github.com/phenrickson/bgg-predictive-models)
+   project flow in via cross-project Dataform sources, coordinated by a bidirectional
+   `repository_dispatch` event chain.
+6. **Consume** — the `analytics` and `predictions` datasets are read by downstream
+   apps, notably the separate
+   [`bgg-dash-viewer`](https://github.com/phenrickson/bgg-dash-viewer) project. This
+   repo is the warehouse/back end; it does not serve a UI.
+
+For the full picture see [docs/architecture.md](docs/architecture.md) and the
+diagrams under [docs/architecture/diagrams/](docs/architecture/diagrams/).
 
 ## Architecture
 
-### Pipeline Components
+### Pipelines (`src/pipeline/`)
 
-**Fetch New Games** (`src/pipeline/fetch_new_games.py`)
-- Retrieves new board game IDs from BoardGameGeek
-- Fetches API responses for unfetched games
-- Processes responses into normalized tables
-- Runs daily at 6 AM UTC
+| Pipeline | What it does | How it runs |
+|----------|--------------|-------------|
+| `fetch_thing_ids` | Discovers new game IDs by scraping BGG sitemaps (a stealth browser bypasses Cloudflare); MERGEs them into `raw.thing_ids`. | **Scheduled off-platform on a residential-IP home box** — datacenter egress is Cloudflare-blocked. On success the box fires a `thing_ids_fetched` `repository_dispatch`. The `Fetch Thing IDs` GitHub Actions workflow remains as a manual fallback. See [scripts/box/README.md](scripts/box/README.md). |
+| `fetch_new_games` | Fetches API responses for unfetched IDs in `raw.thing_ids` and processes them into `core` tables. | Triggered by the home box's `thing_ids_fetched` dispatch (and after `Fetch Thing IDs`). |
+| `refresh_old_games` | Re-fetches stale games based on a publication-year policy (see `config/bigquery.yaml`). | Scheduled daily at **07:00 UTC**. |
+| `fetch_games` | On-demand fetch/refresh of specific game IDs. | Manual `workflow_dispatch` with a comma-separated `game_ids` input. |
 
-**Refresh Old Games** (`src/pipeline/refresh_old_games.py`)
-- Refreshes stale game data based on publication year
-- Recent games (0-2 years): refreshed weekly
-- Established games (2-5 years): refreshed monthly
-- Classic games (5-10 years): refreshed quarterly
-- Vintage games (10+ years): refreshed bi-annually
-- Runs daily at 7 AM UTC
+### Orchestration (GitHub Actions + `repository_dispatch`)
 
-### Data Flow
+The daily flow is event-driven rather than a fixed schedule:
 
-```mermaid
-graph TD
-    A[BGG XML API] -->|Fetch Game IDs| B[thing_ids Table]
-    B -->|Unfetched IDs| C[Response Fetcher]
-    C -->|Rate-Limited Requests| A
-    C -->|Store Raw Data| D[raw_responses Table]
-    C -->|Track Fetch| E[fetched_responses Table]
-    E -->|Unprocessed Records| F[Response Processor]
-    D -->|Raw XML| F
-    F -->|Normalized Data| G[BigQuery Warehouse]
-    F -->|Track Processing| H[processed_responses Table]
+```text
+home box (~06:00 UTC)
+  └─ repository_dispatch: thing_ids_fetched
+       └─ Run Fetch New Games
+            └─ (workflow_run) Run Dataform ──> analytics + predictions
+                 └─ repository_dispatch: dataform_complete ──> bgg-predictive-models
+                        (ML scores complexity → text embeddings → game embeddings)
+                 ┌───────────────────────────────────────────────┘
+                 └─ complexity_complete / text_embeddings_complete / embeddings_complete
+                      └─ Run Dataform (re-run to publish the new ML outputs)
 ```
 
-### BigQuery Datasets
+`Scrape Heartbeat` runs daily at 12:00 UTC and fails loudly if no home-box dispatch
+has landed in ~26h (box offline, scrape error, etc.).
 
-**Raw Dataset** (`raw`)
-- `thing_ids`: Game ID registry
-- `raw_responses`: Raw API responses
-- `fetched_responses`: Fetch tracking
-- `processed_responses`: Processing tracking
-- `request_log`: API request audit log
-- `fetch_in_progress`: Prevents duplicate concurrent fetches
+Key workflows in `.github/workflows/`:
 
-**Core Dataset** (`core`)
-- `games`: Core game data
-- `categories`, `mechanics`, `families`: Dimension tables
-- `designers`, `artists`, `publishers`: Creator tables
-- `rankings`, `player_counts`: Metrics tables
+| Workflow | Trigger |
+|----------|---------|
+| `fetch_new_games.yml` | `repository_dispatch: thing_ids_fetched`, after `Fetch Thing IDs`, or manual |
+| `refresh.yml` | daily `0 7 * * *`, or manual |
+| `fetch_games.yml` | manual `workflow_dispatch` (`game_ids` input) |
+| `dataform.yml` | after a fetch/refresh, `repository_dispatch` from the ML repo, push to `definitions/**`, or manual |
+| `fetch_thing_ids.yml` | manual fallback only |
+| `scrape_heartbeat.yml` | daily `0 12 * * *` |
+| `deploy.yml` | push to `main` (builds & deploys the Cloud Run jobs) |
+| `terraform.yml` | push/PR to `terraform/**` |
+| `tag-release.yml` | push to `main` touching `pyproject.toml` |
 
-**Analytics Dataset** (`analytics`) - Managed by Dataform
-- `games_active`: View of latest game data (deduped by game_id)
-- `games_features`: Denormalized table with computed columns:
-  - `hurdle`: Binary flag for games with 25+ ratings
-  - `geek_rating`, `complexity`, `rating`: Renamed metrics
-  - `log_users_rated`: Log-transformed user count
-  - Aggregated arrays for categories, mechanics, publishers, designers, artists, families
+### Data model (BigQuery)
+
+| Dataset | Managed by | Contents |
+|---------|-----------|----------|
+| `raw` | pipeline code | `thing_ids`, `raw_responses`, `fetched_responses`, `processed_responses`, `request_log`, `fetch_in_progress` |
+| `core` | pipeline code | `games` plus dimension (`categories`, `mechanics`, `families`, …), creator (`designers`, `artists`, `publishers`) and association (`game_categories`, …) tables |
+| `analytics` | Dataform | `games_active`, `games_features`, `best_player_counts`, `game_dropdown_options`, `game_similarity_search`, `filter_*` |
+| `predictions` | Dataform (from `bgg-predictive-models`) | `bgg_predictions`, `bgg_complexity_predictions`, `bgg_game_embeddings`, `bgg_description_embeddings`, `bgg_game_coordinates`, `user_collection_predictions`, `game_first_prediction` |
+| `staging`, `monitoring` | Dataform | internal (feature hashes, deployed-model registry) |
+
+Dataform sources and cross-project declarations live in `definitions/sources.js`;
+the model lineage is in [docs/lineage.md](docs/lineage.md). Dataform operational
+notes (incremental refreshes, schema drift) are in
+[docs/dataform_operations.md](docs/dataform_operations.md).
 
 ### Infrastructure
 
-All infrastructure is managed via Terraform in the `terraform/` directory.
-
-- **Cloud Run Jobs**: Two jobs execute the pipelines daily
-  - `bgg-fetch-new-games`: 1 vCPU, 2GB memory
-  - `bgg-refresh-old-games`: 1 vCPU, 2GB memory
-- **Dataform**: Analytics transformations run via GitHub Actions workflow
-- **GitHub Actions**: Triggers Cloud Run jobs on schedule, deploys on merge to main, runs Dataform
-- **Cloud Build**: Builds and deploys Docker images
+- **Cloud Run jobs** run the pipelines; they are built and deployed by **Cloud Build**
+  (`config/cloudbuild.yaml`), not Terraform:
+  `bgg-fetch-thing-ids` (8Gi / 2 vCPU), `bgg-fetch-new-games`, `bgg-refresh-old-games`,
+  `bgg-fetch-games`.
+- **Terraform** (`terraform/`) manages the artifact registry, service accounts, and
+  Secret Manager — not the Cloud Run jobs.
+- **Dataform** transformations run via the `dataform.yml` workflow.
 
 ## Prerequisites
 
 - Python 3.12+
-- UV package manager
-- Google Cloud project with:
-  - Cloud Run API
-  - Cloud Build API
-  - BigQuery API
-- Service account with BigQuery Data Editor, Cloud Run Invoker roles
+- [uv](https://docs.astral.sh/uv/) package manager
+- A Google Cloud project with BigQuery, Cloud Run, Cloud Build, and Dataform enabled
+- A service account with BigQuery Data Editor and Cloud Run Invoker roles
 
 ## Setup
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/phenrickson/bgg-data-warehouse.git
 cd bgg-data-warehouse
-```
 
-2. Install UV and dependencies:
-```bash
-# Install UV (see https://docs.astral.sh/uv/getting-started/installation/)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create virtual environment and install dependencies
-uv venv
-source .venv/bin/activate  # Unix/macOS
-.venv\Scripts\activate     # Windows
+# Install dependencies
 uv sync
-```
 
-3. Configure environment:
-```bash
+# Only needed to run the sitemap scraper (fetch_thing_ids) locally:
+uv run playwright install chromium
+
+# Configure environment
 cp .env.example .env
-# Edit .env with your GCP_PROJECT_ID, ENVIRONMENT, BGG_API_TOKEN
+# Set GOOGLE_APPLICATION_CREDENTIALS (path to your GCP service-account key) and,
+# optionally, BGG_API_TOKEN. BGG's XML API2 is public — no token is required.
 ```
 
-4. Configure GitHub repository secrets:
-- `SERVICE_ACCOUNT_KEY`: GCP service account key JSON
-- `GCP_PROJECT_ID`: Google Cloud project ID
-- `BGG_API_TOKEN`: BoardGameGeek API token
+GitHub repository secrets used by the workflows:
+
+- `GCP_SA_KEY_BGG_DW` — GCP service-account key JSON (**required**)
+- `BGG_API_TOKEN` — optional; BGG's API needs no auth
+- `CROSS_REPO_PAT` — PAT used to dispatch events to `bgg-predictive-models`
 
 ## Usage
 
-### Local Development
+### Local development
 
 ```bash
-# Fetch new games
+# Run a pipeline locally
 uv run python -m src.pipeline.fetch_new_games
-
-# Refresh old games
 uv run python -m src.pipeline.refresh_old_games
+uv run python -m src.pipeline.fetch_thing_ids      # requires playwright chromium
+uv run python -m src.pipeline.fetch_games          # reads GAME_IDS env var
 
-# Run tests
-uv run pytest
+# Run the tests (pytest lives in the `test` extra)
+uv run --extra test python -m pytest
 ```
 
-### Manual Job Execution
+### Manual Cloud Run job execution
 
 ```bash
-gcloud run jobs execute bgg-fetch-new-games-prod --region us-central1 --wait
-gcloud run jobs execute bgg-refresh-old-games-prod --region us-central1 --wait
+gcloud run jobs execute bgg-fetch-new-games   --region us-central1 --wait
+gcloud run jobs execute bgg-refresh-old-games --region us-central1 --wait
 ```
 
-## Dashboard
+## Consumers
 
-A Streamlit dashboard is available for exploring the data:
+This repo is the warehouse itself and does not serve a UI. The consumer-facing app
+is the separate [`bgg-dash-viewer`](https://github.com/phenrickson/bgg-dash-viewer)
+project, which reads the `analytics` and `predictions` datasets. See the ecosystem
+diagram in [docs/architecture/diagrams/](docs/architecture/diagrams/).
 
-```bash
-streamlit run src/visualization/dashboard.py
-```
+## Documentation
 
-The dashboard is also deployed to Cloud Run and accessible via the URL output by the deploy workflow.
+- [docs/architecture.md](docs/architecture.md) — system architecture and data flow
+- [docs/dataform_operations.md](docs/dataform_operations.md) — Dataform incremental/refresh operations
+- [docs/bgg_api.md](docs/bgg_api.md) — BGG XML API2 usage notes
+- [docs/lineage.md](docs/lineage.md) — Dataform model lineage
+- [scripts/box/README.md](scripts/box/README.md) — home-box scrape setup
+- [.claude/skills/README.md](.claude/skills/README.md) — Claude Code skills for this repo
 
 ## Versioning
 
-This project uses semantic versioning. When changes are merged to main with a version bump in `pyproject.toml`, a GitHub Action automatically creates a corresponding git tag.
-
-See [CHANGELOG.md](CHANGELOG.md) for version history.
+Semantic versioning. Bumping `version` in `pyproject.toml` on `main` triggers the
+`Tag Release` workflow to create the matching `vX.Y.Z` tag. See
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

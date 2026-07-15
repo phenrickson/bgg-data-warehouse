@@ -1,6 +1,6 @@
 [project]
 name = "bgg-data-warehouse"
-version = "0.6.5"
+version = "0.6.6"
 description = "BoardGameGeek Data Warehouse using BigQuery"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,8 +13,6 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.1",
     "xmltodict>=0.13.0",
-    "streamlit>=1.29.0",
-    "plotly>=5.18.0",
     "pandas>=2.1.0",
     "db-dtypes>=1.2.0",
     "pandas-gbq>=0.29.1",
