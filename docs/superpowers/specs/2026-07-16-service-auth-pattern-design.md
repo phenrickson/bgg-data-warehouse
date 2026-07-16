@@ -18,26 +18,28 @@ the predictive-models services.
 ensure `allUsers` is **not** in its IAM policy. The service is then invocable only by
 identities holding `roles/run.invoker` on it.
 
-**Grant surface — one invoker Google Group, bound via Terraform.** Create a single
-group, e.g. `bgg-api-invokers@googlegroups.com` (or a Cloud Identity group). Grant it
-`roles/run.invoker` on each gated service through **Terraform** — an *authoritative*
-`google_cloud_run_v2_service_iam_binding` on the `run.invoker` role listing the group
-(and, day one, your own `user:`). Authoritative binding ⇒ Terraform **guarantees no
-`allUsers`** and corrects drift on every apply. The binding is applied by the
+**Grant surface — an authoritative Terraform `members` list.** The allow-list of who may
+invoke each gated service is the `members` of an *authoritative*
+`google_cloud_run_v2_service_iam_binding` (role `roles/run.invoker`), applied by the
 `terraform.yml` Actions workflow (PR = plan, merge = apply) — **never `gcloud
-add-iam-policy-binding` from the terminal.**
+add-iam-policy-binding` from the terminal.** Authoritative ⇒ the list is the *complete*
+allow-list: anything not on it, including `allUsers`, cannot invoke, and drift is
+corrected on every apply.
 
-Thereafter "provide access" is a **group-membership change** (Workspace admin), never an
-IAM/Terraform edit:
+"Provide access" = **edit the `members` list → PR → merge.** Every grant is therefore
+in code, reviewed on a PR, **git-audited** (who, when, which commit), and applied by
+Actions — consistent with the "everything via Actions" rule:
 
-- Authorized **person** → add `user:someone@example.com` to the group.
+- Authorized **person** → add `user:someone@example.com`.
 - **Service** caller (a new front-end's runtime SA; dash-viewer; later, predictive-models
-  callers) → add `serviceAccount:…@….iam.gserviceaccount.com` to the group. (Google
-  Groups accept service accounts as members.)
-- **Revoke** → remove the member.
+  callers) → add `serviceAccount:…@….iam.gserviceaccount.com`.
+- **Revoke** → remove the entry.
 
-The group is what makes "I can provide access" a one-step operation without touching
-infra code; Terraform pins *the group* as the sole invoker principal once.
+*Optional convenience:* a Google Group may be listed as a single `group:` member if you
+later want self-serve access for non-technical teammates — but a group's membership is
+managed in the Workspace/Groups console, i.e. **outside** Terraform/Actions, trading
+IaC-auditability for convenience (and on a personal-Gmail project Terraform can't manage
+the group itself). **Prefer the direct `members` list.**
 
 **Human access (easy).** Either:
 
@@ -78,10 +80,9 @@ nothing about who calls it.
 1. Deploy `bgg-warehouse-api` `--no-allow-unauthenticated` via the Cloud Build **Actions**
    workflow (not the terminal).
 2. Terraform (applied by `terraform.yml`) authoritatively binds `run.invoker` to the
-   invoker group **and, day one, your own `user:`** — so the API is usable immediately
+   `members` list — **day one, just your own `user:`**, so the API is usable immediately
    without coupling to any front-end. Each consumer (a new front-end's SA, dash-viewer's
-   SA, another service) is then added to the **group** as it comes online — no
-   Terraform/API change per consumer.
+   SA, another service) is added to the list **via a PR** as it comes online.
 3. Any consumer builds its authenticated calls with `id_token_headers(WAREHOUSE_API_URL)`.
 
 ## Extending to the predictive-models services (follow-up)
@@ -90,8 +91,8 @@ The same three moves per service, one service at a time to avoid breakage:
 
 1. Identify every current caller of the service (scoring pipeline, Streamlit, dash-viewer)
    and confirm each can mint an ID token (runs as a service account).
-2. Add each caller's identity to the invoker group; add an authoritative Terraform
-   `run.invoker` binding for the group on that service (applied via `terraform.yml`).
+2. Add each caller's identity to that service's authoritative Terraform `run.invoker`
+   `members` list (applied via `terraform.yml`).
 3. Redeploy the service `--no-allow-unauthenticated` via its Actions workflow (the
    authoritative binding removes `allUsers`), and update each caller to attach
    `id_token_headers(url)`.

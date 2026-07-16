@@ -274,10 +274,12 @@ Files: Create `terraform/warehouse_api.tf`.
 
 - [ ] **Step 5:** Add an **authoritative** invoker binding —
   `google_cloud_run_v2_service_iam_binding` for `roles/run.invoker` on
-  `bgg-warehouse-api` (`us-central1`), `members = [` the invoker group (consumer-agnostic;
-  a new front-end's SA joins the group later) `, your own user ]`. Authoritative binding
-  ⇒ **guarantees no `allUsers`** and corrects drift on every apply. (Same pattern
-  remediates the predictive-models services — follow-up 5.)
+  `bgg-warehouse-api` (`us-central1`), with a Terraform `members` list = **[ your own
+  `user:` ]** day one. Adding a consumer later = add its `serviceAccount:` to the list
+  via a PR (grant surface is the Terraform list, not a Google Group — keeps grants in
+  code/Actions and git-audited). Authoritative binding ⇒ **guarantees no `allUsers`** and
+  corrects drift on every apply. (Same pattern remediates the predictive-models
+  services — follow-up 5.)
 - [ ] **Step 6:** `terraform fmt` + open the PR → `terraform.yml` runs `terraform plan`
   on the PR (review the diff). **Merge to `main`** → `terraform apply -auto-approve`.
   Must merge **after** 7a, or the binding applies against a nonexistent service.

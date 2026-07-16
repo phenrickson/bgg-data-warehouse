@@ -103,8 +103,9 @@ it modular; if one resource ever needs isolation, it lifts out cleanly.
 - **Responses:** `{ data, meta }` envelope with pydantic models; `404` on missing id.
 - **Auth:** gated per the **service auth pattern**
   (`2026-07-16-service-auth-pattern-design.md`) — Cloud Run IAM + Google-signed ID
-  token, **not** public. Access is granted via an invoker Google Group; the same pattern
-  is the one we extend to the (currently `allUsers`) predictive-models services.
+  token, **not** public. Access is granted via an authoritative Terraform `run.invoker`
+  `members` list (edit → PR → apply via Actions); the same pattern is the one we extend
+  to the (currently `allUsers`) predictive-models services.
 - **Config:** add `predictions`, `analytics`, `monitoring`, `staging` to
   `config/bigquery.yaml` + `src/config.py` (currently only `core`, `raw`).
 
