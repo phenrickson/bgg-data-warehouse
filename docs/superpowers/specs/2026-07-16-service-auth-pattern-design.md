@@ -18,20 +18,26 @@ the predictive-models services.
 ensure `allUsers` is **not** in its IAM policy. The service is then invocable only by
 identities holding `roles/run.invoker` on it.
 
-**Grant surface — one invoker Google Group.** Create a single group, e.g.
-`bgg-api-invokers@googlegroups.com` (or a Cloud Identity group), and grant it
-`roles/run.invoker` on each gated service **once**. Thereafter "provide access" is a
-group-membership change, never a per-service IAM edit:
+**Grant surface — one invoker Google Group, bound via Terraform.** Create a single
+group, e.g. `bgg-api-invokers@googlegroups.com` (or a Cloud Identity group). Grant it
+`roles/run.invoker` on each gated service through **Terraform** — an *authoritative*
+`google_cloud_run_v2_service_iam_binding` on the `run.invoker` role listing the group
+(and, day one, your own `user:`). Authoritative binding ⇒ Terraform **guarantees no
+`allUsers`** and corrects drift on every apply. The binding is applied by the
+`terraform.yml` Actions workflow (PR = plan, merge = apply) — **never `gcloud
+add-iam-policy-binding` from the terminal.**
+
+Thereafter "provide access" is a **group-membership change** (Workspace admin), never an
+IAM/Terraform edit:
 
 - Authorized **person** → add `user:someone@example.com` to the group.
-- **Service** caller (the dash-viewer runtime SA; later, predictive-models callers) →
-  add `serviceAccount:…@….iam.gserviceaccount.com` to the group. (Google Groups accept
-  service accounts as members.)
+- **Service** caller (a new front-end's runtime SA; dash-viewer; later, predictive-models
+  callers) → add `serviceAccount:…@….iam.gserviceaccount.com` to the group. (Google
+  Groups accept service accounts as members.)
 - **Revoke** → remove the member.
 
-Per-service `add-iam-policy-binding` of an individual member is the fallback when a
-group isn't set up yet — but the group is what makes "I can provide access" a one-step
-operation, so prefer it.
+The group is what makes "I can provide access" a one-step operation without touching
+infra code; Terraform pins *the group* as the sole invoker principal once.
 
 **Human access (easy).** Either:
 
@@ -69,11 +75,13 @@ planned; dash-viewer is merely the first existing consumer). The group is what k
 that way: a new consumer gets access by being added to the group, and the API knows
 nothing about who calls it.
 
-1. Deploy `bgg-warehouse-api` `--no-allow-unauthenticated`.
-2. Grant the invoker group `roles/run.invoker` on it. **Day one, grant your own
-   `user:` identity** so the API is usable immediately without coupling to any
-   front-end. Each consumer (a new front-end's runtime SA, dash-viewer's SA, another
-   service) is then added to the group as it comes online — no per-consumer API change.
+1. Deploy `bgg-warehouse-api` `--no-allow-unauthenticated` via the Cloud Build **Actions**
+   workflow (not the terminal).
+2. Terraform (applied by `terraform.yml`) authoritatively binds `run.invoker` to the
+   invoker group **and, day one, your own `user:`** — so the API is usable immediately
+   without coupling to any front-end. Each consumer (a new front-end's SA, dash-viewer's
+   SA, another service) is then added to the **group** as it comes online — no
+   Terraform/API change per consumer.
 3. Any consumer builds its authenticated calls with `id_token_headers(WAREHOUSE_API_URL)`.
 
 ## Extending to the predictive-models services (follow-up)
@@ -82,10 +90,11 @@ The same three moves per service, one service at a time to avoid breakage:
 
 1. Identify every current caller of the service (scoring pipeline, Streamlit, dash-viewer)
    and confirm each can mint an ID token (runs as a service account).
-2. Add each caller's identity to the invoker group; grant the group `run.invoker` on the
-   service.
-3. Redeploy the service `--no-allow-unauthenticated`, remove `allUsers`, and update each
-   caller to attach `id_token_headers(url)`.
+2. Add each caller's identity to the invoker group; add an authoritative Terraform
+   `run.invoker` binding for the group on that service (applied via `terraform.yml`).
+3. Redeploy the service `--no-allow-unauthenticated` via its Actions workflow (the
+   authoritative binding removes `allUsers`), and update each caller to attach
+   `id_token_headers(url)`.
 
 **Special case — `bgg-streamlit-prod`:** it's a *browser-facing* dashboard, so
 ID-token/`run.invoker` gating doesn't apply (browsers don't send ID tokens). That one

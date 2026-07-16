@@ -244,37 +244,51 @@ def test_health():
 
 ---
 
-### Task 7: Deploy (Cloud Build + workflow) — gated per the auth-pattern spec
+### Task 7: Deploy — everything via GitHub Actions (no local gcloud/terraform)
 
-**Files:** Modify `config/cloudbuild.yaml`; Create `.github/workflows/deploy-warehouse-api.yml`
+Compute deploy runs through a Cloud Build workflow; gating is a Terraform resource
+applied by `terraform.yml`. **Nothing is run from the terminal.** An authoritative
+invoker binding requires the service to already exist, so this lands in **two merges**
+(7a then 7b). Local terminal is used only for parse-checks and read-only verification.
 
-Gating follows `docs/superpowers/specs/2026-07-16-service-auth-pattern-design.md`:
-deploy authenticated, then grant `run.invoker` via the invoker group (or, day one,
-direct member bindings).
+**7a — Service compute (Cloud Build via Actions).**
+Files: Create `config/cloudbuild.warehouse-api.yaml` (separate from the pipeline
+cloudbuild — isolated blast radius); Create `.github/workflows/deploy-warehouse-api.yml`.
 
-- [ ] **Step 1: Add a `bgg-warehouse-api` Cloud Run *service*** block to
-  `config/cloudbuild.yaml` — build/push the image, then `gcloud run deploy
-  bgg-warehouse-api --region us-central1 --no-allow-unauthenticated
+- [ ] **Step 1:** Write `config/cloudbuild.warehouse-api.yaml` — `docker build -f
+  services/warehouse_api/Dockerfile`, push to the `bgg-data-warehouse` Artifact Registry
+  repo, then `gcloud run deploy bgg-warehouse-api --region us-central1
+  --no-allow-unauthenticated
   --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com`.
-- [ ] **Step 2: Grant invoker access** (consumer-agnostic — see auth-pattern spec).
-  Preferred (group): `gcloud run services add-iam-policy-binding bgg-warehouse-api
-  --region us-central1 --member="group:bgg-api-invokers@googlegroups.com"
-  --role=roles/run.invoker`. **Day one, grant your own identity** so the API is usable
-  without tying it to any front-end:
-  `--member="user:phil.henrickson@gmail.com"`. Add each consumer's SA (a new front-end,
-  dash-viewer, …) to the group as it comes online. Confirm `allUsers` is **absent**.
-- [ ] **Step 3: Validate YAML** — `python -c "import yaml; yaml.safe_load(open('config/cloudbuild.yaml'))" && echo valid`.
-- [ ] **Step 4: Create `.github/workflows/deploy-warehouse-api.yml`** — mirror
-  `deploy.yml` (auth with `GCP_SA_KEY_BGG_DW`, `gcloud builds submit`), triggered on
-  `push` to `main` touching `services/warehouse_api/**`, `src/warehouse/**`, plus
-  `workflow_dispatch`. Validate its YAML too.
-- [ ] **Step 5: Commit** — `ci(api): deploy gated warehouse-api to Cloud Run`
-- [ ] **Step 6: Post-deploy check** (after merge):
-  - `curl <url>/health` with no token → **403** (gate works).
-  - `curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>/health` → **200**.
-  - `gcloud run services proxy bgg-warehouse-api --region us-central1` → hit `/games/13`
-    → real, populated document.
-  - Re-confirm the IAM policy has **no `allUsers`**.
+- [ ] **Step 2:** Write `.github/workflows/deploy-warehouse-api.yml` — mirror `deploy.yml`
+  (auth `GCP_SA_KEY_BGG_DW`, `gcloud builds submit --config
+  config/cloudbuild.warehouse-api.yaml`), triggered on push to `main` touching
+  `services/warehouse_api/**`, `src/warehouse/**`, `config/cloudbuild.warehouse-api.yaml`,
+  plus `workflow_dispatch`.
+- [ ] **Step 3:** Parse-check both YAMLs locally (`yaml.safe_load`) — a lint, not a deploy.
+- [ ] **Step 4: Commit.** On **merge to `main`**, the workflow deploys the gated service.
+  With no invoker binding yet, only `run.admin`/owner (you) can invoke it — safe interim.
+
+**7b — Gating (Terraform via `terraform.yml`), after 7a is live.**
+Files: Create `terraform/warehouse_api.tf`.
+
+- [ ] **Step 5:** Add an **authoritative** invoker binding —
+  `google_cloud_run_v2_service_iam_binding` for `roles/run.invoker` on
+  `bgg-warehouse-api` (`us-central1`), `members = [` the invoker group (consumer-agnostic;
+  a new front-end's SA joins the group later) `, your own user ]`. Authoritative binding
+  ⇒ **guarantees no `allUsers`** and corrects drift on every apply. (Same pattern
+  remediates the predictive-models services — follow-up 5.)
+- [ ] **Step 6:** `terraform fmt` + open the PR → `terraform.yml` runs `terraform plan`
+  on the PR (review the diff). **Merge to `main`** → `terraform apply -auto-approve`.
+  Must merge **after** 7a, or the binding applies against a nonexistent service.
+
+**7c — Verification (read-only; no cloud mutation).**
+
+- [ ] **Step 7:** `curl <url>/health` no token → **403**; with `Authorization: Bearer
+  $(gcloud auth print-identity-token)` → **200**; `gcloud run services proxy
+  bgg-warehouse-api` → `/games/13` → real document; confirm IAM has **no `allUsers`**.
+  (These read/verify only. If you want zero local `gcloud` even here, we add a smoke-test
+  step to the deploy workflow instead.)
 
 ---
 
