@@ -64,11 +64,17 @@ it at the edge before the request reaches the app.
 
 ## Applying it here (warehouse read API)
 
+The API is **consumer-agnostic** — it exists to serve any front-end (a new front-end is
+planned; dash-viewer is merely the first existing consumer). The group is what keeps it
+that way: a new consumer gets access by being added to the group, and the API knows
+nothing about who calls it.
+
 1. Deploy `bgg-warehouse-api` `--no-allow-unauthenticated`.
-2. Grant the invoker group `roles/run.invoker` on it (or, day one, bind your own
-   `user:` and the dash-viewer `serviceAccount:` directly).
-3. The dash-viewer consumer (follow-up PR) builds its `requests` calls with
-   `id_token_headers(WAREHOUSE_API_URL)`.
+2. Grant the invoker group `roles/run.invoker` on it. **Day one, grant your own
+   `user:` identity** so the API is usable immediately without coupling to any
+   front-end. Each consumer (a new front-end's runtime SA, dash-viewer's SA, another
+   service) is then added to the group as it comes online — no per-consumer API change.
+3. Any consumer builds its authenticated calls with `id_token_headers(WAREHOUSE_API_URL)`.
 
 ## Extending to the predictive-models services (follow-up)
 

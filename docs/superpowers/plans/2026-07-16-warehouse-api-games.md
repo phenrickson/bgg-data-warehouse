@@ -255,14 +255,13 @@ direct member bindings).
   `config/cloudbuild.yaml` — build/push the image, then `gcloud run deploy
   bgg-warehouse-api --region us-central1 --no-allow-unauthenticated
   --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com`.
-- [ ] **Step 2: Grant invoker access.** Preferred (group):
-  `gcloud run services add-iam-policy-binding bgg-warehouse-api --region us-central1
-  --member="group:bgg-api-invokers@googlegroups.com" --role=roles/run.invoker`.
-  Day-one fallback without a group — bind the two identities that need it now: the
-  dash-viewer runtime SA
-  (`serviceAccount:bgg-data-warehouse@bgg-data-warehouse.iam.gserviceaccount.com`) and
-  your own `user:phil.henrickson@gmail.com`. Confirm `allUsers` is **absent** from the
-  policy.
+- [ ] **Step 2: Grant invoker access** (consumer-agnostic — see auth-pattern spec).
+  Preferred (group): `gcloud run services add-iam-policy-binding bgg-warehouse-api
+  --region us-central1 --member="group:bgg-api-invokers@googlegroups.com"
+  --role=roles/run.invoker`. **Day one, grant your own identity** so the API is usable
+  without tying it to any front-end:
+  `--member="user:phil.henrickson@gmail.com"`. Add each consumer's SA (a new front-end,
+  dash-viewer, …) to the group as it comes online. Confirm `allUsers` is **absent**.
 - [ ] **Step 3: Validate YAML** — `python -c "import yaml; yaml.safe_load(open('config/cloudbuild.yaml'))" && echo valid`.
 - [ ] **Step 4: Create `.github/workflows/deploy-warehouse-api.yml`** — mirror
   `deploy.yml` (auth with `GCP_SA_KEY_BGG_DW`, `gcloud builds submit`), triggered on
