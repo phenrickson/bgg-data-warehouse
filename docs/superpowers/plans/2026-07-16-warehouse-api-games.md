@@ -69,8 +69,9 @@ conventional-commit style (`feat(api): …`).
 | Create | `services/warehouse_api/routers/games.py` | `games` `APIRouter` |
 | Create | `tests/test_games_router.py` | Router tests via FastAPI `TestClient` (reader mocked) |
 | Create | `services/warehouse_api/Dockerfile` | uv-based image (model: `docker/Dockerfile.pipeline`) |
-| Create | `services/warehouse_api/pyproject.toml` | Service-local deps (fastapi, uvicorn) |
-| Modify | `pyproject.toml` | Add `api` optional-dependency extra (fastapi, uvicorn, httpx) |
+| Create | `services/warehouse_api/README.md` | Service overview + run/deploy notes |
+| Create | `.dockerignore` | Keep secrets/.venv/.git out of images |
+| Modify | `pyproject.toml` | Add `api` extra (fastapi, uvicorn) + httpx to `test`; single dep source (no service-local pyproject) |
 | Modify | `config/cloudbuild.yaml` | Add `bgg-warehouse-api` Cloud Run service build/deploy |
 | Create | `.github/workflows/deploy-warehouse-api.yml` | Deploy on changes to the service |
 
