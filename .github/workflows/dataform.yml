@@ -67,6 +67,7 @@ jobs:
           echo "compilation_name=${COMPILATION_NAME}" >> $GITHUB_OUTPUT
 
       - name: Execute Workflow
+        id: execute
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
@@ -86,9 +87,22 @@ jobs:
 
           # Poll until terminal state. The workflowInvocations POST returns
           # immediately with state=RUNNING; downstream consumers (e.g. game
-          # embeddings) read tables this workflow refreshes, so we MUST wait
-          # for SUCCEEDED before letting the job exit.
-          for i in $(seq 1 90); do
+          # embeddings) read tables this workflow refreshes, so the ML pipeline
+          # is only notified once we observe a genuine SUCCEEDED (see the
+          # Notify step's `if`, which keys off invocation_state below).
+          #
+          # Outcomes:
+          #   SUCCEEDED         -> record state, job green, ML notified
+          #   FAILED/CANCELLED  -> hard-fail the job (real error)
+          #   still RUNNING at
+          #   the poll budget   -> record state=RUNNING, job stays GREEN (no
+          #                        false failure), but ML is NOT notified. A
+          #                        slow-but-succeeding invocation used to mark
+          #                        the whole job failed and silently skip the
+          #                        ML dispatch; this avoids that.
+          MAX_POLLS=240   # 240 * 10s = 40 min budget; normal runs finish in <1 min
+          FINAL_STATE="RUNNING"
+          for i in $(seq 1 ${MAX_POLLS}); do
             sleep 10
             ACCESS_TOKEN=$(gcloud auth print-access-token)
             STATUS=$(curl -s "https://dataform.googleapis.com/v1beta1/${INVOCATION_NAME}" \
@@ -96,27 +110,32 @@ jobs:
             echo "Poll $i: state=${STATUS}"
             case "${STATUS}" in
               SUCCEEDED)
+                FINAL_STATE="SUCCEEDED"
                 echo "Dataform workflow invocation succeeded"
-                exit 0
+                break
                 ;;
               FAILED|CANCELLED)
+                echo "invocation_state=${STATUS}" >> "$GITHUB_OUTPUT"
                 echo "Dataform workflow invocation ended with state=${STATUS}"
                 exit 1
                 ;;
               RUNNING|CANCELING)
                 ;;
               *)
+                echo "invocation_state=${STATUS}" >> "$GITHUB_OUTPUT"
                 echo "Unexpected state: ${STATUS}"
                 exit 1
                 ;;
             esac
           done
 
-          echo "Timed out waiting for Dataform workflow invocation to finish"
-          exit 1
+          echo "invocation_state=${FINAL_STATE}" >> "$GITHUB_OUTPUT"
+          if [ "${FINAL_STATE}" != "SUCCEEDED" ]; then
+            echo "::warning::Dataform invocation still ${FINAL_STATE} after ${MAX_POLLS} polls (${INVOCATION_NAME}). Not failing the job; the ML pipeline will not be notified for this run."
+          fi
 
       - name: Notify ML Pipeline
-        if: success() && github.ref == 'refs/heads/main'
+        if: steps.execute.outputs.invocation_state == 'SUCCEEDED' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
         run: |
