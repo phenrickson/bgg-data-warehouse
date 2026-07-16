@@ -19,6 +19,7 @@ Build, GitHub Actions.
 **Specs:**
 - `docs/superpowers/specs/2026-07-16-warehouse-services-architecture-design.md`
 - `docs/superpowers/specs/2026-07-16-game-detail-api-design.md`
+- `docs/superpowers/specs/2026-07-16-service-auth-pattern-design.md` (gating)
 
 **Scope (this plan):** config datasets · BigQuery client helper · `games` reader
 (get-by-id + blocks) · FastAPI skeleton + `/health` + auth · `games` router · Docker +
@@ -242,24 +243,38 @@ def test_health():
 
 ---
 
-### Task 7: Deploy (Cloud Build + workflow)
+### Task 7: Deploy (Cloud Build + workflow) — gated per the auth-pattern spec
 
 **Files:** Modify `config/cloudbuild.yaml`; Create `.github/workflows/deploy-warehouse-api.yml`
+
+Gating follows `docs/superpowers/specs/2026-07-16-service-auth-pattern-design.md`:
+deploy authenticated, then grant `run.invoker` via the invoker group (or, day one,
+direct member bindings).
 
 - [ ] **Step 1: Add a `bgg-warehouse-api` Cloud Run *service*** block to
   `config/cloudbuild.yaml` — build/push the image, then `gcloud run deploy
   bgg-warehouse-api --region us-central1 --no-allow-unauthenticated
-  --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com`
-  (authenticated per spec).
-- [ ] **Step 2: Validate YAML** — `python -c "import yaml; yaml.safe_load(open('config/cloudbuild.yaml'))" && echo valid`.
-- [ ] **Step 3: Create `.github/workflows/deploy-warehouse-api.yml`** — mirror
+  --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com`.
+- [ ] **Step 2: Grant invoker access.** Preferred (group):
+  `gcloud run services add-iam-policy-binding bgg-warehouse-api --region us-central1
+  --member="group:bgg-api-invokers@googlegroups.com" --role=roles/run.invoker`.
+  Day-one fallback without a group — bind the two identities that need it now: the
+  dash-viewer runtime SA
+  (`serviceAccount:bgg-data-warehouse@bgg-data-warehouse.iam.gserviceaccount.com`) and
+  your own `user:phil.henrickson@gmail.com`. Confirm `allUsers` is **absent** from the
+  policy.
+- [ ] **Step 3: Validate YAML** — `python -c "import yaml; yaml.safe_load(open('config/cloudbuild.yaml'))" && echo valid`.
+- [ ] **Step 4: Create `.github/workflows/deploy-warehouse-api.yml`** — mirror
   `deploy.yml` (auth with `GCP_SA_KEY_BGG_DW`, `gcloud builds submit`), triggered on
   `push` to `main` touching `services/warehouse_api/**`, `src/warehouse/**`, plus
-  `workflow_dispatch`.
-- [ ] **Step 4: Validate YAML.**
-- [ ] **Step 5: Commit** — `ci(api): deploy warehouse-api to Cloud Run`
-- [ ] **Step 6: Post-deploy check** (after merge) — deployed `/health` → 200 (with an
-  ID token); unauthenticated → 403; `/games/13` → real data.
+  `workflow_dispatch`. Validate its YAML too.
+- [ ] **Step 5: Commit** — `ci(api): deploy gated warehouse-api to Cloud Run`
+- [ ] **Step 6: Post-deploy check** (after merge):
+  - `curl <url>/health` with no token → **403** (gate works).
+  - `curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>/health` → **200**.
+  - `gcloud run services proxy bgg-warehouse-api --region us-central1` → hit `/games/13`
+    → real, populated document.
+  - Re-confirm the IAM policy has **no `allUsers`**.
 
 ---
 
@@ -276,14 +291,20 @@ def test_health():
 
 ## Follow-up (separate PRs / plans)
 
-1. **`bgg-dash-viewer` repoint** — `warehouse_api_client.py` + `WAREHOUSE_API_URL`;
-   rewrite `game_details.py` to call the API; delete the game SQL from
-   `bigquery_client.py`. Verify the game page renders identically.
+1. **`bgg-dash-viewer` repoint** — `warehouse_api_client.py` (carrying the reusable
+   `id_token_headers(WAREHOUSE_API_URL)` helper from the auth-pattern spec) +
+   `WAREHOUSE_API_URL`; rewrite `game_details.py` to call the API; delete the game SQL
+   from `bigquery_client.py`. Verify the game page renders identically, authenticated.
 2. **Games list/search slice** — `GET /games`, `/games/search`, `/games/new`, `/games/summary`.
 3. **`clusterBy game_id`** on `games_features` / `bgg_predictions` /
    `game_similarity_search` (needs full-refresh — see dataform-incremental-schema-drift).
 4. **Remaining resource routers** — publishers/designers/…, predictions, collections,
    similarity, experiments, monitoring.
+5. **SECURITY — gate the predictive-models services.** All five are currently
+   `run.invoker: allUsers` (confirmed live). Apply the same auth pattern per the
+   auth-pattern spec (identify callers → add to invoker group → redeploy authenticated).
+   `bgg-streamlit-prod` is a browser UI → needs IAP/app-login, handled separately. Track
+   as its own security spec + plan.
 
 ## Risks / rollback
 
@@ -293,5 +314,8 @@ def test_health():
 - **Cost:** unclustered serving tables mean each `/games/{id}` call full-scans
   `games_features` etc. Acceptable at low traffic; the `clusterBy` follow-up removes it.
   Watch bytes-scanned in the Task 3 smoke test.
-- **Auth wiring** is the one deploy-time unknown — confirm the dash-viewer service
-  account can mint an ID token for the warehouse-api service before the repoint.
+- **Auth wiring** (resolved to IAM + ID token, see auth-pattern spec): the dash-viewer
+  runtime SA already runs on Cloud Run via ADC, so it *can* mint an ID token — but the
+  consumer code to attach it doesn't exist yet, so it's built in the repoint follow-up.
+  Until then the deployed API is gated and reachable only by your own identity (via
+  `gcloud`) — inert for the front-end, which is fine (nothing consumes it yet).

@@ -58,9 +58,11 @@ responses, `404` on missing id. Mounted by `services/warehouse_api/main.py`.
 
 ### 3. Shared plumbing (from the architecture skeleton, not games-specific)
 
-Config extension (`predictions`/`analytics` datasets), `auth.py` (Cloud Run IAM + ID
-token), `Dockerfile` (uv-based, modeled on `docker/Dockerfile.pipeline`),
-`cloudbuild.yaml`, and `deploy-warehouse-api.yml`.
+Config extension (`predictions`/`analytics` datasets), `auth.py`, `Dockerfile`
+(uv-based, modeled on `docker/Dockerfile.pipeline`), `cloudbuild.yaml`, and
+`deploy-warehouse-api.yml`. Inbound gating follows the **service auth pattern**
+(`2026-07-16-service-auth-pattern-design.md`) — deployed authenticated, invoker access
+granted via IAM.
 
 ### 4. Front-end consumer — separate PR in `bgg-dash-viewer`
 
