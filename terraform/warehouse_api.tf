@@ -14,9 +14,13 @@ variable "warehouse_api_invoker_members" {
   description = <<-EOT
     Principals granted roles/run.invoker on bgg-warehouse-api (AUTHORITATIVE — this is
     the complete allow-list; anything not here, including allUsers, cannot invoke).
-    Consumer-agnostic: prefer adding a new consumer's SA to the invoker Google Group
-    rather than listing it here. Add the group once it exists in Workspace, e.g.
-    "group:bgg-api-invokers@googlegroups.com".
+
+    This list IS the grant surface: to give a consumer access, add its identity here and
+    merge (terraform.yml applies it) — grants stay in code, reviewed, and git-audited.
+      - a person:  "user:someone@example.com"
+      - a service: "serviceAccount:new-frontend@bgg-data-warehouse.iam.gserviceaccount.com"
+    (A "group:..." member is possible too, but a group's membership is managed outside
+    Terraform/Actions — prefer listing identities directly here.)
   EOT
   type    = list(string)
   default = ["user:phil.henrickson@gmail.com"]
