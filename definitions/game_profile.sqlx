@@ -1,0 +1,114 @@
+config {
+  type: "table",
+  schema: "analytics",
+  name: "game_profile",
+  description: "One row per game holding everything the read API serves for a single game: features, per-player-count recommendations (nested), latest predictions, embedding coordinates and fetch provenance. Collapses a six-query fan-out (~361MB) into one clustered lookup (~10MB) — BigQuery bills a 10MB minimum PER TABLE referenced, so fewer tables matters more than fewer columns. Similar games are deliberately NOT here: neighbour semantics are source-relative and user-tunable (see game_neighbors).",
+  bigquery: {
+    clusterBy: ["game_id"]
+  }
+}
+
+WITH player_counts_agg AS (
+  SELECT
+    game_id,
+    ARRAY_AGG(
+      STRUCT(
+        player_count,
+        best_votes,
+        recommended_votes,
+        not_recommended_votes,
+        total_votes,
+        best_percentage,
+        recommended_percentage
+      )
+      ORDER BY player_count
+    ) AS player_counts
+  FROM ${ref("player_count_recommendations")}
+  GROUP BY game_id
+),
+
+-- raw.fetched_responses can hold several fetch records per game; keep the newest.
+provenance_latest AS (
+  SELECT game_id, fetch_timestamp, fetch_status
+  FROM (
+    SELECT
+      game_id,
+      fetch_timestamp,
+      fetch_status,
+      ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY fetch_timestamp DESC) AS rn
+    FROM ${ref("fetched_responses")}
+  )
+  WHERE rn = 1
+)
+
+SELECT
+  f.game_id,
+
+  -- Feature scalars (kept flat so the table is usable for ad-hoc analysis too)
+  f.name,
+  f.year_published,
+  f.bayes_average,
+  f.average_rating,
+  f.average_weight,
+  f.users_rated,
+  f.hurdle,
+  f.geek_rating,
+  f.complexity,
+  f.rating,
+  f.log_users_rated,
+  f.num_weights,
+  f.min_players,
+  f.max_players,
+  f.min_playtime,
+  f.max_playtime,
+  f.min_age,
+  f.image,
+  f.thumbnail,
+  f.description,
+
+  -- Existing repeated name columns, carried through unchanged
+  f.categories,
+  f.mechanics,
+  f.publishers,
+  f.designers,
+  f.artists,
+  f.families,
+
+  f.load_timestamp,
+  f.last_updated,
+
+  -- Multi-row block collapsed into a nested array
+  COALESCE(pc.player_counts, []) AS player_counts,
+
+  -- Single-row blocks collapsed into structs. LEFT JOINed, so a game with no
+  -- predictions/embedding/provenance still yields a row (the struct is NULL).
+  IF(p.game_id IS NULL, NULL, STRUCT(
+    p.predicted_hurdle_prob,
+    p.predicted_complexity,
+    p.predicted_rating,
+    p.predicted_users_rated,
+    p.predicted_geek_rating,
+    p.score_ts,
+    fp.first_prediction_ts
+  )) AS predictions,
+
+  IF(co.game_id IS NULL, NULL, STRUCT(
+    co.umap_1,
+    co.umap_2,
+    co.pca_1,
+    co.pca_2,
+    co.embedding_model,
+    co.embedding_version
+  )) AS embedding,
+
+  IF(pr.game_id IS NULL, NULL, STRUCT(
+    pr.fetch_timestamp,
+    pr.fetch_status
+  )) AS provenance
+
+FROM ${ref("games_features")} f
+LEFT JOIN player_counts_agg pc ON pc.game_id = f.game_id
+LEFT JOIN ${ref("bgg_predictions")} p ON p.game_id = f.game_id
+LEFT JOIN ${ref("game_first_prediction")} fp ON fp.game_id = f.game_id
+LEFT JOIN ${ref("bgg_game_coordinates")} co ON co.game_id = f.game_id
+LEFT JOIN provenance_latest pr ON pr.game_id = f.game_id
