@@ -32,7 +32,13 @@ def get_features(game_id: int):
 
 @router.get("/{game_id}/players")
 def get_players(game_id: int):
-    return _require(reader.get_features(game_id), game_id)["player_counts"]
+    """Per-player-count recommendations.
+
+    Reads the player-count table directly rather than the whole features row, so this
+    endpoint doesn't pay for a ``games_features`` scan it never uses. Returns an empty
+    list for an unknown game.
+    """
+    return reader.get_player_counts(game_id)
 
 
 @router.get("/{game_id}/predictions")
