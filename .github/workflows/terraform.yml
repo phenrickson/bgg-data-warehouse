@@ -6,11 +6,13 @@ on:
       - main
     paths:
       - 'terraform/**'
+      - '.github/workflows/terraform.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'terraform/**'
+      - '.github/workflows/terraform.yml'
   workflow_dispatch:
     inputs:
       action:
@@ -24,7 +26,7 @@ on:
       environment:
         description: 'Environment'
         required: true
-        default: 'dev'
+        default: 'prod'
         type: choice
         options:
           - dev
@@ -71,8 +73,12 @@ jobs:
             echo "action=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
             echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            # Plan with the SAME environment a merge will apply (prod), so the PR plan
+            # is a faithful preview. Planning with dev produced ~30 phantom diffs
+            # (labels + deletion_protection are var.environment-conditional), which
+            # trained reviewers to ignore plans — and would hide real drift.
             echo "action=plan" >> $GITHUB_OUTPUT
-            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "environment=prod" >> $GITHUB_OUTPUT
           else
             echo "action=apply" >> $GITHUB_OUTPUT
             echo "environment=prod" >> $GITHUB_OUTPUT

@@ -4,6 +4,8 @@ location: US
 datasets:
   core: core
   raw: raw
+  predictions: predictions
+  analytics: analytics
 
 refresh_policy:
   batch_size: 1000

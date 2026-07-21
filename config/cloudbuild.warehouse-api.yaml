@@ -1,0 +1,38 @@
+# Cloud Build config for the warehouse read API (bgg-warehouse-api Cloud Run *service*).
+# Invoked by .github/workflows/deploy-warehouse-api.yml via `gcloud builds submit`.
+# `gcloud run deploy` is create-or-update, so no describe/if branching is needed.
+# Gating (run.invoker) is NOT set here — it's an authoritative Terraform binding
+# (terraform/warehouse_api.tf), applied by the terraform.yml workflow.
+steps:
+  # Build the API image.
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'services/warehouse_api/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/bgg-warehouse-api:latest'
+      - '.'
+
+  # Push it.
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/bgg-warehouse-api:latest']
+
+  # Deploy the Cloud Run service — gated (--no-allow-unauthenticated).
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'bgg-warehouse-api'
+      - '--image=gcr.io/$PROJECT_ID/bgg-warehouse-api:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--no-allow-unauthenticated'
+      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--max-instances=5'
+      - '--port=8080'
+
+images:
+  - 'gcr.io/$PROJECT_ID/bgg-warehouse-api:latest'
