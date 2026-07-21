@@ -1,0 +1,94 @@
+config {
+  type: "table",
+  schema: "analytics",
+  name: "game_neighbors",
+  description: "Precomputed FILTERED nearest-neighbour lists, one row per (profile, game). Mirrors the front-end's default similarity semantics (min ratings floor + source-relative complexity band) so the API can serve the common path from a single clustered lookup instead of scanning every embedding. Tuning parameters are carried on the row so the table is self-describing. Custom/tuned similarity is served live from game_similarity_search, not from here.",
+  bigquery: {
+    clusterBy: ["profile", "game_id"]
+  }
+}
+
+js {
+  // The one place similarity defaults are declared.
+  //
+  // To tune: add a NEW profile alongside the existing one, compare on real games, then
+  // flip which the API treats as default — rather than mutating `default` in place.
+  // A full rebuild is ~13s / ~72MB per profile, so extra profiles are effectively free.
+  //
+  // Note: `complexity` here is bgg_complexity_predictions.predicted_complexity, as
+  // surfaced by game_similarity_search.
+  const PROFILES = [
+    {
+      name: "default",
+      min_users_rated: 100,   // matches DEFAULT_MIN_RATINGS in the viewer
+      complexity_band: 0.75,  // source-relative: |candidate - source| <= band
+      distance: "COSINE",
+      dims: 64,
+      top_k: 10
+    }
+  ];
+
+  // 64-d lives in `embedding`; reduced dims in embedding_8/16/32.
+  function embeddingColumn(dims) {
+    return dims === 64 ? "embedding" : `embedding_${dims}`;
+  }
+}
+
+WITH
+${PROFILES.map(p => `
+candidates_${p.name} AS (
+  SELECT
+    game_id,
+    name,
+    year_published,
+    complexity,
+    ${embeddingColumn(p.dims)} AS embedding
+  FROM ${ref("game_similarity_search")}
+  WHERE users_rated >= ${p.min_users_rated}
+    AND complexity IS NOT NULL
+),
+
+-- Source-relative band: the candidate set depends on the query game's own complexity,
+-- which is exactly why an unfiltered global top-N cannot reproduce these results.
+pairs_${p.name} AS (
+  SELECT
+    s.game_id AS src_game_id,
+    t.game_id AS nbr_game_id,
+    t.name AS nbr_name,
+    t.year_published AS nbr_year_published,
+    ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS distance
+  FROM candidates_${p.name} s
+  JOIN candidates_${p.name} t
+    ON t.game_id != s.game_id
+   AND t.complexity BETWEEN s.complexity - ${p.complexity_band}
+                        AND s.complexity + ${p.complexity_band}
+),
+
+ranked_${p.name} AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY src_game_id ORDER BY distance) AS rn
+  FROM pairs_${p.name}
+)`).join(",\n")}
+
+${PROFILES.map(p => `
+SELECT
+  '${p.name}' AS profile,
+  src_game_id AS game_id,
+  ARRAY_AGG(
+    STRUCT(
+      nbr_game_id AS game_id,
+      nbr_name AS name,
+      nbr_year_published AS year_published,
+      distance
+    )
+    ORDER BY distance
+  ) AS similar,
+  ${p.min_users_rated} AS min_users_rated,
+  ${p.complexity_band} AS complexity_band,
+  '${p.distance}' AS distance_type,
+  ${p.dims} AS embedding_dims,
+  CURRENT_TIMESTAMP() AS computed_ts
+FROM ranked_${p.name}
+WHERE rn <= ${p.top_k}
+GROUP BY src_game_id`).join("\nUNION ALL\n")}
