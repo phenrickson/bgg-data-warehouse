@@ -38,9 +38,15 @@ def test_predictions_sub_resource(monkeypatch):
 
 
 def test_players_sub_resource(monkeypatch):
+    """/players reads player counts directly — it must not scan games_features."""
+    def _boom(*a, **k):
+        raise AssertionError("/players must not read games_features")
+
+    monkeypatch.setattr(games_router.reader, "get_features", _boom)
+    monkeypatch.setattr(games_router.reader, "get_feature_row", _boom)
     monkeypatch.setattr(
-        games_router.reader, "get_features",
-        lambda game_id, client=None: {"name": "Catan", "player_counts": [{"player_count": "4"}]},
+        games_router.reader, "get_player_counts",
+        lambda game_id, client=None: [{"player_count": "4"}],
     )
     r = client.get("/games/13/players")
     assert r.status_code == 200
