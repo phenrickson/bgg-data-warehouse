@@ -33,6 +33,11 @@ dev = [
 test = [
     "pytest>=8.0.0",
     "pytest-cov>=7.0.0",
+    "httpx>=0.27.0",
+]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
 ]
 
 [tool.pytest.ini_options]

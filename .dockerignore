@@ -1,0 +1,19 @@
+# Keep secrets, local envs, caches, and dev-only trees out of built images.
+.git
+.github
+.venv
+credentials/
+.env
+.env.*
+!.env.example
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+logs/
+temp/
+tests/
+docs/
+*.egg-info/
+node_modules/
