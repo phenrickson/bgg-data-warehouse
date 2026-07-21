@@ -103,6 +103,41 @@ class TestSafety:
             assert "game_id" in names
 
 
+class TestConcurrency:
+    """get_game must issue its block queries in parallel, not one after another."""
+
+    def test_blocks_run_concurrently(self):
+        import time
+
+        class SlowClient(RoutingClient):
+            def query(self, sql, job_config=None):
+                time.sleep(0.1)
+                return super().query(sql, job_config)
+
+        client = SlowClient({
+            "games_features": [FEATURES_ROW],
+            "player_count_recommendations": PLAYER_COUNTS,
+            "bgg_predictions": [PREDICTION_ROW],
+            "bgg_game_coordinates": [COORD_ROW],
+            "game_similarity_search": SIMILAR_ROWS,
+            "fetched_responses": [PROVENANCE_ROW],
+        })
+        start = time.monotonic()
+        result = games.get_game(13, client=client)
+        elapsed = time.monotonic() - start
+
+        assert result is not None
+        assert len(client.calls) == 6
+        # Sequential would be >= 0.6s (6 x 0.1s). Bound kept generous for CI jitter.
+        assert elapsed < 0.4, f"queries appear sequential: {elapsed:.2f}s for 6 x 0.1s"
+
+    def test_still_composes_and_handles_missing_game(self):
+        assert set(games.get_game(13, client=_full_client())) == {
+            "game_id", "features", "predictions", "embedding", "similar", "provenance"
+        }
+        assert games.get_game(999999, client=RoutingClient({"games_features": []})) is None
+
+
 class TestExplicitColumns:
     """`SELECT *` scans every column of every row on these unclustered tables."""
 

@@ -7,6 +7,7 @@ interpolation). Tables are resolved through ``src.warehouse.bq.dataset`` so no
 project/dataset is hard-coded.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
 from google.cloud import bigquery
@@ -168,16 +169,36 @@ def get_provenance(game_id: int, client: Optional[bigquery.Client] = None) -> Op
 
 
 def get_game(game_id: int, client: Optional[bigquery.Client] = None) -> Optional[dict[str, Any]]:
-    """Compose the full game document. ``None`` when the game has no features row."""
+    """Compose the full game document. ``None`` when the game has no features row.
+
+    The six block queries are issued **concurrently**, so wall-clock latency is the
+    slowest query rather than the sum of all six. ``bigquery.Client`` is thread-safe for
+    query submission.
+
+    Trade-off: there is no early short-circuit any more, so an unknown game costs all
+    six queries instead of one. Misses are rare; the common path is what matters.
+    """
     client = client or get_client()
-    features = get_features(game_id, client=client)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {
+            "features": pool.submit(get_feature_row, game_id, client),
+            "player_counts": pool.submit(get_player_counts, game_id, client),
+            "predictions": pool.submit(get_predictions, game_id, client),
+            "embedding": pool.submit(get_embedding, game_id, client),
+            "similar": pool.submit(get_similar, game_id, 10, client),
+            "provenance": pool.submit(get_provenance, game_id, client),
+        }
+        results = {key: future.result() for key, future in futures.items()}
+
+    features = results["features"]
     if features is None:
         return None
+    features["player_counts"] = results["player_counts"]
     return {
         "game_id": game_id,
         "features": features,
-        "predictions": get_predictions(game_id, client=client),
-        "embedding": get_embedding(game_id, client=client),
-        "similar": get_similar(game_id, client=client),
-        "provenance": get_provenance(game_id, client=client),
+        "predictions": results["predictions"],
+        "embedding": results["embedding"],
+        "similar": results["similar"],
+        "provenance": results["provenance"],
     }
