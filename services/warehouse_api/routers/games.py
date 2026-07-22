@@ -52,8 +52,30 @@ def get_embedding(game_id: int):
 
 
 @router.get("/{game_id}/similar")
-def get_similar(game_id: int, n: int = 10):
-    return reader.get_similar(game_id, n=n)
+def get_similar(
+    game_id: int,
+    profile: str = "default",
+    n: int | None = None,
+    band: float | None = None,
+    metric: str | None = None,
+    min_ratings: int | None = None,
+    dims: int | None = None,
+):
+    """Similar games.
+
+    With no tuning parameters this serves the **precomputed** default profile (one
+    partitioned lookup). Supplying any of `n`, `band`, `metric`, `min_ratings` or
+    `dims` computes it **live** with those settings — same filtering semantics either
+    way. This is the two-tier pattern the front-end wants: fast default on load, live
+    when the user tweaks.
+    """
+    try:
+        return reader.get_similar(
+            game_id, profile=profile, n=n, band=band,
+            metric=metric, min_ratings=min_ratings, dims=dims,
+        )
+    except ValueError as exc:  # unsupported metric/dims — caller error, not a bug
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{game_id}/provenance")
