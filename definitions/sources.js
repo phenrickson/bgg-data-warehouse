@@ -22,6 +22,12 @@ coreTables.forEach(table => {
   });
 });
 
+// Local raw source: BGG fetch metadata (used for per-game provenance in game_profile)
+declare({
+  schema: "raw",
+  name: "fetched_responses"
+});
+
 // Cross-project source: ML predictions from bgg-predictive-models
 declare({
   database: "bgg-predictive-models",
