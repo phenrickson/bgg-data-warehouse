@@ -53,6 +53,7 @@ graph LR
     raw__complexity_predictions["raw.complexity_predictions"] --> predictions__bgg_complexity_predictions["predictions.bgg_complexity_predictions"]
     raw__description_embeddings["raw.description_embeddings"] --> monitoring__deployed_models["monitoring.deployed_models"]
     raw__description_embeddings["raw.description_embeddings"] --> predictions__bgg_description_embeddings["predictions.bgg_description_embeddings"]
+    raw__fetched_responses["raw.fetched_responses"] --> analytics__game_profile["analytics.game_profile"]
     raw__game_coordinates["raw.game_coordinates"] --> predictions__bgg_game_coordinates["predictions.bgg_game_coordinates"]
     raw__game_embeddings["raw.game_embeddings"] --> monitoring__deployed_models["monitoring.deployed_models"]
     raw__game_embeddings["raw.game_embeddings"] --> predictions__bgg_game_embeddings["predictions.bgg_game_embeddings"]
