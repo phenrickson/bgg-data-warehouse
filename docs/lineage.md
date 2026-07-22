@@ -46,7 +46,6 @@ graph LR
     predictions__bgg_game_coordinates["predictions.bgg_game_coordinates"] --> analytics__game_profile["analytics.game_profile"]
     predictions__bgg_game_embeddings["predictions.bgg_game_embeddings"] --> analytics__game_similarity_search["analytics.game_similarity_search"]
     predictions__bgg_predictions["predictions.bgg_predictions"] --> analytics__game_profile["analytics.game_profile"]
-    predictions__game_first_prediction["predictions.game_first_prediction"] --> analytics__game_profile["analytics.game_profile"]
     predictions__game_first_prediction["predictions.game_first_prediction"] --> predictions__bgg_predictions["predictions.bgg_predictions"]
     raw__collection_models_registry["raw.collection_models_registry"] --> predictions__user_collection_predictions["predictions.user_collection_predictions"]
     raw__collection_predictions_landing["raw.collection_predictions_landing"] --> predictions__user_collection_predictions["predictions.user_collection_predictions"]
