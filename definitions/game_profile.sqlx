@@ -4,6 +4,15 @@ config {
   name: "game_profile",
   description: "One row per game holding everything the read API serves for a single game: features, per-player-count recommendations (nested), latest predictions, embedding coordinates and fetch provenance. Collapses a six-query fan-out (~361MB) into one clustered lookup (~10MB) — BigQuery bills a 10MB minimum PER TABLE referenced, so fewer tables matters more than fewer columns. Similar games are deliberately NOT here: neighbour semantics are source-relative and user-tunable (see game_neighbors).",
   bigquery: {
+    // Integer-range partitioning is what actually makes the point lookup cheap.
+    // Clustering alone prunes NOTHING here: cluster pruning needs a table large enough
+    // to span many blocks (~1GB+), and this table is ~273MB, so `WHERE game_id = X`
+    // still scanned the whole table (measured: 273.5MB est -> 273.7MB billed).
+    // With range partitioning the same lookup touches ONE partition:
+    // 1.9MB scanned, billed at the 10MB minimum -- a 96% reduction.
+    // Range goes to 1,000,000 for headroom (max game_id is ~475k today); ids beyond it
+    // still work, they just land in the overflow partition.
+    partitionBy: "RANGE_BUCKET(game_id, GENERATE_ARRAY(0, 1000000, 1000))",
     clusterBy: ["game_id"]
   }
 }
