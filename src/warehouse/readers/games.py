@@ -97,20 +97,19 @@ def get_predictions(game_id: int, client: Optional[bigquery.Client] = None) -> O
     games legitimately have no row. Full time-series history would read
     ``ml_predictions_landing`` and is deferred to a later slice.
 
-    This is the one query that keeps a (qualified) ``p.*``: the column set is owned by
-    the ML pipeline and grows when new model outputs are added, so enumerating it here
-    would silently drop new predictions. At ~6 MB it is also the cheapest query, so
-    there is nothing to gain by pinning it.
+    ``bgg_predictions`` already joins ``game_first_prediction`` itself, so it carries
+    ``first_prediction_ts`` (and ``is_new_1d``/``is_new_7d``) — joining it again here
+    both duplicated the field and referenced a second table for nothing (BigQuery bills
+    a 10 MB minimum *per table*).
+
+    This is the one query that keeps ``SELECT *``: the column set is owned by the ML
+    pipeline and grows when new model outputs are added, so enumerating it would
+    silently drop new predictions. At ~6 MB there is nothing to gain by pinning it.
     """
     client = client or get_client()
     rows = _rows(
         client,
-        f"""
-        SELECT p.*, f.first_prediction_ts
-        FROM `{dataset('predictions')}.bgg_predictions` p
-        LEFT JOIN `{dataset('predictions')}.game_first_prediction` f USING (game_id)
-        WHERE p.game_id = @game_id
-        """,
+        f"SELECT * FROM `{dataset('predictions')}.bgg_predictions` WHERE game_id = @game_id",
         game_id,
     )
     return rows[0] if rows else None
@@ -129,12 +128,78 @@ def get_embedding(game_id: int, client: Optional[bigquery.Client] = None) -> Opt
     return rows[0] if rows else None
 
 
-def get_similar(game_id: int, n: int = 10, client: Optional[bigquery.Client] = None) -> list[dict[str, Any]]:
-    """Nearest neighbours by cosine distance over the game's embedding."""
+# ML.DISTANCE needs literals for the metric, and the embedding column name is chosen by
+# `dims` — neither can be a query parameter, so both are allow-listed before being
+# interpolated. Never interpolate these values unvalidated.
+DISTANCE_METRICS = {"COSINE", "EUCLIDEAN", "DOT_PRODUCT"}
+EMBEDDING_DIMS = {8: "embedding_8", 16: "embedding_16", 32: "embedding_32", 64: "embedding"}
+
+# The default profile's semantics, mirrored from definitions/game_neighbors.sqlx. Used
+# only to fill gaps when a caller tunes *some* parameters.
+DEFAULT_MIN_RATINGS = 100
+DEFAULT_COMPLEXITY_BAND = 0.75
+DEFAULT_TOP_K = 10
+
+
+def get_similar(
+    game_id: int,
+    *,
+    profile: str = "default",
+    n: Optional[int] = None,
+    band: Optional[float] = None,
+    metric: Optional[str] = None,
+    min_ratings: Optional[int] = None,
+    dims: Optional[int] = None,
+    client: Optional[bigquery.Client] = None,
+) -> list[dict[str, Any]]:
+    """Nearest neighbours, filtered the way the front-end filters them.
+
+    With no tuning parameters this reads the **precomputed** ``game_neighbors`` table
+    (one partitioned lookup). Supplying any of ``n``/``band``/``metric``/
+    ``min_ratings``/``dims`` falls through to the **live** query over
+    ``game_similarity_search``. Both paths apply the same filters — the precomputed
+    table is a materialized cache of one parameter set, not different behaviour.
+    """
     client = client or get_client()
+    if all(v is None for v in (n, band, metric, min_ratings, dims)):
+        return _similar_precomputed(game_id, profile, client)
+    return _similar_live(
+        game_id,
+        n=n or DEFAULT_TOP_K,
+        band=DEFAULT_COMPLEXITY_BAND if band is None else band,
+        metric=(metric or "COSINE").upper(),
+        min_ratings=DEFAULT_MIN_RATINGS if min_ratings is None else min_ratings,
+        dims=dims or 64,
+        client=client,
+    )
+
+
+def _similar_precomputed(game_id: int, profile: str, client: bigquery.Client) -> list[dict[str, Any]]:
+    rows = _rows(
+        client,
+        f"SELECT similar FROM `{dataset('analytics')}.game_neighbors` "
+        "WHERE profile = @profile AND game_id = @game_id",
+        game_id,
+        extra_params=[bigquery.ScalarQueryParameter("profile", "STRING", profile)],
+    )
+    return [dict(s) for s in rows[0]["similar"]] if rows else []
+
+
+def _similar_live(
+    game_id: int, *, n: int, band: float, metric: str, min_ratings: int,
+    dims: int, client: bigquery.Client,
+) -> list[dict[str, Any]]:
+    if metric not in DISTANCE_METRICS:
+        raise ValueError(f"unsupported distance metric: {metric!r}")
+    if dims not in EMBEDDING_DIMS:
+        raise ValueError(f"unsupported embedding dims: {dims!r}")
+    column = EMBEDDING_DIMS[dims]
+
+    # Filter first, then rank — the candidate set is source-relative, which is exactly
+    # why an unfiltered global ranking gives different (and worse) results.
     sql = f"""
-    WITH target AS (
-      SELECT embedding
+    WITH src AS (
+      SELECT complexity, {column} AS embedding
       FROM `{dataset('analytics')}.game_similarity_search`
       WHERE game_id = @game_id
     )
@@ -142,16 +207,21 @@ def get_similar(game_id: int, n: int = 10, client: Optional[bigquery.Client] = N
       s.game_id,
       s.name,
       s.year_published,
-      ML.DISTANCE(s.embedding, (SELECT embedding FROM target), 'COSINE') AS distance
-    FROM `{dataset('analytics')}.game_similarity_search` s
+      ML.DISTANCE(s.{column}, src.embedding, '{metric}') AS distance
+    FROM `{dataset('analytics')}.game_similarity_search` s, src
     WHERE s.game_id != @game_id
-      AND (SELECT embedding FROM target) IS NOT NULL
+      AND s.users_rated >= @min_ratings
+      AND s.complexity BETWEEN src.complexity - @band AND src.complexity + @band
     ORDER BY distance ASC
     LIMIT @n
     """
     return _rows(
         client, sql, game_id,
-        extra_params=[bigquery.ScalarQueryParameter("n", "INT64", n)],
+        extra_params=[
+            bigquery.ScalarQueryParameter("n", "INT64", n),
+            bigquery.ScalarQueryParameter("band", "FLOAT64", band),
+            bigquery.ScalarQueryParameter("min_ratings", "INT64", min_ratings),
+        ],
     )
 
 
@@ -168,37 +238,52 @@ def get_provenance(game_id: int, client: Optional[bigquery.Client] = None) -> Op
     return rows[0] if rows else None
 
 
-def get_game(game_id: int, client: Optional[bigquery.Client] = None) -> Optional[dict[str, Any]]:
-    """Compose the full game document. ``None`` when the game has no features row.
+def _profile_row(game_id: int, client: bigquery.Client) -> Optional[dict[str, Any]]:
+    # SELECT * is deliberate here: game_profile is RANGE-partitioned on game_id, so this
+    # reads a single partition (~2MB) and we want the whole row. The no-star rule applies
+    # to the per-block readers, which scan unclustered tables.
+    rows = _rows(
+        client,
+        f"SELECT * FROM `{dataset('analytics')}.game_profile` WHERE game_id = @game_id",
+        game_id,
+    )
+    return rows[0] if rows else None
 
-    The six block queries are issued **concurrently**, so wall-clock latency is the
-    slowest query rather than the sum of all six. ``bigquery.Client`` is thread-safe for
-    query submission.
 
-    Trade-off: there is no early short-circuit any more, so an unknown game costs all
-    six queries instead of one. Misses are rare; the common path is what matters.
+def get_game(
+    game_id: int,
+    client: Optional[bigquery.Client] = None,
+    profile: str = "default",
+) -> Optional[dict[str, Any]]:
+    """Compose the full game document. ``None`` when the game has no profile row.
+
+    Reads the pre-joined ``game_profile`` row plus the precomputed neighbour list —
+    two partitioned lookups (~21MB) rather than the old six-table fan-out (~361MB).
+    The two run concurrently so latency stays at roughly one query.
     """
     client = client or get_client()
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {
-            "features": pool.submit(get_feature_row, game_id, client),
-            "player_counts": pool.submit(get_player_counts, game_id, client),
-            "predictions": pool.submit(get_predictions, game_id, client),
-            "embedding": pool.submit(get_embedding, game_id, client),
-            "similar": pool.submit(get_similar, game_id, 10, client),
-            "provenance": pool.submit(get_provenance, game_id, client),
-        }
-        results = {key: future.result() for key, future in futures.items()}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        profile_f = pool.submit(_profile_row, game_id, client)
+        similar_f = pool.submit(_similar_precomputed, game_id, profile, client)
+        row = profile_f.result()
+        similar = similar_f.result()
 
-    features = results["features"]
-    if features is None:
+    if row is None:
         return None
-    features["player_counts"] = results["player_counts"]
+
+    features = dict(row)
+    # Nested blocks live alongside the feature columns in the table; lift them out so
+    # the response shape matches what the API has always returned.
+    predictions = features.pop("predictions", None)
+    embedding = features.pop("embedding", None)
+    provenance = features.pop("provenance", None)
+    features["player_counts"] = [dict(pc) for pc in (features.pop("player_counts", None) or [])]
+
     return {
         "game_id": game_id,
         "features": features,
-        "predictions": results["predictions"],
-        "embedding": results["embedding"],
-        "similar": results["similar"],
-        "provenance": results["provenance"],
+        "predictions": dict(predictions) if predictions is not None else None,
+        "embedding": dict(embedding) if embedding is not None else None,
+        "similar": similar,
+        "provenance": dict(provenance) if provenance is not None else None,
     }
