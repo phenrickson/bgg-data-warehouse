@@ -27,15 +27,6 @@ WITH player_counts_agg AS (
   GROUP BY game_id
 ),
 
--- Whole-row struct, so the predictions block stays faithful to bgg_predictions
--- (including all model-metadata columns) and picks up new ML outputs automatically
--- rather than silently dropping them.
-predictions_joined AS (
-  SELECT p.*, fp.first_prediction_ts
-  FROM ${ref("bgg_predictions")} p
-  LEFT JOIN ${ref("game_first_prediction")} fp ON fp.game_id = p.game_id
-),
-
 -- raw.fetched_responses can hold several fetch records per game; keep the newest.
 provenance_latest AS (
   SELECT game_id, fetch_timestamp, fetch_status
@@ -91,7 +82,12 @@ SELECT
 
   -- Single-row blocks collapsed into structs. LEFT JOINed, so a game with no
   -- predictions/embedding/provenance still yields a row (the struct is NULL).
-  IF(pj.game_id IS NULL, NULL, pj) AS predictions,
+  -- Whole-row struct, so the predictions block stays faithful to bgg_predictions
+  -- (all model-metadata columns) and picks up new ML outputs automatically.
+  -- bgg_predictions ALREADY carries first_prediction_ts / is_new_1d / is_new_7d via its
+  -- own join to game_first_prediction — re-joining here would duplicate the field name,
+  -- which a SELECT tolerates but CREATE TABLE (a struct column) rejects.
+  IF(p.game_id IS NULL, NULL, p) AS predictions,
 
   IF(co.game_id IS NULL, NULL, STRUCT(
     co.umap_1,
@@ -109,6 +105,6 @@ SELECT
 
 FROM ${ref("games_features")} f
 LEFT JOIN player_counts_agg pc ON pc.game_id = f.game_id
-LEFT JOIN predictions_joined pj ON pj.game_id = f.game_id
+LEFT JOIN ${ref("bgg_predictions")} p ON p.game_id = f.game_id
 LEFT JOIN ${ref("bgg_game_coordinates")} co ON co.game_id = f.game_id
 LEFT JOIN provenance_latest pr ON pr.game_id = f.game_id
