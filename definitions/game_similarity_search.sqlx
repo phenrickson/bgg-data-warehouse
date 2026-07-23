@@ -3,16 +3,7 @@ config {
   schema: "analytics",
   name: "game_similarity_search",
   uniqueKey: ["game_id"],
-  description: "Game embeddings enriched with features for similarity search. Combines embeddings from predictions with game metadata for filtering by year, rating, complexity, etc. Clustered on users_rated + complexity: the similarity query filters on THOSE columns (never on game_id) and then ranks every survivor, so clustering by game_id would prune nothing.",
-  bigquery: {
-    // Deliberately NOT game_id. Live similarity filters `users_rated >= N` (applied on
-    // essentially every query; alone cuts 127,645 -> 17,258 rows, ~86%) and then a
-    // source-relative complexity band, before ranking. users_rated is therefore the
-    // right prefix key, with complexity second for the band tweak.
-    // NOTE: clustering cannot be added to an existing table in place -- this needs a
-    // FULL REFRESH to take effect (see 2026-03-31-dataform-incremental-schema-drift).
-    clusterBy: ["users_rated", "complexity"]
-  }
+  description: "Game embeddings enriched with features for similarity search. Combines embeddings from predictions with game metadata for filtering by year, rating, complexity, etc. NOT clustered/partitioned: measurement showed no table layout prunes the live similarity query, because its self-join to the source embedding defeats pruning (a plain filtered scan prunes 67MB->9MB; the joined query stays ~68MB). The default similarity path is served precomputed from game_neighbors; this table is only hit for tuned/custom similarity, which is rare and ~$0.0003/call."
 }
 
 SELECT
