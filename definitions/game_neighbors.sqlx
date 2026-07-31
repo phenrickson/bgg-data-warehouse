@@ -17,11 +17,21 @@ js {
   //
   // Note: `complexity` here is bgg_complexity_predictions.predicted_complexity, as
   // surfaced by game_similarity_search.
+  // `min_users_rated` bounds who may be RECOMMENDED — nobody wants a neighbour list of
+  // games with four ratings. It must not bound who RECEIVES recommendations, and until now
+  // it did: one `candidates` CTE fed both sides of the self-join, so a game under the floor
+  // got no neighbours at all. That silently excluded 110,666 of 127,940 games — including
+  // every upcoming and newly-published title, which is exactly the population where "what is
+  // this like?" is the only question a visitor can ask, since there are no ratings yet.
+  //
+  // `source_min_users_rated` is therefore its own knob, and 0 is the intended value; it
+  // exists so the bound is visible and tunable rather than an accident of CTE reuse.
   const PROFILES = [
     {
       name: "default",
-      min_users_rated: 100,   // matches DEFAULT_MIN_RATINGS in the viewer
-      complexity_band: 0.75,  // source-relative: |candidate - source| <= band
+      min_users_rated: 100,       // candidate floor; matches DEFAULT_MIN_RATINGS in the viewer
+      source_min_users_rated: 0,  // every game gets neighbours, rated or not
+      complexity_band: 0.75,      // source-relative: |candidate - source| <= band
       distance: "COSINE",
       dims: 64,
       top_k: 10
@@ -36,6 +46,7 @@ js {
 
 WITH
 ${PROFILES.map(p => `
+-- Who may be recommended.
 candidates_${p.name} AS (
   SELECT
     game_id,
@@ -48,6 +59,17 @@ candidates_${p.name} AS (
     AND complexity IS NOT NULL
 ),
 
+-- Who receives recommendations. A separate set on purpose — see the note above the profile.
+sources_${p.name} AS (
+  SELECT
+    game_id,
+    complexity,
+    ${embeddingColumn(p.dims)} AS embedding
+  FROM ${ref("game_similarity_search")}
+  WHERE users_rated >= ${p.source_min_users_rated}
+    AND complexity IS NOT NULL
+),
+
 -- Source-relative band: the candidate set depends on the query game's own complexity,
 -- which is exactly why an unfiltered global top-N cannot reproduce these results.
 pairs_${p.name} AS (
@@ -57,7 +79,7 @@ pairs_${p.name} AS (
     t.name AS nbr_name,
     t.year_published AS nbr_year_published,
     ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS distance
-  FROM candidates_${p.name} s
+  FROM sources_${p.name} s
   JOIN candidates_${p.name} t
     ON t.game_id != s.game_id
    AND t.complexity BETWEEN s.complexity - ${p.complexity_band}
@@ -85,6 +107,7 @@ SELECT
     ORDER BY distance
   ) AS similar,
   ${p.min_users_rated} AS min_users_rated,
+  ${p.source_min_users_rated} AS source_min_users_rated,
   ${p.complexity_band} AS complexity_band,
   '${p.distance}' AS distance_type,
   ${p.dims} AS embedding_dims,
