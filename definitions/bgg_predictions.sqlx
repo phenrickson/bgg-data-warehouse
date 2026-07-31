@@ -16,6 +16,10 @@ WITH source_data AS (
     predicted_rating,
     predicted_users_rated,
     predicted_geek_rating,
+    -- Whether the scoring models were fitted on this game's year. Emitted by the
+    -- scorer from the loaded model's registration, so it stays honest across a refit.
+    sample_status,
+    training_cutoff_year,
     geek_rating_model_name,
     geek_rating_model_version,
     geek_rating_experiment,
