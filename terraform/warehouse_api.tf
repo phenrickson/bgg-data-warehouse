@@ -22,8 +22,14 @@ variable "warehouse_api_invoker_members" {
     (A "group:..." member is possible too, but a group's membership is managed outside
     Terraform/Actions — prefer listing identities directly here.)
   EOT
-  type    = list(string)
-  default = ["user:phil.henrickson@gmail.com"]
+  type        = list(string)
+  default = [
+    "user:phil.henrickson@gmail.com",
+    # bgg-viewer's Cloud Run runtime SA. In prod the viewer mints an ID token for
+    # ITS OWN identity (src/lib/server/warehouse/token.ts -> mintIdToken), not a
+    # user's, so without this every game detail page 403s. See terraform/viewer.tf.
+    "serviceAccount:bgg-viewer@bgg-data-warehouse.iam.gserviceaccount.com",
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_binding" "warehouse_api_invokers" {

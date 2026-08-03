@@ -17,3 +17,7 @@ output "service_account_email" {
 output "artifact_registry_repository" {
   value = google_artifact_registry_repository.bgg_images.name
 }
+
+output "bgg_viewer_service_account" {
+  value = google_service_account.bgg_viewer.email
+}
