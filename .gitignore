@@ -80,3 +80,9 @@ Thumbs.db
 scratch/
 
 src/debug
+
+# Terraform
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
