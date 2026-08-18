@@ -13,7 +13,7 @@ from src.warehouse.bq import dataset, get_client
 
 def fetch_recently_added(
     days_back: int = 7,
-    limit: int = 200,
+    limit: int = 20000,
     client: Optional[bigquery.Client] = None,
 ) -> list[dict[str, Any]]:
     """Games first fetched in the last ``days_back`` days, newest first.
