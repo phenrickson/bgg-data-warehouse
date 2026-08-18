@@ -66,10 +66,10 @@ def test_days_back_and_limit_are_bound_parameters_not_interpolated():
     assert params["limit"] == 7
 
 
-def test_defaults_are_7_days_and_200_rows():
+def test_defaults_are_7_days_and_5000_rows():
     client = FakeClient([])
     monitoring.fetch_recently_added(client=client)
     _, job_config = client.calls[0]
     params = _params(job_config)
     assert params["days_back"] == 7
-    assert params["limit"] == 200
+    assert params["limit"] == 5000

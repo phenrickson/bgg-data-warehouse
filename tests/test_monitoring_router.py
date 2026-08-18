@@ -19,7 +19,7 @@ def test_new_games_defaults(monkeypatch):
     r = client.get("/new-games")
     assert r.status_code == 200
     assert r.json() == [{"game_id": 13, "name": "Catan"}]
-    assert seen == {"days_back": 7, "limit": 200}
+    assert seen == {"days_back": 7, "limit": 5000}
 
 
 def test_new_games_passes_days_and_limit(monkeypatch):
