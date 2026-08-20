@@ -10,6 +10,11 @@
 # (bgg-viewer/.github/workflows/release-please.yml). Terraform owns identity, IAM,
 # and the secret containers only — never the service, never the secret values.
 #
+# Custom domain: boardgame-viz.com is mapped to the service via a one-time manual
+# `gcloud run domain-mappings create` run under a personal account (domain mapping
+# requires the identity that verified ownership in Search Console — the CI service
+# account isn't a verified owner). Not Terraform-managed; not tracked elsewhere.
+#
 # See bgg-viewer/docs/superpowers/specs/2026-08-03-deployment-design.md
 # =============================================================================
 
