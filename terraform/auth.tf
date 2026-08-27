@@ -34,6 +34,12 @@ resource "google_bigquery_table" "users" {
       description = "Optional display name"
     },
     {
+      name        = "bgg_username"
+      type        = "STRING"
+      mode        = "NULLABLE"
+      description = "Linked BGG account identity, self-declared (no verification — BGG has no OAuth). Used for the collection filter and, eventually, collection predictions. See bgg-viewer's docs/superpowers/specs/2026-08-26-collection-filter-design.md."
+    },
+    {
       name        = "created_at"
       type        = "TIMESTAMP"
       mode        = "REQUIRED"
