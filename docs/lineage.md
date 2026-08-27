@@ -19,6 +19,7 @@ graph LR
     analytics__games_features["analytics.games_features"] --> analytics__game_similarity_search["analytics.game_similarity_search"]
     analytics__games_features["analytics.games_features"] --> staging__game_features_hash["staging.game_features_hash"]
     analytics__player_count_recommendations["analytics.player_count_recommendations"] --> analytics__game_profile["analytics.game_profile"]
+    collections__user_collections["collections.user_collections"] --> collections__user_collections["collections.user_collections"]
     core__artists["core.artists"] --> analytics__games_features["analytics.games_features"]
     core__categories["core.categories"] --> analytics__filter_categories["analytics.filter_categories"]
     core__categories["core.categories"] --> analytics__games_features["analytics.games_features"]
