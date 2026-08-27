@@ -70,3 +70,9 @@ declare({
   schema: "raw",
   name: "collection_models_registry"
 });
+
+declare({
+  database: "bgg-predictive-models",
+  schema: "collections",
+  name: "user_collections"
+});

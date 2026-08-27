@@ -1,0 +1,16 @@
+config {
+  type: "view",
+  schema: "collections",
+  name: "user_collections",
+  description: "Raw per-account BGG collection membership, landed from bgg-predictive-models' BGGCollectionLoader. Not a model artifact — see user_collection_predictions for scored output over this data."
+}
+
+SELECT
+  username,
+  game_id,
+  owned,
+  want,
+  user_rating,
+  updated_at
+FROM ${ref("bgg-predictive-models", "collections", "user_collections")}
+WHERE removed_at IS NULL
