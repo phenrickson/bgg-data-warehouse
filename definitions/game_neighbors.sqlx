@@ -1,106 +1,92 @@
 config {
-  type: "table",
+  type: "operations",
+  hasOutput: true,
   schema: "analytics",
   name: "game_neighbors",
-  description: "Precomputed similar-games lists, one row per (profile, game). Each profile is a full parameter set from the bgg-viewer tuning bench: a similarity/rating blend, a source-relative complexity band, hard similarity / rating-percentile floors, and a per-product-line cap. The read API serves one profile per request from a single clustered lookup; tuning parameters ride on the row so the table is self-describing.",
-  bigquery: {
-    clusterBy: ["profile", "game_id"]
-  }
+  description: "Precomputed similar-games lists, one row per (profile, game). Each profile is a parameter set from the bgg-viewer tuning bench: a similarity/rating blend, an optional source-relative complexity band, hard similarity / rating-percentile floors, and an optional per-product-line cap. The read API serves one profile per request from a single clustered lookup; tuning parameters ride on the row so the table is self-describing. Built one profile per BigQuery job (CREATE then INSERT) so each cross-join stays under the on-demand CPU ceiling."
 }
 
 js {
-  // Profiles are authored in the bench and exported via its "copy profiles" button.
-  // includes/similarity_profiles.js is the one source of truth — edit it, not this file.
+  // Profiles live in includes/similarity_profiles.js — the one source of truth. Edit
+  // that (or re-copy from the bench), not this file. `source_min_users_rated` is the
+  // knob that keeps each job affordable: `similar` covers every game (game-page
+  // default); the explore profiles only compute for games with a few ratings.
   const PROFILES = similarity_profiles.profiles;
 
-  // 64-d lives in `embedding`; reduced dims in embedding_8/16/32.
   function embeddingColumn(dims) {
     return dims === 64 ? "embedding" : `embedding_${dims}`;
   }
-  // JS null -> a typed SQL NULL so the per-profile SELECTs UNION cleanly.
   function orNull(v, type) {
     return v === null || v === undefined ? `CAST(NULL AS ${type})` : v;
   }
   const hasCap = (p) => p.max_per_family !== null && p.max_per_family !== undefined;
   const hasBand = (p) => p.complexity_band !== null && p.complexity_band !== undefined;
-}
 
-WITH
-
--- Global geek-rating percentile — the rating half of every blend. Unrated games
--- (geek_rating = 0) are absent here and score 0 via the COALESCE below, matching
--- the bench.
-rating_pct AS (
+  // One profile's full `WITH … SELECT … GROUP BY` — self-contained so it can be its own
+  // statement (its own CPU budget). The dot product (ML.DISTANCE) is evaluated once.
+  function profileQuery(p) {
+    return `
+WITH rating_pct AS (
+  -- global geek-rating percentile: the rating half of the blend. Unrated games
+  -- (geek_rating = 0) are absent and score 0 via COALESCE below.
   SELECT game_id, PERCENT_RANK() OVER (ORDER BY geek_rating) AS geek_pct
   FROM ${ref("game_similarity_search")}
   WHERE geek_rating > 0
 ),
-
-${PROFILES.map(p => `
--- ${p.name} --
-candidates_${p.name} AS (
+candidates AS (
   SELECT game_id, name, year_published, complexity, ${embeddingColumn(p.dims)} AS embedding
   FROM ${ref("game_similarity_search")}
   WHERE users_rated >= ${p.min_users_rated} AND complexity IS NOT NULL
 ),
-sources_${p.name} AS (
+sources AS (
   SELECT game_id, complexity, ${embeddingColumn(p.dims)} AS embedding
   FROM ${ref("game_similarity_search")}
   WHERE users_rated >= ${p.source_min_users_rated} AND complexity IS NOT NULL
 ),
-pairs_${p.name} AS (
+pairs AS (
   SELECT
     s.game_id AS src_game_id,
     t.game_id AS nbr_game_id,
     t.name AS nbr_name,
     t.year_published AS nbr_year_published,
     ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS distance,
-    1 - ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS similarity,
     COALESCE(rp.geek_pct, 0) AS nbr_geek_pct,
     pl.product_line_id AS nbr_product_line
-  FROM sources_${p.name} s
-  JOIN candidates_${p.name} t
+  FROM sources s
+  JOIN candidates t
     ON t.game_id != s.game_id${hasBand(p) ? `
    AND t.complexity BETWEEN s.complexity - ${p.complexity_band} AND s.complexity + ${p.complexity_band}` : ``}
   LEFT JOIN rating_pct rp ON rp.game_id = t.game_id
   LEFT JOIN ${ref("game_product_line")} pl ON pl.game_id = t.game_id
 ),
-scored_${p.name} AS (
+scored AS (
   SELECT
     *,
-    ${p.weight} * similarity + (1 - ${p.weight}) * nbr_geek_pct AS score
-  FROM pairs_${p.name}
-  WHERE similarity >= ${p.min_similarity}
+    ${p.weight} * (1 - distance) + (1 - ${p.weight}) * nbr_geek_pct AS score
+  FROM pairs
+  WHERE (1 - distance) >= ${p.min_similarity}
     AND (${p.min_rating_pct} = 0 OR nbr_geek_pct >= ${p.min_rating_pct})
 ),${hasCap(p) ? `
-line_ranked_${p.name} AS (
+line_ranked AS (
+  -- cap N per product line: a candidate with no line is never capped
   SELECT
     *,
     IF(
       nbr_product_line IS NULL, 1,
       ROW_NUMBER() OVER (PARTITION BY src_game_id, nbr_product_line ORDER BY score DESC)
     ) AS line_rn
-  FROM scored_${p.name}
+  FROM scored
 ),
-kept_${p.name} AS (
-  SELECT * FROM line_ranked_${p.name} WHERE line_rn <= ${p.max_per_family}
-),` : ``}
-ranked_${p.name} AS (
+kept AS (SELECT * FROM line_ranked WHERE line_rn <= ${p.max_per_family}),` : ``}
+ranked AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY src_game_id ORDER BY score DESC) AS rn
-  FROM ${hasCap(p) ? `kept_${p.name}` : `scored_${p.name}`}
-)`).join(",\n")}
-
-${PROFILES.map(p => `
+  FROM ${hasCap(p) ? "kept" : "scored"}
+)
 SELECT
   '${p.name}' AS profile,
   src_game_id AS game_id,
   ARRAY_AGG(
-    STRUCT(
-      nbr_game_id AS game_id,
-      nbr_name AS name,
-      nbr_year_published AS year_published,
-      distance
-    )
+    STRUCT(nbr_game_id AS game_id, nbr_name AS name, nbr_year_published AS year_published, distance)
     ORDER BY score DESC
   ) AS similar,
   CAST(${p.weight} AS FLOAT64) AS weight,
@@ -113,6 +99,15 @@ SELECT
   '${p.distance}' AS distance_type,
   ${p.dims} AS embedding_dims,
   CURRENT_TIMESTAMP() AS computed_ts
-FROM ranked_${p.name}
+FROM ranked
 WHERE rn <= ${p.top_k}
-GROUP BY src_game_id`).join("\nUNION ALL\n")}
+GROUP BY src_game_id`;
+  }
+}
+
+CREATE OR REPLACE TABLE ${self()}
+CLUSTER BY profile, game_id
+AS${profileQuery(PROFILES[0])}
+${PROFILES.slice(1).map(p => `
+---
+INSERT INTO ${self()}${profileQuery(p)}`).join("\n")}

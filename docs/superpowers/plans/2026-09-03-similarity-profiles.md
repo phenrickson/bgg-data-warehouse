@@ -1,31 +1,55 @@
 # Tuned similarity profiles for `analytics.game_neighbors` — Plan
 
-**Date:** 2026-09-03 (rewritten — the first draft predated the product-line-cap design)
-**Status:** Draft — awaiting go-ahead
-**Bench:** bgg-viewer `feat/similar-games-explorer`. The profile values come from the
-bench's "copy profiles" button; the product-line logic below is a port of
+**Date:** 2026-09-03
+**Status:** PR #104 merged (models landed); `game_neighbors` build **failed on the
+BigQuery on-demand CPU ceiling** — fix in PR `fix/similarity-profiles-job-budget`.
+**Bench:** bgg-viewer `feat/similar-games-explorer`. Product-line logic ported from
 `bgg-viewer/src/lib/server/similar-explorer/build.ts`.
 
-## Goal & success criteria
+## What actually happened
 
-Serve four similarity profiles from the precomputed path so different use-cases get
-different similar-games lists. Values, from the bench:
+PR #104 merged `game_product_line.sqlx` (built fine, 44k rows) and `game_neighbors.sqlx`
+as one `type: table` doing a 4-way `UNION ALL`. That query burned **113,959 CPU-seconds
+against an 18,400 ceiling** (6×): on-demand BigQuery kills a query that spends huge CPU
+on a `ML.DISTANCE` cross join while scanning only ~72 MB. `game_neighbors` on prod is
+**untouched** (old single `default` profile still served) but every Dataform run now
+fails at that step.
 
-| profile | weight (sim:rating) | band | max/line | floor | sim ≥ | rating pct ≥ | top_k |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `similar` | 1.00 | ±0.75 | — | 100 | 0.50 | — | 12 |
-| `sicko` | 0.70 | none | 1 | 30 | — | — | 10 |
-| `recommender` | 0.54 | ±0.75 | 1 | 100 | 0.50 | 0.75 | 10 |
-| `default` | 0.80 | ±1.0 | 1 | 100 | 0.50 | — | 10 |
+### The fix (this PR)
 
-(Values as of the re-copied `includes/similarity_profiles.js`.) All four:
-`source_min_users_rated: 0`, `dims: 64`, `distance: COSINE`.
+1. **Three profiles, not four** — drop `default`; `similar` becomes the game-page default.
+2. **`source_min_users_rated` per profile** — `similar` = 0 (covers every game),
+   `sicko` / `recommender` = 30 (opt-in explore modes; a game with < 30 ratings just
+   gets `similar`). This is the knob that shrinks the cross join.
+3. **`game_neighbors` → `type: operations`** — `CREATE OR REPLACE … AS <similar>`, then
+   `INSERT INTO … <sicko>`, then `<recommender>`. **The CPU ceiling is per BigQuery job**,
+   so three statements = three budgets. Measured, each as its own job:
 
-Success:
-- `SELECT profile, COUNT(*) FROM analytics.game_neighbors GROUP BY profile` → 4 rows.
-- `GET /games/{id}?profile=recommender` returns a list ranked by those params.
-- `GET /games/{id}` (no param) is unchanged — still the `default` profile.
-- Spot checks hold: Take Time → ≤1 Unlock; TI4 → ≤1 other TI; Risk → ≤1 other Risk;
+   | profile | slot-seconds | vs ~18,400 ceiling |
+   | --- | --- | --- |
+   | `similar` (src 0, band ±0.75) | 3,632 | ~20% |
+   | `sicko` (src 30, no band) | 6,507 | ~35% |
+   | `recommender` (src 30, band ±0.75) | 827 | ~5% |
+
+4. Compute `ML.DISTANCE` **once** per pair (was twice).
+
+Adding a future profile = another `INSERT` job with its own budget.
+
+| profile | weight | band | max/line | cand floor | src floor | sim ≥ | rating pct ≥ | top_k |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `similar` | 1.00 | ±0.75 | — | 100 | 0 | 0.50 | — | 10 |
+| `sicko` | 0.70 | none | 1 | 30 | 30 | — | — | 10 |
+| `recommender` | 0.54 | ±0.75 | 1 | 100 | 30 | 0.50 | 0.75 | 10 |
+
+All: `dims: 64`, `distance: COSINE`.
+
+## Success criteria
+
+- `SELECT profile, COUNT(*) FROM analytics.game_neighbors GROUP BY profile` → **3 rows**.
+- Dataform run of `game_neighbors` completes (no CPU-limit failure).
+- `GET /games/{id}?profile=sicko` returns a `sicko`-ranked list.
+- `GET /games/{id}` → the `similar` profile (PR 2 flips the API default from `default`).
+- Spot checks: Take Time → ≤1 Unlock; TI4 → ≤1 other TI; Risk → ≤1 other Risk;
   a niche game still gets a non-empty list.
 
 ## What already exists (reuse)
