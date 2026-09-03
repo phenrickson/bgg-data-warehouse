@@ -1,0 +1,114 @@
+config {
+  type: "table",
+  schema: "analytics",
+  name: "game_product_line",
+  description: "One row per game that belongs to a product line — the BGG grouping the neighbour cap treats as 'the same product' (all the Unlock! boxes, every edition of Twilight Imperium, the Risk reskins). Consumed by game_neighbors's max_per_family cap. Ported from the bgg-viewer tuning bench (src/lib/server/similar-explorer/build.ts); keep the two in step.",
+  bigquery: {
+    clusterBy: ["game_id"]
+  }
+}
+
+/*
+ * A game's product line is chosen from its `Game:` / `Series:` families in this order:
+ *   1. the family whose name appears in the game's own title — "Unlock!: Escape
+ *      Adventures – Fifth Avenue" picks `Series: Unlock!` over the smaller
+ *      `Series: Free PnP … COVID` promo it also sits in;
+ *   2. a `Game:` family over a `Series:` one;
+ *   3. the smallest family — "Irish Gauge" (no name match anywhere) takes
+ *      `Series: Iron Rail` (4) over `Series: Cube Rails` (59).
+ *
+ * A game in no such family inherits the line of a game it reimplements / expands
+ * (one hop) — "Summoner Wars (Second Edition)" is in no family at all, but the
+ * reimplementation edge to "Summoner Wars" carries it into `Game: Summoner Wars`.
+ * Games with neither a family nor a lined neighbour get no row here (the cap then
+ * leaves them alone).
+ */
+
+WITH edges AS (
+  SELECT game_id, implementation_id AS other FROM ${ref("game_implementations")}
+  UNION ALL SELECT implementation_id AS game_id, game_id AS other FROM ${ref("game_implementations")}
+  UNION ALL SELECT game_id, expansion_id AS other FROM ${ref("game_expansions")}
+  UNION ALL SELECT expansion_id AS game_id, game_id AS other FROM ${ref("game_expansions")}
+),
+
+fam_size AS (
+  SELECT family_id, COUNT(*) AS n
+  FROM ${ref("game_families")}
+  GROUP BY family_id
+),
+
+-- each game's Game:/Series: families, with the family's "core" name (drop the
+-- "Game: "/"Series: " prefix and a trailing " (Publisher)" — STRPOS/SUBSTR rather
+-- than a regex so there are no backslashes to escape through Dataform).
+gs_raw AS (
+  SELECT
+    gf.game_id,
+    gf.family_id,
+    f.name AS family_name,
+    fs.n AS family_size,
+    STARTS_WITH(f.name, 'Game: ') AS is_game_family,
+    gfeat.name AS game_name,
+    SUBSTR(f.name, STRPOS(f.name, ': ') + 2) AS core_raw
+  FROM ${ref("game_families")} gf
+  JOIN ${ref("families")} f ON f.family_id = gf.family_id
+  JOIN fam_size fs ON fs.family_id = gf.family_id
+  JOIN ${ref("games_features")} gfeat ON gfeat.game_id = gf.game_id
+  WHERE STARTS_WITH(f.name, 'Game: ') OR STARTS_WITH(f.name, 'Series: ')
+),
+
+gs_families AS (
+  SELECT
+    game_id,
+    family_id,
+    family_size,
+    is_game_family,
+    (LENGTH(core) >= 3 AND STRPOS(LOWER(game_name), LOWER(core)) > 0) AS name_match
+  FROM (
+    SELECT
+      *,
+      IF(
+        ENDS_WITH(core_raw, ')') AND STRPOS(core_raw, ' (') > 0,
+        TRIM(SUBSTR(core_raw, 1, STRPOS(core_raw, ' (') - 1)),
+        core_raw
+      ) AS core
+    FROM gs_raw
+  )
+),
+
+product_line_base AS (
+  SELECT
+    game_id,
+    ARRAY_AGG(
+      family_id
+      ORDER BY name_match DESC, is_game_family DESC, family_size ASC, family_id ASC
+      LIMIT 1
+    )[OFFSET(0)] AS product_line_id
+  FROM gs_families
+  GROUP BY game_id
+),
+
+product_line_inherited AS (
+  SELECT
+    e.game_id,
+    ARRAY_AGG(plb.product_line_id ORDER BY fs.n ASC, plb.product_line_id ASC LIMIT 1)[OFFSET(0)]
+      AS product_line_id
+  FROM edges e
+  JOIN product_line_base plb ON plb.game_id = e.other
+  JOIN fam_size fs ON fs.family_id = plb.product_line_id
+  WHERE e.game_id NOT IN (SELECT game_id FROM product_line_base)
+  GROUP BY e.game_id
+),
+
+product_line AS (
+  SELECT game_id, product_line_id FROM product_line_base
+  UNION ALL
+  SELECT game_id, product_line_id FROM product_line_inherited
+)
+
+SELECT
+  pl.game_id,
+  pl.product_line_id,
+  fam.name AS product_line_name,
+  CURRENT_TIMESTAMP() AS computed_ts
+FROM product_line pl
+JOIN ${ref("families")} fam ON fam.family_id = pl.product_line_id
