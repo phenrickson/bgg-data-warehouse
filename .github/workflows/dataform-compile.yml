@@ -1,0 +1,33 @@
+name: Dataform Compile Check
+
+# Pre-merge validation: does the Dataform project still compile? Runs fully
+# offline — no GCP credentials, no BigQuery. Catches config/type errors,
+# ref() to a nonexistent table, duplicate output targets, JS exceptions in
+# js{} blocks, and template syntax errors. Does NOT catch SQL semantic
+# errors or query cost — those need auth and only the post-merge run sees them.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'definitions/**'
+      - 'includes/**'
+      - 'workflow_settings.yaml'
+      - '.github/workflows/dataform-compile.yml'
+
+jobs:
+  compile:
+    name: Compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Dataform compile
+        run: npx -y @dataform/cli@3.0.0 compile
