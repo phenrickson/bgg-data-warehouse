@@ -13,6 +13,16 @@ js {
   // default); the explore profiles only compute for games with a few ratings.
   const PROFILES = similarity_profiles.profiles;
 
+  // The literal SQL body below spells out exactly three statements (one per
+  // profile). If the profile list changes length, that body is wrong — fail the
+  // compile rather than silently build a subset.
+  if (PROFILES.length !== 3) {
+    throw new Error(
+      `game_neighbors expects exactly 3 profiles, got ${PROFILES.length}. ` +
+      `Add/remove a statement in the SQL body to match.`
+    );
+  }
+
   function embeddingColumn(dims) {
     return dims === 64 ? "embedding" : `embedding_${dims}`;
   }
@@ -105,9 +115,23 @@ GROUP BY src_game_id`;
   }
 }
 
+-- One BigQuery job per statement (each `---` starts a new job, each with its own
+-- CPU budget). The `---` split is only honoured in this literal SQL body, not in
+-- JS-generated strings — so the three profiles are spelled out here rather than
+-- looped. The js{} block asserts PROFILES.length === 3 so adding one fails the
+-- compile check instead of silently dropping.
+
 CREATE OR REPLACE TABLE ${self()}
 CLUSTER BY profile, game_id
-AS${profileQuery(PROFILES[0])}
-${PROFILES.slice(1).map(p => `
+AS
+${profileQuery(PROFILES[0])}
+
 ---
-INSERT INTO ${self()}${profileQuery(p)}`).join("\n")}
+
+INSERT INTO ${self()}
+${profileQuery(PROFILES[1])}
+
+---
+
+INSERT INTO ${self()}
+${profileQuery(PROFILES[2])}
