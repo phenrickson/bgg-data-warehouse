@@ -15,7 +15,7 @@ def test_health():
 def test_get_game_ok(monkeypatch):
     monkeypatch.setattr(
         games_router.reader, "get_game",
-        lambda game_id, client=None: {"game_id": game_id, "features": {"name": "Catan"}},
+        lambda game_id, client=None, profile="similar": {"game_id": game_id, "features": {"name": "Catan"}},
     )
     r = client.get("/games/13")
     assert r.status_code == 200
@@ -23,8 +23,31 @@ def test_get_game_ok(monkeypatch):
 
 
 def test_get_game_missing_is_404(monkeypatch):
-    monkeypatch.setattr(games_router.reader, "get_game", lambda game_id, client=None: None)
+    monkeypatch.setattr(
+        games_router.reader, "get_game", lambda game_id, client=None, profile="similar": None
+    )
     assert client.get("/games/999999").status_code == 404
+
+
+def test_get_game_passes_profile(monkeypatch):
+    seen = {}
+
+    def fake(game_id, client=None, profile="similar"):
+        seen["profile"] = profile
+        return {"game_id": game_id, "features": {}}
+
+    monkeypatch.setattr(games_router.reader, "get_game", fake)
+    client.get("/games/13?profile=sicko")
+    assert seen["profile"] == "sicko"
+
+
+def test_get_game_unknown_profile_is_400(monkeypatch):
+    def boom(game_id, client=None, profile="similar"):
+        raise ValueError(f"unknown profile: {profile!r}")
+
+    monkeypatch.setattr(games_router.reader, "get_game", boom)
+    r = client.get("/games/13?profile=bogus")
+    assert r.status_code == 400, "unknown profile should be 400, not 500"
 
 
 def test_predictions_sub_resource(monkeypatch):
@@ -76,10 +99,10 @@ def test_similar_passes_tuning_params(monkeypatch):
         return []
 
     monkeypatch.setattr(games_router.reader, "get_similar", fake)
-    r = client.get("/games/13/similar?n=25&band=0.5&metric=EUCLIDEAN&min_ratings=500&dims=32&profile=strict")
+    r = client.get("/games/13/similar?n=25&band=0.5&metric=EUCLIDEAN&min_ratings=500&dims=32&profile=sicko")
     assert r.status_code == 200
     assert seen["n"] == 25 and seen["band"] == 0.5 and seen["metric"] == "EUCLIDEAN"
-    assert seen["min_ratings"] == 500 and seen["dims"] == 32 and seen["profile"] == "strict"
+    assert seen["min_ratings"] == 500 and seen["dims"] == 32 and seen["profile"] == "sicko"
 
 
 def test_similar_rejects_bad_metric(monkeypatch):

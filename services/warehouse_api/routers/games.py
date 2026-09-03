@@ -20,9 +20,16 @@ def _require(value, game_id: int):
 
 
 @router.get("/{game_id}")
-def get_game(game_id: int):
-    """Full game document (features + predictions + embedding + similar + provenance)."""
-    return _require(reader.get_game(game_id), game_id)
+def get_game(game_id: int, profile: str = "similar"):
+    """Full game document (features + predictions + embedding + similar + provenance).
+
+    ``profile`` selects which precomputed neighbour list the ``similar`` block carries
+    (``similar`` | ``sicko`` | ``recommender``). An unknown profile is a 400.
+    """
+    try:
+        return _require(reader.get_game(game_id, profile=profile), game_id)
+    except ValueError as exc:  # unknown profile — caller error, not a bug
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{game_id}/features")
@@ -54,7 +61,7 @@ def get_embedding(game_id: int):
 @router.get("/{game_id}/similar")
 def get_similar(
     game_id: int,
-    profile: str = "default",
+    profile: str = "similar",
     n: int | None = None,
     band: float | None = None,
     metric: str | None = None,
@@ -63,18 +70,19 @@ def get_similar(
 ):
     """Similar games.
 
-    With no tuning parameters this serves the **precomputed** default profile (one
-    partitioned lookup). Supplying any of `n`, `band`, `metric`, `min_ratings` or
-    `dims` computes it **live** with those settings — same filtering semantics either
-    way. This is the two-tier pattern the front-end wants: fast default on load, live
-    when the user tweaks.
+    With no tuning parameters this serves the **precomputed** ``profile``
+    (``similar`` | ``sicko`` | ``recommender``, default ``similar``) — one partitioned
+    lookup. Supplying any of `n`, `band`, `metric`, `min_ratings` or `dims` computes it
+    **live** with those settings — same filtering semantics either way. This is the
+    two-tier pattern the front-end wants: fast default on load, live when the user
+    tweaks.
     """
     try:
         return reader.get_similar(
             game_id, profile=profile, n=n, band=band,
             metric=metric, min_ratings=min_ratings, dims=dims,
         )
-    except ValueError as exc:  # unsupported metric/dims — caller error, not a bug
+    except ValueError as exc:  # unknown profile / unsupported metric / dims — caller error
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
