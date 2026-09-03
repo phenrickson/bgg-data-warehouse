@@ -3,7 +3,7 @@ config {
   hasOutput: true,
   schema: "analytics",
   name: "game_neighbors",
-  description: "Precomputed similar-games lists, one row per (profile, game). Each profile is a parameter set from the bgg-viewer tuning bench: a similarity/rating blend, an optional source-relative complexity band, hard similarity / rating-percentile floors, and an optional per-product-line cap. The read API serves one profile per request from a single clustered lookup; tuning parameters ride on the row so the table is self-describing. Built one profile per BigQuery job (CREATE then INSERT) so each cross-join stays under the on-demand CPU ceiling."
+  description: "Precomputed similar-games lists, one row per (profile, game). Each profile is a parameter set from the bgg-viewer tuning bench: a similarity/rating blend, an optional source-relative complexity band, hard similarity / rating-percentile floors, and an optional per-product-line cap. The read API reads one game at a time — either one profile (the /similar endpoint) or all three (the game document) — so the table is CLUSTERed game_id first; tuning parameters ride on the row so the table is self-describing. Built one profile per BigQuery job (CREATE then INSERT) so each cross-join stays under the on-demand CPU ceiling."
 }
 
 js {
@@ -121,8 +121,17 @@ GROUP BY src_game_id`;
 -- looped. The js{} block asserts PROFILES.length === 3 so adding one fails the
 -- compile check instead of silently dropping.
 
+-- CREATE OR REPLACE cannot change an existing table's CLUSTER BY spec, so drop first.
+-- Harmless to keep: this operations model rebuilds the whole table every run anyway.
+DROP TABLE IF EXISTS ${self()}
+
+---
+
 CREATE OR REPLACE TABLE ${self()}
-CLUSTER BY profile, game_id
+-- game_id leads: every read filters one game_id (one profile for /similar, all three
+-- for the game document). profile-first pruning was useless for the all-profiles read
+-- and doubled its scan; game_id-first serves both from ~one block.
+CLUSTER BY game_id, profile
 AS
 ${profileQuery(PROFILES[0])}
 

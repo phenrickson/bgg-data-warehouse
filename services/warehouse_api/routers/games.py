@@ -23,8 +23,11 @@ def _require(value, game_id: int):
 def get_game(game_id: int, profile: str = "similar"):
     """Full game document (features + predictions + embedding + similar + provenance).
 
-    ``profile`` selects which precomputed neighbour list the ``similar`` block carries
-    (``similar`` | ``sicko`` | ``recommender``). An unknown profile is a 400.
+    ``similar_profiles`` carries all three precomputed neighbour lists
+    (``similar`` | ``recommender`` | ``sicko``) so the front-end can switch between them
+    without a refetch; a profile with no list for this game is an empty array. The
+    top-level ``similar`` block mirrors one of them, chosen by ``profile`` (default
+    ``similar``), and is kept for back-compat. An unknown ``profile`` is a 400.
     """
     try:
         return _require(reader.get_game(game_id, profile=profile), game_id)
