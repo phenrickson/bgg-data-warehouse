@@ -34,7 +34,15 @@ PLAYER_COUNTS = [{"player_count": "3", "best_percentage": 60.0}, {"player_count"
 PREDICTION_ROW = {"game_id": 13, "predicted_rating": 7.1, "first_prediction_ts": "2026-01-01T00:00:00Z"}
 COORD_ROW = {"game_id": 13, "umap_1": 1.2, "umap_2": 3.4}
 SIMILAR_ROWS = [{"game_id": 21, "name": "Carcassonne", "distance": 0.11}]
+RECOMMENDER_ROWS = [{"game_id": 822, "name": "Carcassonne", "distance": 0.14}]
 PROVENANCE_ROW = {"game_id": 13, "fetch_timestamp": "2026-07-10T00:00:00Z"}
+
+# game_neighbors: one row per (profile, game). `sicko` is deliberately absent — this
+# game sits below its 30-rating floor, which the reader must surface as an empty list.
+NEIGHBOR_ROWS = [
+    {"profile": "similar", "similar": SIMILAR_ROWS},
+    {"profile": "recommender", "similar": RECOMMENDER_ROWS},
+]
 
 
 # A game_profile row: flat feature columns + nested player_counts + block structs.
@@ -50,7 +58,7 @@ PROFILE_ROW = {
 def _profile_client():
     return RoutingClient({
         "game_profile": [PROFILE_ROW],
-        "game_neighbors": [{"similar": SIMILAR_ROWS}],
+        "game_neighbors": NEIGHBOR_ROWS,
     })
 
 
@@ -111,7 +119,10 @@ class TestGetGame:
 
     def test_composes_expected_shape(self):
         result = games.get_game(13, client=_profile_client())
-        assert set(result) == {"game_id", "features", "predictions", "embedding", "similar", "provenance"}
+        assert set(result) == {
+            "game_id", "features", "predictions", "embedding",
+            "similar", "similar_profiles", "provenance",
+        }
         assert result["game_id"] == 13
         assert result["features"]["name"] == "Catan"
         assert result["features"]["player_counts"] == PLAYER_COUNTS
@@ -119,6 +130,19 @@ class TestGetGame:
         assert "predictions" not in result["features"]
         assert result["predictions"]["predicted_rating"] == 7.1
         assert result["similar"] == SIMILAR_ROWS
+
+    def test_similar_profiles_carries_every_list_empty_when_absent(self):
+        """All three profiles are keyed; a profile with no row for this game is []."""
+        result = games.get_game(13, client=_profile_client())
+        assert set(result["similar_profiles"]) == {"similar", "recommender", "sicko"}
+        assert result["similar_profiles"]["similar"] == SIMILAR_ROWS
+        assert result["similar_profiles"]["recommender"] == RECOMMENDER_ROWS
+        assert result["similar_profiles"]["sicko"] == []
+
+    def test_top_level_similar_mirrors_the_requested_profile(self):
+        result = games.get_game(13, client=_profile_client(), profile="recommender")
+        assert result["similar"] == RECOMMENDER_ROWS
+        assert result["similar_profiles"]["similar"] == SIMILAR_ROWS
 
     def test_missing_game_returns_none(self):
         client = RoutingClient({"game_profile": []})
@@ -211,7 +235,7 @@ class TestConcurrency:
 
         client = SlowClient({
             "game_profile": [PROFILE_ROW],
-            "game_neighbors": [{"similar": SIMILAR_ROWS}],
+            "game_neighbors": NEIGHBOR_ROWS,
         })
         start = time.monotonic()
         result = games.get_game(13, client=client)

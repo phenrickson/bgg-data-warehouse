@@ -137,8 +137,10 @@ EMBEDDING_DIMS = {8: "embedding_8", 16: "embedding_16", 32: "embedding_32", 64: 
 # Precomputed neighbour profiles, mirrored from includes/similarity_profiles.js in
 # bgg-data-warehouse. A caller may only ask for one of these by name; anything else is
 # a client error (400), not an empty list. `similar` is the default — it covers every
-# game and is what the game-detail card serves.
-KNOWN_PROFILES = frozenset({"similar", "sicko", "recommender"})
+# game and is what the game-detail card serves. The tuple order is the order the game
+# document's `similar_profiles` map is built in, so it stays stable for callers/tests.
+PROFILE_NAMES = ("similar", "recommender", "sicko")
+KNOWN_PROFILES = frozenset(PROFILE_NAMES)
 DEFAULT_PROFILE = "similar"
 
 # The `similar` profile's live-query semantics, mirrored from
@@ -200,6 +202,29 @@ def _similar_precomputed(game_id: int, profile: str, client: bigquery.Client) ->
         extra_params=[bigquery.ScalarQueryParameter("profile", "STRING", profile)],
     )
     return [dict(s) for s in rows[0]["similar"]] if rows else []
+
+
+def _similar_all_profiles(
+    game_id: int, client: bigquery.Client
+) -> dict[str, list[dict[str, Any]]]:
+    """Every profile's precomputed neighbour list for one game, keyed by profile name.
+
+    One lookup on ``game_neighbors`` (clustered ``profile, game_id``) with no ``profile``
+    filter — at most three rows. A profile with no row for this game (``sicko`` below its
+    30-rating floor, ``recommender`` for the rare unrated game) maps to ``[]``, so the
+    key set is always the full :data:`PROFILE_NAMES` and the caller never ``KeyError``s.
+
+    The game document uses this instead of a single-profile lookup so the front-end can
+    switch neighbour lists client-side without a refetch.
+    """
+    rows = _rows(
+        client,
+        f"SELECT profile, similar FROM `{dataset('analytics')}.game_neighbors` "
+        "WHERE game_id = @game_id",
+        game_id,
+    )
+    by_profile = {r["profile"]: [dict(s) for s in r["similar"]] for r in rows}
+    return {name: by_profile.get(name, []) for name in PROFILE_NAMES}
 
 
 def _similar_live(
@@ -274,19 +299,23 @@ def get_game(
 ) -> Optional[dict[str, Any]]:
     """Compose the full game document. ``None`` when the game has no profile row.
 
-    Reads the pre-joined ``game_profile`` row plus the precomputed neighbour list —
-    two partitioned lookups (~21MB) rather than the old six-table fan-out (~361MB).
-    The two run concurrently so latency stays at roughly one query. ``profile`` picks
-    which precomputed neighbour list to attach; an unknown name raises ``ValueError``
-    (checked up front so it's a 400, not a 404 on a game that does exist).
+    Reads the pre-joined ``game_profile`` row plus every precomputed neighbour list for
+    the game — two partitioned lookups rather than the old six-table fan-out. The two run
+    concurrently so latency stays at roughly one query.
+
+    The document carries all three neighbour lists under ``similar_profiles`` so the
+    front-end can switch between them client-side without a refetch. ``profile`` still
+    selects which list the top-level ``similar`` block mirrors (kept for back-compat);
+    an unknown name raises ``ValueError`` (checked up front so it's a 400, not a 404 on
+    a game that does exist).
     """
     _check_profile(profile)
     client = client or get_client()
     with ThreadPoolExecutor(max_workers=2) as pool:
         profile_f = pool.submit(_profile_row, game_id, client)
-        similar_f = pool.submit(_similar_precomputed, game_id, profile, client)
+        similar_f = pool.submit(_similar_all_profiles, game_id, client)
         row = profile_f.result()
-        similar = similar_f.result()
+        similar_profiles = similar_f.result()
 
     if row is None:
         return None
@@ -304,6 +333,7 @@ def get_game(
         "features": features,
         "predictions": dict(predictions) if predictions is not None else None,
         "embedding": dict(embedding) if embedding is not None else None,
-        "similar": similar,
+        "similar": similar_profiles[profile],
+        "similar_profiles": similar_profiles,
         "provenance": dict(provenance) if provenance is not None else None,
     }
