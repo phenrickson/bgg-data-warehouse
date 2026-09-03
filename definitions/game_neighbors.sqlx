@@ -2,95 +2,92 @@ config {
   type: "table",
   schema: "analytics",
   name: "game_neighbors",
-  description: "Precomputed FILTERED nearest-neighbour lists, one row per (profile, game). Mirrors the front-end's default similarity semantics (min ratings floor + source-relative complexity band) so the API can serve the common path from a single clustered lookup instead of scanning every embedding. Tuning parameters are carried on the row so the table is self-describing. Custom/tuned similarity is served live from game_similarity_search, not from here.",
+  description: "Precomputed similar-games lists, one row per (profile, game). Each profile is a full parameter set from the bgg-viewer tuning bench: a similarity/rating blend, a source-relative complexity band, hard similarity / rating-percentile floors, and a per-product-line cap. The read API serves one profile per request from a single clustered lookup; tuning parameters ride on the row so the table is self-describing.",
   bigquery: {
     clusterBy: ["profile", "game_id"]
   }
 }
 
 js {
-  // The one place similarity defaults are declared.
-  //
-  // To tune: add a NEW profile alongside the existing one, compare on real games, then
-  // flip which the API treats as default — rather than mutating `default` in place.
-  // A full rebuild is ~13s / ~72MB per profile, so extra profiles are effectively free.
-  //
-  // Note: `complexity` here is bgg_complexity_predictions.predicted_complexity, as
-  // surfaced by game_similarity_search.
-  // `min_users_rated` bounds who may be RECOMMENDED — nobody wants a neighbour list of
-  // games with four ratings. It must not bound who RECEIVES recommendations, and until now
-  // it did: one `candidates` CTE fed both sides of the self-join, so a game under the floor
-  // got no neighbours at all. That silently excluded 110,666 of 127,940 games — including
-  // every upcoming and newly-published title, which is exactly the population where "what is
-  // this like?" is the only question a visitor can ask, since there are no ratings yet.
-  //
-  // `source_min_users_rated` is therefore its own knob, and 0 is the intended value; it
-  // exists so the bound is visible and tunable rather than an accident of CTE reuse.
-  const PROFILES = [
-    {
-      name: "default",
-      min_users_rated: 100,       // candidate floor; matches DEFAULT_MIN_RATINGS in the viewer
-      source_min_users_rated: 0,  // every game gets neighbours, rated or not
-      complexity_band: 0.75,      // source-relative: |candidate - source| <= band
-      distance: "COSINE",
-      dims: 64,
-      top_k: 10
-    }
-  ];
+  // Profiles are authored in the bench and exported via its "copy profiles" button.
+  // includes/similarity_profiles.js is the one source of truth — edit it, not this file.
+  const PROFILES = similarity_profiles.profiles;
 
   // 64-d lives in `embedding`; reduced dims in embedding_8/16/32.
   function embeddingColumn(dims) {
     return dims === 64 ? "embedding" : `embedding_${dims}`;
   }
+  // JS null -> a typed SQL NULL so the per-profile SELECTs UNION cleanly.
+  function orNull(v, type) {
+    return v === null || v === undefined ? `CAST(NULL AS ${type})` : v;
+  }
+  const hasCap = (p) => p.max_per_family !== null && p.max_per_family !== undefined;
+  const hasBand = (p) => p.complexity_band !== null && p.complexity_band !== undefined;
 }
 
 WITH
+
+-- Global geek-rating percentile — the rating half of every blend. Unrated games
+-- (geek_rating = 0) are absent here and score 0 via the COALESCE below, matching
+-- the bench.
+rating_pct AS (
+  SELECT game_id, PERCENT_RANK() OVER (ORDER BY geek_rating) AS geek_pct
+  FROM ${ref("game_similarity_search")}
+  WHERE geek_rating > 0
+),
+
 ${PROFILES.map(p => `
--- Who may be recommended.
+-- ${p.name} --
 candidates_${p.name} AS (
-  SELECT
-    game_id,
-    name,
-    year_published,
-    complexity,
-    ${embeddingColumn(p.dims)} AS embedding
+  SELECT game_id, name, year_published, complexity, ${embeddingColumn(p.dims)} AS embedding
   FROM ${ref("game_similarity_search")}
-  WHERE users_rated >= ${p.min_users_rated}
-    AND complexity IS NOT NULL
+  WHERE users_rated >= ${p.min_users_rated} AND complexity IS NOT NULL
 ),
-
--- Who receives recommendations. A separate set on purpose — see the note above the profile.
 sources_${p.name} AS (
-  SELECT
-    game_id,
-    complexity,
-    ${embeddingColumn(p.dims)} AS embedding
+  SELECT game_id, complexity, ${embeddingColumn(p.dims)} AS embedding
   FROM ${ref("game_similarity_search")}
-  WHERE users_rated >= ${p.source_min_users_rated}
-    AND complexity IS NOT NULL
+  WHERE users_rated >= ${p.source_min_users_rated} AND complexity IS NOT NULL
 ),
-
--- Source-relative band: the candidate set depends on the query game's own complexity,
--- which is exactly why an unfiltered global top-N cannot reproduce these results.
 pairs_${p.name} AS (
   SELECT
     s.game_id AS src_game_id,
     t.game_id AS nbr_game_id,
     t.name AS nbr_name,
     t.year_published AS nbr_year_published,
-    ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS distance
+    ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS distance,
+    1 - ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS similarity,
+    COALESCE(rp.geek_pct, 0) AS nbr_geek_pct,
+    pl.product_line_id AS nbr_product_line
   FROM sources_${p.name} s
   JOIN candidates_${p.name} t
-    ON t.game_id != s.game_id
-   AND t.complexity BETWEEN s.complexity - ${p.complexity_band}
-                        AND s.complexity + ${p.complexity_band}
+    ON t.game_id != s.game_id${hasBand(p) ? `
+   AND t.complexity BETWEEN s.complexity - ${p.complexity_band} AND s.complexity + ${p.complexity_band}` : ``}
+  LEFT JOIN rating_pct rp ON rp.game_id = t.game_id
+  LEFT JOIN ${ref("game_product_line")} pl ON pl.game_id = t.game_id
 ),
-
-ranked_${p.name} AS (
+scored_${p.name} AS (
   SELECT
     *,
-    ROW_NUMBER() OVER (PARTITION BY src_game_id ORDER BY distance) AS rn
+    ${p.weight} * similarity + (1 - ${p.weight}) * nbr_geek_pct AS score
   FROM pairs_${p.name}
+  WHERE similarity >= ${p.min_similarity}
+    AND (${p.min_rating_pct} = 0 OR nbr_geek_pct >= ${p.min_rating_pct})
+),${hasCap(p) ? `
+line_ranked_${p.name} AS (
+  SELECT
+    *,
+    IF(
+      nbr_product_line IS NULL, 1,
+      ROW_NUMBER() OVER (PARTITION BY src_game_id, nbr_product_line ORDER BY score DESC)
+    ) AS line_rn
+  FROM scored_${p.name}
+),
+kept_${p.name} AS (
+  SELECT * FROM line_ranked_${p.name} WHERE line_rn <= ${p.max_per_family}
+),` : ``}
+ranked_${p.name} AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY src_game_id ORDER BY score DESC) AS rn
+  FROM ${hasCap(p) ? `kept_${p.name}` : `scored_${p.name}`}
 )`).join(",\n")}
 
 ${PROFILES.map(p => `
@@ -104,11 +101,15 @@ SELECT
       nbr_year_published AS year_published,
       distance
     )
-    ORDER BY distance
+    ORDER BY score DESC
   ) AS similar,
+  CAST(${p.weight} AS FLOAT64) AS weight,
   ${p.min_users_rated} AS min_users_rated,
   ${p.source_min_users_rated} AS source_min_users_rated,
-  ${p.complexity_band} AS complexity_band,
+  ${orNull(hasBand(p) ? p.complexity_band : null, "FLOAT64")} AS complexity_band,
+  ${orNull(hasCap(p) ? p.max_per_family : null, "INT64")} AS max_per_family,
+  CAST(${p.min_similarity} AS FLOAT64) AS min_similarity,
+  CAST(${p.min_rating_pct} AS FLOAT64) AS min_rating_pct,
   '${p.distance}' AS distance_type,
   ${p.dims} AS embedding_dims,
   CURRENT_TIMESTAMP() AS computed_ts

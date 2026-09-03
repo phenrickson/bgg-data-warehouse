@@ -1,177 +1,220 @@
 # Tuned similarity profiles for `analytics.game_neighbors` — Plan
 
-**Date:** 2026-09-03
-**Status:** Draft — awaiting answers to the open questions
-**Related:** the bgg-viewer `/dev/similar` tuning bench
-(`feat/similar-games-explorer`) and its spec
-`bgg-viewer/docs/superpowers/specs/2026-09-02-similar-neighbor-diversity-design.md`
+**Date:** 2026-09-03 (rewritten — the first draft predated the product-line-cap design)
+**Status:** Draft — awaiting go-ahead
+**Bench:** bgg-viewer `feat/similar-games-explorer`. The profile values come from the
+bench's "copy profiles" button; the product-line logic below is a port of
+`bgg-viewer/src/lib/server/similar-explorer/build.ts`.
 
 ## Goal & success criteria
 
-Add the bench's tuning parameters to the precomputed neighbour path so different
-use-cases get different similar-games lists, served the way the default one already is
-(one clustered `game_neighbors` lookup, no request-time embedding math).
+Serve four similarity profiles from the precomputed path so different use-cases get
+different similar-games lists. Values, from the bench:
 
-Three profiles, matching what was tuned in the bench:
+| profile | weight (sim:rating) | band | max/line | floor | sim ≥ | rating pct ≥ | top_k |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `similar` | 1.00 | ±0.75 | — | 100 | 0.50 | — | 12 |
+| `sicko` | 0.70 | none | 1 | 30 | — | — | 10 |
+| `recommender` | 0.54 | ±0.75 | 1 | 100 | 0.50 | 0.75 | 10 |
+| `default` | 0.80 | ±1.0 | 1 | 100 | 0.50 | — | 10 |
 
-| profile | sim:rating | band | max/family | floor | sim ≥ | rating pct ≥ |
-| --- | --- | --- | --- | --- | --- | --- |
-| `default` | 80/20 | ±1.0 | 2 | 100 | — | — |
-| `recommended` | 60/40 | none | 1 | 100 | 0.50 | 0.50 |
-| `sicko` | 100/0 | none | 1 | 25 *(see Q3)* | — | — |
+(Values as of the re-copied `includes/similarity_profiles.js`.) All four:
+`source_min_users_rated: 0`, `dims: 64`, `distance: COSINE`.
 
-Success: `GET /games/{id}?profile=recommended` returns a list ranked by the recommended
-params; `SELECT profile, COUNT(*) FROM analytics.game_neighbors GROUP BY profile` shows
-three; each row carries its own params; with `weight = 1.0` and no cap/floors a profile
-reproduces today's `distance ASC` ordering exactly.
+Success:
+- `SELECT profile, COUNT(*) FROM analytics.game_neighbors GROUP BY profile` → 4 rows.
+- `GET /games/{id}?profile=recommender` returns a list ranked by those params.
+- `GET /games/{id}` (no param) is unchanged — still the `default` profile.
+- Spot checks hold: Take Time → ≤1 Unlock; TI4 → ≤1 other TI; Risk → ≤1 other Risk;
+  a niche game still gets a non-empty list.
 
-## What already exists (reuse, don't rebuild)
+## What already exists (reuse)
 
-- [`definitions/game_neighbors.sqlx`](../../../definitions/game_neighbors.sqlx) — already a
-  `PROFILES = [...]` array, `type: "table"` (full `CREATE OR REPLACE` every run),
-  `clusterBy: ["profile", "game_id"]`, params carried as row columns. Its own header
-  comment: *"add a NEW profile alongside the existing one… extra profiles are effectively
-  free (~13s / 72MB per profile)."*
-- `game_similarity_search` already carries `geek_rating` (= `bayes_average`),
-  `users_rated`, `complexity`, and the 8/16/32/64-d embeddings — everything the blend and
-  floors need.
-- `core.game_families` + `core.families` are **already declared sources** — the family
-  cap needs no `sources.js` change.
-- `reader.get_game(game_id, client, profile="default")` — the `profile` arg **already
-  exists**; only the router doesn't pass it.
-- `_similar_live` (the tuning path) stays exactly as-is and unexposed.
+- [`definitions/game_neighbors.sqlx`](../../../definitions/game_neighbors.sqlx) — the
+  `type: table` (full `CREATE OR REPLACE` each run), `clusterBy: ["profile","game_id"]`,
+  per-profile `UNION ALL` skeleton. Currently one hard-coded `default` profile.
+- `game_similarity_search` carries `embedding`, `geek_rating` (= `bayes_average`),
+  `users_rated`, `complexity`, `name`, `year_published` — everything the blend, the
+  floors, and the band need.
+- `core.game_families` + `core.families` are already declared sources.
+  `core.game_implementations` + `core.game_expansions` **exist** but are **not**
+  declared — needed for product-line propagation.
+- `reader.get_game(game_id, client, profile="default")` — the `profile` arg is already
+  there; only the router doesn't pass it. `_similar_precomputed` already does
+  `WHERE profile = @profile AND game_id = @game_id`.
+- `includes/similarity_profiles.js` — the exported profile array, already committed on
+  `feature/similarity-profiles` (from `9f69804`); it needs re-copying from the bench
+  once the current experiments are final, then it's the single source of truth.
 
 ## Scope
 
-**In:** `definitions/game_neighbors.sqlx` (ranking CTEs + profiles),
-`services/warehouse_api/routers/games.py` (accept `?profile=`), maybe
-`src/warehouse/readers/games.py` (profile allowlist), the two `tests/test_games_*` files.
+**In:**
+- `definitions/sources.js` — declare `core.game_implementations`, `core.game_expansions`.
+- `definitions/game_product_line.sqlx` — **new** `type: table` model, one row per game.
+- `definitions/game_neighbors.sqlx` — read `similarity_profiles.profiles`; add the
+  rating-percentile blend, the sim/rating floors, and the per-product-line cap.
+- `.github/workflows/dataform.yml` — add `includes/**` to the `push` path filter.
+- `services/warehouse_api/routers/games.py` — `GET /games/{id}` accepts `?profile=`.
+- `src/warehouse/readers/games.py` — a `KNOWN_PROFILES` allow-list; 400 on unknown.
+- `tests/test_games_router.py`, `tests/test_games_reader.py`.
 
 **Out:**
-- Any bgg-viewer change — the `?profile=` toggle, per-user preference, how the client
-  chooses. Separate work, explicitly deferred.
-- MMR / diversity in production — no profile uses it; it's a sequential greedy pick that
-  isn't SQL, and would need a Python pipeline step.
-- A reimplementation/expansion cap bucket (`core.game_implementations` /
-  `game_expansions`) — family-only for v1; reskins almost always share a `Game:` family.
-- Backfill — `game_neighbors` is a full rebuild; nothing to backfill.
+- Any bgg-viewer change — the `?profile=` toggle / per-user preference / how the client
+  chooses. Separate follow-up.
+- MMR / diversity (dropped in the bench — not SQL-expressible).
+- The "exclude shared title words" knob (bench-only, no SQL equivalent — the export
+  header already notes it was dropped).
+- The "cap editions of the same game" idea still under discussion in the bench — not
+  in these profiles, not this PR.
+- Backfill — `game_neighbors` and `game_product_line` are full rebuilds.
 
 ## Branching & delivery
 
-Two PRs to `main`, in order (the API can't read profiles the Dataform run hasn't built):
+Two PRs to `main`, in order (the API can't read profiles Dataform hasn't built):
 
-1. **PR A — `feature/similarity-profiles`** (Dataform only). Merge triggers `dataform.yml`
-   (`definitions/**`), which rebuilds `game_neighbors` with all three profiles.
-2. **PR B — `feature/api-profile-param`** (API only). Merge **after** PR A's Dataform run
-   is green and the table is populated. Triggers `deploy-warehouse-api.yml`.
+1. **PR 1 — `feature/similarity-profiles`** (Dataform + workflow). Merge triggers
+   `dataform.yml` (now also on `includes/**`), which builds `game_product_line` then
+   rebuilds `game_neighbors` with all four profiles.
+2. **PR 2 — `feature/api-profile-param`** (warehouse API). Merge **after** PR 1's
+   Dataform run is green and `game_neighbors` has 4 profiles. Triggers
+   `deploy-warehouse-api.yml`.
 
-Squash-merge both. No local `gcloud`/`terraform`/deploys. Phil merges.
+Squash-merge both. No local `gcloud`/`terraform`/`bq load`. Phil merges.
 
 ## Steps
 
-### PR A — Dataform
+### PR 1 — Dataform
 
-**1. Rating-percentile CTE + sim:rating blend.**
-- `rated_pct AS (SELECT game_id, PERCENT_RANK() OVER (ORDER BY geek_rating) AS geek_pct
-  FROM ${ref("game_similarity_search")} WHERE geek_rating > 0)` — global percentile, matches
-  the bench.
-- In `pairs_*`: `similarity = 1 - ML.DISTANCE(...)`, LEFT JOIN `rated_pct` on the candidate,
-  `score = w * similarity + (1 - w) * COALESCE(geek_pct, 0)`.
-- Rank by `score DESC` (was `distance ASC`).
-- New profile param `weight`. `weight: 1.0` ⇒ `score = similarity` ⇒ identical order to today.
-- **Verify:** dry-run cost unchanged for the `weight:1.0` case; resolve the generated SQL
-  for game 13 and diff the ordering against the current model — must be identical.
-
-**2. Hard floors.**
-- `WHERE similarity >= @min_similarity` and `(@min_rating_pct = 0 OR geek_pct >= @min_rating_pct)`.
-- New params `min_similarity` (0–1), `min_rating_pct` (0–1); 0 = off.
-- **Verify:** `recommended` (`min_similarity: 0.5`) — a spot-check game's list contains no
-  entry with cosine similarity < 0.5; `min_rating_pct: 0.5` — none below the catalogue
-  median geek rating.
-
-**3. Per-family cap.**
-- `src_fam` / `cand_fam` CTEs — `Game:` / `Series:` family ids per game
-  (`${ref("core","game_families")}` ⋈ `${ref("core","families")}`,
-  `STARTS_WITH(name,'Game: ') OR STARTS_WITH(name,'Series: ')`).
-- Explode ranked pairs to `(src, cand, score, shared_family)` per shared family.
-- `fam_rank = ROW_NUMBER() OVER (PARTITION BY src, shared_family ORDER BY score DESC)`.
-- Keep a candidate iff `MAX(fam_rank) OVER (PARTITION BY src, cand) <= @max_per_family`;
-  candidates sharing no family with the source are always kept.
-- Re-rank survivors by `score DESC`, take `top_k`.
-- **Known deviation:** this is the *conservative* form of the bench's greedy cap — it drops
-  a candidate when ≥ N higher-scoring candidates share one of its families, even if some of
-  those were themselves capped out elsewhere. Exact parity needs the Python step (Q2).
-- **Verify:** Risk (181) with `max_per_family: 2` — ≤ 2 `Game: Risk` entries, list still
-  fills to `top_k`; a no-family game (e.g. a standalone euro) is unaffected.
-
-**4. The three profiles.**
+**1. `sources.js` — declare the two bridge tables.**
 ```js
-const PROFILES = [
-  { name: "default",     weight: 0.8, complexity_band: 1.0,  min_users_rated: 100,
-    source_min_users_rated: 0,  min_similarity: 0,   min_rating_pct: 0,
-    max_per_family: 2, distance: "COSINE", dims: 64, top_k: 10 },
-  { name: "recommended", weight: 0.6, complexity_band: null, min_users_rated: 100,
-    source_min_users_rated: 0,  min_similarity: 0.5, min_rating_pct: 0.5,
-    max_per_family: 1, distance: "COSINE", dims: 64, top_k: 10 },
-  { name: "sicko",       weight: 1.0, complexity_band: null, min_users_rated: 25,
-    source_min_users_rated: 25, min_similarity: 0,   min_rating_pct: 0,
-    max_per_family: 1, distance: "COSINE", dims: 64, top_k: 10 },
-];
+["game_implementations", "game_expansions"].forEach((t) =>
+  declare({ schema: "core", name: t })
+);
 ```
-- `complexity_band: null` ⇒ the template omits the `BETWEEN` clause for that profile.
-- Carry every param as a row column (the table stays self-describing).
-- **Verify:** `npx @dataform/cli compile` clean; post-run
-  `SELECT profile, COUNT(*), ANY_VALUE(weight), ANY_VALUE(max_per_family)
-   FROM analytics.game_neighbors GROUP BY profile`.
+- **Verify:** `npx @dataform/cli compile` resolves; nothing else references them yet.
 
-**5. (Q4) Add `geek_rating` to the `similar` struct.** `STRUCT(game_id, name,
-year_published, distance, geek_rating)`. `type: table` ⇒ no full-refresh, picked up next
-run. Reader passes it straight through (`[dict(s) for s in row["similar"]]`).
+**2. `definitions/game_product_line.sqlx` — one product line per game.**
+`type: "table"`, `schema: "analytics"`, `clusterBy: ["game_id"]`. Port `build.ts`:
+- `fam_size` — `COUNT(*)` per `family_id` over `core.game_families`.
+- `gs_families` — each game's `Game:`/`Series:` families with `family_size`,
+  `is_game_family`, and `name_match` (`STRPOS(LOWER(gfeat.name), LOWER(core)) > 0` where
+  `core` is the family name minus the `Game: `/`Series: ` prefix and a trailing
+  ` (Publisher)`, length ≥ 3; joins `${ref("games_features")}` for the title).
+- `product_line_base` — `ARRAY_AGG(family_id ORDER BY name_match DESC, is_game_family
+  DESC, family_size ASC, family_id ASC LIMIT 1)[OFFSET(0)]` per game.
+- `product_line_inherited` — a family-less game (`game_id NOT IN product_line_base`)
+  takes the line of a `${ref("game_implementations")}`/`${ref("game_expansions")}`
+  neighbour that has one (one hop, tightest wins).
+- Output: `game_id, product_line_id, product_line_name` (join `core.families` for the
+  name — handy for debugging and a future UI).
+- **Verify:** dry-run (~80 MB, per the bench). `bq query`:
+  `Take Time → NULL`; all `Unlock!%` → `Series: Unlock!`; Irish/Iberian Gauge + Ride
+  the Rails → `Series: Iron Rail`; TI editions + Rex → `Game: Twilight Imperium`;
+  Summoner Wars incl. Second Edition → `Game: Summoner Wars`.
 
-**6. Dry-run the whole generated model — `recommended` and `sicko` especially.** Record
-bytes scanned + wall time per profile. If `sicko` is untenable: drop it to `dims: 16`,
-raise `source_min_users_rated`, or give it a loose band. (Note: the bench only ever ran
-against its floor-30 dev set, so `sicko` at floor ~25 is *closer* to what was actually
-tuned than a true floor-0 would be.)
+**3. `game_neighbors.sqlx` — read the include + the three new mechanics.**
+- `js{}`: `const PROFILES = similarity_profiles.profiles;` (keep `embeddingColumn`).
+- `rating_pct` CTE — `PERCENT_RANK() OVER (ORDER BY geek_rating)` over
+  `game_similarity_search WHERE geek_rating > 0` (global percentile, matches the bench).
+- Per profile: `pairs_*` gains `similarity = 1 - ML.DISTANCE(...)`, a LEFT JOIN to
+  `rating_pct` (`nbr_geek_pct = COALESCE(geek_pct, 0)`), and a LEFT JOIN to
+  `game_product_line` (`nbr_product_line`). The band clause is emitted only when
+  `complexity_band` is non-null.
+- `scored_*` — `score = weight*similarity + (1-weight)*nbr_geek_pct`;
+  `WHERE similarity >= min_similarity AND (min_rating_pct = 0 OR nbr_geek_pct >= min_rating_pct)`.
+- When `max_per_family` is non-null: `line_rn = IF(nbr_product_line IS NULL, 1,
+  ROW_NUMBER() OVER (PARTITION BY src_game_id, nbr_product_line ORDER BY score DESC))`,
+  keep `line_rn <= max_per_family`.
+- `ranked_*` — `ROW_NUMBER() OVER (PARTITION BY src_game_id ORDER BY score DESC)`,
+  `ARRAY_AGG(STRUCT(game_id, name, year_published, distance) ORDER BY score DESC)`,
+  `WHERE rn <= top_k`.
+- Carry `weight, min_similarity, min_rating_pct, max_per_family` as columns (all
+  `CAST(... AS FLOAT64/INT64)` so the `UNION ALL` types line up; `NULL`s cast too).
+- The `similar` struct is **unchanged** (`game_id, name, year_published, distance`) —
+  no reader/viewer change. `geek_rating` in the struct is a separate later call.
+- **Verify:** resolve the generated SQL for one profile, paste into a `CREATE TABLE`
+  dry-run (not a bare `SELECT` — catches `ref()`/duplicate-field errors). For
+  `weight: 1, band, no cap, no floors` the ordering must match the current
+  `distance ASC` output exactly (regression on today's `default`). Dry-run the whole
+  model — record bytes + wall time, especially `similar` (no band).
 
-### PR B — Warehouse API
+**4. `dataform.yml` — watch `includes/`.** Add `- 'includes/**'` under `push: paths:`.
+- **Verify:** the diff; without it an includes-only edit wouldn't trigger a run.
 
-**7. `GET /games/{game_id}` accepts `?profile=`.**
+**5. Merge PR 1 → confirm the Dataform run.**
+- `SELECT profile, COUNT(*), ANY_VALUE(weight), ANY_VALUE(max_per_family)
+   FROM analytics.game_neighbors GROUP BY profile` → 4 rows, right params.
+- Spot-check `similar` for game 13 vs the pre-change `default` — same list (both are
+  pure-distance, floor 100; `similar` just drops the band).
+- `Take Time` `default`: `SELECT similar FROM game_neighbors WHERE profile='default'
+   AND game_id=<take-time-id>` → at most one Unlock.
+
+### PR 2 — Warehouse API
+
+**6. `routers/games.py` — `GET /{game_id}` takes `?profile=`.**
 ```py
 @router.get("/{game_id}")
 def get_game(game_id: int, profile: str = "default"):
     return _require(reader.get_game(game_id, profile=profile), game_id)
 ```
-- **Verify:** `tests/test_games_router.py` — `?profile=recommended` reaches
-  `reader.get_game`; default still `"default"`.
 
-**8. Profile handling in the reader.** Define `KNOWN_PROFILES` next to `DEFAULT_*` in
-`games.py`. Decide unknown-profile behaviour per Q5 (400 vs empty `similar`).
-- **Verify:** `tests/test_games_reader.py` — known profile threads to
-  `_similar_precomputed`; unknown handled per decision.
+**7. `readers/games.py` — validate the profile.**
+`KNOWN_PROFILES = {"default", "recommender", "sicko", "similar"}` next to the
+`DEFAULT_*` constants; `get_game` / `get_similar` raise `ValueError` on an unknown
+profile (router maps `ValueError → 400`, the pattern already used for bad metric/dims).
+- **Verify:** `tests/test_games_router.py` — `?profile=recommender` reaches the reader;
+  `?profile=nope` → 400; no param → `default`. `tests/test_games_reader.py` —
+  `_similar_precomputed` gets the profile param; unknown raises.
+
+**8. Merge PR 2 after PR 1's tables are populated.**
 
 ## Risks / unknowns / rollback
 
-- **`sicko` build cost** — no band + low floor is the one expensive branch; step 6 gates
-  it. Not a one-way door.
-- **Family-cap approximation** — differs from the bench's greedy only when the source
-  shares *several* large families with a candidate; effect is an occasionally shorter
-  list, never a cap violation. Exact parity = Python step (Q2).
-- **No schema-migration risk** — `game_neighbors` is `type: table`, rebuilt whole each
-  run; new columns / struct fields need no full-refresh (contrast the incremental models).
-- **`default` changes for everyone the moment PR A lands** (if we update in place, Q1) —
-  before any UI work. Revert = one-line PR; next Dataform run restores it.
-- **Rollback:** revert PR A → single `default` profile back. Revert PR B → route stops
-  taking `profile`. Independent, both cheap.
+- **`similar` build cost** — the one no-band profile: 128k sources × ~17k floor-100
+  candidates ≈ 2.2e9 `ML.DISTANCE` calls. The current banded model is ~13 s / profile;
+  expect `similar` ≈ 20–30 s and the 4-profile rebuild ≈ 2–3 min. Step 3's dry-run
+  gates it; if it's untenable, give `similar` `dims: 16` or a loose band.
+- **`default` returns < 10 for sparse games** — `min_similarity: 0.5` + `max_per_family: 1`
+  is a real behaviour change from today's "always 10". Upcoming/niche games (which get
+  lists because `source_min_users_rated: 0`) are the ones most likely to come back
+  short. Intended per the bench tuning, but the game page should tolerate a 3-item list.
+- **No schema-migration risk** — both models are `type: table`, rebuilt whole each run;
+  new columns need no full-refresh (unlike the incremental models — see the
+  `dataform-incremental-schema-drift` note).
+- **Cross-repo drift** — `game_product_line.sqlx` is a hand-port of `build.ts`. They can
+  diverge. Mitigation: the plan links them and the spot-check list is the same; a
+  shared definition isn't worth a cross-repo mechanism for ~40 lines of SQL.
+- **`similar` struct unchanged** — deliberately not adding `geek_rating`, so no reader
+  or bgg-viewer change is forced. If the eventual card wants a rating badge that's a
+  separate, additive change.
+- **Rollback** — revert PR 1 → next Dataform run restores the single `default` profile
+  and drops `game_product_line` (nothing else refs it). Revert PR 2 → route stops
+  taking `?profile=`. Independent, both cheap.
 
-## Open questions (need answers before Step 1)
+## Resolved
 
-1. **`default`:** update in place, or add the new default params as `default_v2` and
-   compare before flipping? (`game_neighbors.sqlx`'s comment prefers alongside; but it's a
-   full-rebuild table and the bench is the way back.)
-2. **Family cap:** accept the conservative SQL approximation for v1, or hold out for exact
-   greedy parity via a Python pipeline step (which is also where MMR would eventually go)?
-3. **`sicko` floor:** true 0 (full 128k-candidate cross join — needs step 6 to prove it's
-   affordable), or ~25 (matches what the bench actually tuned against)?
-4. **`similar` struct:** add `geek_rating` now, or wait until the UI needs it?
-5. **Unknown `?profile=`:** 400, or fall through to an empty `similar` list?
+1. `includes/similarity_profiles.js` re-copied — the table above is the shipping set.
+2. `min_similarity` on `default` (and others) is intended — short lists for niche games
+   are acceptable.
+3. Unknown `?profile=` → **400** (consistent with the sub-endpoint's bad-metric path;
+   fails loud where the only caller is app code).
+
+## Extra risk found while building
+
+- **`sicko` is the expensive build** now, not `similar`: `sicko` has no band and a
+  floor of 30 (~40k candidates × 128k sources ≈ 5e9 `ML.DISTANCE`). `similar` gained a
+  ±0.75 band and is cheap. Step 5's Dataform run is the real timing check; if `sicko`
+  drags, give it `dims: 16` or a loose band in the include and re-copy.
+- **Dataform includes-global access** — `game_neighbors.sqlx` assumes
+  `includes/similarity_profiles.js` is exposed as the global `similarity_profiles`
+  (the documented Dataform-3.0 pattern). The workflow's compile step verifies it
+  before any execution; a failure there is a fast, cheap fix.
+
+## Validation done (pre-merge)
+
+- `game_product_line.sqlx` — `CREATE TABLE` dry-run OK (~9 MB); `bq query` spot-check:
+  Irish/Iberian Gauge + Ride the Rails → `Series: Iron Rail`; all `Unlock!%` (incl.
+  Game Adventures, Fifth Avenue) → `Series: Unlock!`; TI4 / Summoner Wars (Second Ed.)
+  / Catan / Risk correct; 1830 → `Series: 18xx`; Take Time → no row.
+- `game_neighbors.sqlx` — resolves; combined `CREATE TABLE` dry-run (product-line
+  inlined as a CTE) validates, ~83 MB read estimate. Real wall time is the Dataform run.

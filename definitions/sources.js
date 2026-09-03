@@ -12,7 +12,10 @@ const coreTables = [
   "game_publishers",
   "game_designers",
   "game_artists",
-  "game_families"
+  "game_families",
+  // reimplementation / expansion edges — feed game_product_line's propagation
+  "game_implementations",
+  "game_expansions"
 ];
 
 coreTables.forEach(table => {
