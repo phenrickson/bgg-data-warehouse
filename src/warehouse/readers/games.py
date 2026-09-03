@@ -134,17 +134,32 @@ def get_embedding(game_id: int, client: Optional[bigquery.Client] = None) -> Opt
 DISTANCE_METRICS = {"COSINE", "EUCLIDEAN", "DOT_PRODUCT"}
 EMBEDDING_DIMS = {8: "embedding_8", 16: "embedding_16", 32: "embedding_32", 64: "embedding"}
 
-# The default profile's semantics, mirrored from definitions/game_neighbors.sqlx. Used
-# only to fill gaps when a caller tunes *some* parameters.
+# Precomputed neighbour profiles, mirrored from includes/similarity_profiles.js in
+# bgg-data-warehouse. A caller may only ask for one of these by name; anything else is
+# a client error (400), not an empty list. `similar` is the default — it covers every
+# game and is what the game-detail card serves.
+KNOWN_PROFILES = frozenset({"similar", "sicko", "recommender"})
+DEFAULT_PROFILE = "similar"
+
+# The `similar` profile's live-query semantics, mirrored from
+# definitions/game_neighbors.sqlx. Used only to fill gaps when a caller tunes *some*
+# parameters (band ±0.75, min 100 ratings match the deployed `similar` profile).
 DEFAULT_MIN_RATINGS = 100
 DEFAULT_COMPLEXITY_BAND = 0.75
 DEFAULT_TOP_K = 10
 
 
+def _check_profile(profile: str) -> None:
+    if profile not in KNOWN_PROFILES:
+        raise ValueError(
+            f"unknown profile: {profile!r} (known: {', '.join(sorted(KNOWN_PROFILES))})"
+        )
+
+
 def get_similar(
     game_id: int,
     *,
-    profile: str = "default",
+    profile: str = DEFAULT_PROFILE,
     n: Optional[int] = None,
     band: Optional[float] = None,
     metric: Optional[str] = None,
@@ -155,10 +170,11 @@ def get_similar(
     """Nearest neighbours, filtered the way the front-end filters them.
 
     With no tuning parameters this reads the **precomputed** ``game_neighbors`` table
-    (one partitioned lookup). Supplying any of ``n``/``band``/``metric``/
-    ``min_ratings``/``dims`` falls through to the **live** query over
-    ``game_similarity_search``. Both paths apply the same filters — the precomputed
-    table is a materialized cache of one parameter set, not different behaviour.
+    for the named ``profile`` (one partitioned lookup). Supplying any of ``n``/``band``/
+    ``metric``/``min_ratings``/``dims`` falls through to the **live** query over
+    ``game_similarity_search`` — which ignores ``profile`` and ranks with the tuning
+    parameters directly. An unknown ``profile`` raises ``ValueError`` on the precomputed
+    path (the live path never consults it).
     """
     client = client or get_client()
     if all(v is None for v in (n, band, metric, min_ratings, dims)):
@@ -175,6 +191,7 @@ def get_similar(
 
 
 def _similar_precomputed(game_id: int, profile: str, client: bigquery.Client) -> list[dict[str, Any]]:
+    _check_profile(profile)
     rows = _rows(
         client,
         f"SELECT similar FROM `{dataset('analytics')}.game_neighbors` "
@@ -253,14 +270,17 @@ def _profile_row(game_id: int, client: bigquery.Client) -> Optional[dict[str, An
 def get_game(
     game_id: int,
     client: Optional[bigquery.Client] = None,
-    profile: str = "default",
+    profile: str = DEFAULT_PROFILE,
 ) -> Optional[dict[str, Any]]:
     """Compose the full game document. ``None`` when the game has no profile row.
 
     Reads the pre-joined ``game_profile`` row plus the precomputed neighbour list —
     two partitioned lookups (~21MB) rather than the old six-table fan-out (~361MB).
-    The two run concurrently so latency stays at roughly one query.
+    The two run concurrently so latency stays at roughly one query. ``profile`` picks
+    which precomputed neighbour list to attach; an unknown name raises ``ValueError``
+    (checked up front so it's a 400, not a 404 on a game that does exist).
     """
+    _check_profile(profile)
     client = client or get_client()
     with ThreadPoolExecutor(max_workers=2) as pool:
         profile_f = pool.submit(_profile_row, game_id, client)

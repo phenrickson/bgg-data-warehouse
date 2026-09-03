@@ -155,9 +155,23 @@ class TestSimilarRouting:
 
     def test_named_profile_is_passed_through(self):
         client = self._client()
-        games.get_similar(13, profile="strict", client=client)
+        games.get_similar(13, profile="sicko", client=client)
         names = {p.name: p.value for p in client.calls[-1][1].query_parameters}
-        assert names["profile"] == "strict"
+        assert names["profile"] == "sicko"
+
+    def test_unknown_profile_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            games.get_similar(13, profile="nope", client=self._client())
+        with pytest.raises(ValueError):
+            games.get_game(13, profile="nope", client=_profile_client())
+
+    def test_default_profile_is_similar(self):
+        client = self._client()
+        games.get_similar(13, client=client)
+        names = {p.name: p.value for p in client.calls[-1][1].query_parameters}
+        assert names["profile"] == "similar"
 
     def test_any_tuning_param_goes_live(self):
         for kwargs in ({"band": 0.5}, {"metric": "EUCLIDEAN"}, {"min_ratings": 500},
