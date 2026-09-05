@@ -3,7 +3,7 @@ config {
   hasOutput: true,
   schema: "analytics",
   name: "game_neighbors",
-  description: "Precomputed similar-games lists, one row per (profile, game). Each profile is a parameter set from the bgg-viewer tuning bench: a similarity/rating blend, an optional source-relative complexity band, a hard similarity floor, a geek-rating-percentile floor and ceiling, and an optional per-product-line cap. The read API reads one game at a time — either one profile (the /similar endpoint) or all three (the game document) — so the table is CLUSTERed game_id first; tuning parameters ride on the row so the table is self-describing. Built one profile per BigQuery job (CREATE then INSERT) so each cross-join stays under the on-demand CPU ceiling."
+  description: "Precomputed similar-games lists, one row per (profile, game). The `similar` array holds STRUCTs of {game_id, name, year_published, distance, average_rating, geek_rating} so the read API can render a neighbour without a second lookup. Each profile is a parameter set from the bgg-viewer tuning bench: a similarity/rating blend, an optional source-relative complexity band, a hard similarity floor, a geek-rating-percentile floor and ceiling, and an optional per-product-line cap. The read API reads one game at a time — either one profile (the /similar endpoint) or all three (the game document) — so the table is CLUSTERed game_id first; tuning parameters ride on the row so the table is self-describing. Built one profile per BigQuery job (CREATE then INSERT) so each cross-join stays under the on-demand CPU ceiling."
 }
 
 js {
@@ -44,7 +44,9 @@ WITH rating_pct AS (
   WHERE geek_rating > 0
 ),
 candidates AS (
-  SELECT game_id, name, year_published, complexity, ${embeddingColumn(p.dims)} AS embedding
+  SELECT
+    game_id, name, year_published, complexity, average_rating, geek_rating,
+    ${embeddingColumn(p.dims)} AS embedding
   FROM ${ref("game_similarity_search")}
   WHERE users_rated >= ${p.min_users_rated} AND complexity IS NOT NULL
 ),
@@ -59,6 +61,8 @@ pairs AS (
     t.game_id AS nbr_game_id,
     t.name AS nbr_name,
     t.year_published AS nbr_year_published,
+    t.average_rating AS nbr_average_rating,
+    t.geek_rating AS nbr_geek_rating,
     ML.DISTANCE(s.embedding, t.embedding, '${p.distance}') AS distance,
     COALESCE(rp.geek_pct, 0) AS nbr_geek_pct,
     pl.product_line_id AS nbr_product_line
@@ -98,7 +102,14 @@ SELECT
   '${p.name}' AS profile,
   src_game_id AS game_id,
   ARRAY_AGG(
-    STRUCT(nbr_game_id AS game_id, nbr_name AS name, nbr_year_published AS year_published, distance)
+    STRUCT(
+      nbr_game_id AS game_id,
+      nbr_name AS name,
+      nbr_year_published AS year_published,
+      distance,
+      nbr_average_rating AS average_rating,
+      nbr_geek_rating AS geek_rating
+    )
     ORDER BY score DESC
   ) AS similar,
   CAST(${p.weight} AS FLOAT64) AS weight,
