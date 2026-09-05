@@ -25,7 +25,7 @@ module.exports = {
       name: "sicko",
       weight: 0.7,
       complexity_band: null,
-      max_per_family: 1,
+      max_per_family: 0,
       min_similarity: 0.5,
       min_rating_pct: 0,
       max_rating_pct: 0.8,
