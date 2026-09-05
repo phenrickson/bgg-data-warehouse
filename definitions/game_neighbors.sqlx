@@ -79,16 +79,17 @@ scored AS (
     AND (${p.max_rating_pct} = 1 OR nbr_geek_pct < ${p.max_rating_pct})
 ),${hasCap(p) ? `
 line_ranked AS (
-  -- cap N per product line: a candidate with no line is never capped
   SELECT
     *,
-    IF(
-      nbr_product_line IS NULL, 1,
-      ROW_NUMBER() OVER (PARTITION BY src_game_id, nbr_product_line ORDER BY score DESC)
-    ) AS line_rn
+    ROW_NUMBER() OVER (PARTITION BY src_game_id, nbr_product_line ORDER BY score DESC) AS line_rn
   FROM scored
 ),
-kept AS (SELECT * FROM line_ranked WHERE line_rn <= ${p.max_per_family}),` : ``}
+-- cap N per product line; a candidate with no line is never capped (so max_per_family = 0
+-- keeps only lineless games instead of dropping everything).
+kept AS (
+  SELECT * FROM line_ranked
+  WHERE nbr_product_line IS NULL OR line_rn <= ${p.max_per_family}
+),` : ``}
 ranked AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY src_game_id ORDER BY score DESC) AS rn
   FROM ${hasCap(p) ? "kept" : "scored"}
