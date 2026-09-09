@@ -52,6 +52,22 @@ resource "google_bigquery_dataset_iam_member" "bgg_viewer_predictions_viewer" {
   member     = "serviceAccount:${google_service_account.bgg_viewer.email}"
 }
 
+# The self-serve collection filter reads `collections.user_collections` — settings page load,
+# the sync trigger's staleness check, and /api/collection all go through it
+# (bgg-viewer/src/lib/server/collections/read.ts). Like `predictions` above, the `collections`
+# dataset is NOT managed by this Terraform config — Dataform creates it — so the id is literal
+# and this non-authoritative member adds a grant without disturbing Dataform's ownership.
+#
+# NOTE: the dataset's `user_collections` is a VIEW over bgg-predictive-models. This grant alone
+# is not enough; that view must also be authorized on the source dataset, which is done in
+# bgg-predictive-models/terraform/bigquery.tf. Without both, reads fail with "Access Denied".
+resource "google_bigquery_dataset_iam_member" "bgg_viewer_collections_viewer" {
+  dataset_id = "collections"
+  project    = var.project_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.bgg_viewer.email}"
+}
+
 # core.users is read on login and WRITTEN on registration, so dataEditor, not
 # dataViewer. Dataset-scoped: the viewer must not reach `raw`.
 resource "google_bigquery_dataset_iam_member" "bgg_viewer_core_editor" {
