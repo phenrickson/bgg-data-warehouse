@@ -139,3 +139,35 @@ resource "google_service_account_iam_member" "bgg_viewer_ci_act_as" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.bgg_pipeline.email}"
 }
+
+# --- Catalog artifact bucket ------------------------------------------------
+# The artifact moved out of the Cloud Run process and into GCS (storage.tf,
+# bgg_viewer_artifacts) so a cold container no longer rebuilds it from BigQuery while a
+# user waits. Three grants make that work.
+
+# Read the pointer object and the artifact itself. Object-level read only — the app never
+# writes here; the Actions build does.
+resource "google_storage_bucket_iam_member" "bgg_viewer_artifacts_reader" {
+  bucket = google_storage_bucket.bgg_viewer_artifacts.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.bgg_viewer.email}"
+}
+
+# Sign URLs as ITSELF. Cloud Run injects no service-account key file, so the client library
+# cannot sign locally and falls back to the IAM `signBlob` API — which requires the caller
+# to hold tokenCreator on the SA whose identity it is signing with. Without this, signed URL
+# generation fails at runtime with a permission error, not at deploy time.
+resource "google_service_account_iam_member" "bgg_viewer_self_sign" {
+  service_account_id = google_service_account.bgg_viewer.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.bgg_viewer.email}"
+}
+
+# The CI identity behind GCP_SA_KEY_BGG_DW runs bgg-viewer's catalog-artifact.yml, which
+# uploads the artifact and rewrites the pointer. objectAdmin rather than objectCreator: the
+# pointer is overwritten in place on every run, not created once.
+resource "google_storage_bucket_iam_member" "bgg_viewer_artifacts_ci_writer" {
+  bucket = google_storage_bucket.bgg_viewer_artifacts.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.bgg_pipeline.email}"
+}
