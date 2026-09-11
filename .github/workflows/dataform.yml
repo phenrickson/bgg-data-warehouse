@@ -166,6 +166,38 @@ jobs:
             https://api.github.com/repos/phenrickson/bgg-predictive-models/dispatches \
             -d "{\"event_type\": \"$EVENT_TYPE\", \"client_payload\": {\"run_id\": \"${{ github.run_id }}\"}}"
 
+
+      # The viewer's in-browser catalog is rebuilt from BigQuery and published to GCS by
+      # bgg-viewer's catalog-artifact.yml. It needs to know when the data actually changed —
+      # which is here, at the END of the chain: the artifact joins analytics.games_features,
+      # analytics.best_player_counts AND predictions.bgg_predictions, so it must be built
+      # after predictions land, not after Dataform's first pass.
+      #
+      # Deliberately a separate step from `Notify ML Pipeline` above rather than another
+      # branch inside its `case`. That step sequences the ML chain; this is an unrelated
+      # consumer that merely shares a trigger point, and folding them together would mean a
+      # later change to one could silently break the other.
+      #
+      # Not failing the job on a dispatch error: the pipeline itself succeeded, and a missed
+      # refresh degrades to the viewer serving yesterday's catalog (which it warns about
+      # after 36h) rather than anything being broken.
+      - name: Notify viewer (catalog artifact)
+        if: |
+          steps.execute.outputs.invocation_state == 'SUCCEEDED' &&
+          github.ref == 'refs/heads/main' &&
+          github.event_name == 'repository_dispatch' &&
+          github.event.action == 'embeddings_complete'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+        run: |
+          echo "Pipeline complete — asking bgg-viewer to rebuild its catalog artifact."
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/phenrickson/bgg-viewer/dispatches \
+            -d "{\"event_type\": \"catalog_refresh\", \"client_payload\": {\"run_id\": \"${{ github.run_id }}\"}}"
+
   generate-lineage:
     name: Generate Lineage Diagram
     runs-on: ubuntu-latest
