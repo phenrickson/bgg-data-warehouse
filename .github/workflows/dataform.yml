@@ -159,8 +159,11 @@ jobs:
             EVENT_TYPE="dataform_complete"
           fi
 
+          # --fail-with-body: curl exits 0 on any HTTP response by default, so a 403 (PAT
+          # missing this repo, or expired) would show a green step and the ML chain would
+          # silently stop. Fail the step instead, keeping the error JSON in the log.
           echo "Dispatching event: $EVENT_TYPE"
-          curl -X POST \
+          curl --fail-with-body -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/phenrickson/bgg-predictive-models/dispatches \
@@ -180,7 +183,9 @@ jobs:
       #
       # Not failing the job on a dispatch error: the pipeline itself succeeded, and a missed
       # refresh degrades to the viewer serving yesterday's catalog (which it warns about
-      # after 36h) rather than anything being broken.
+      # after 36h) rather than anything being broken. The step itself still fails (red, with
+      # the response body in the log) via --fail-with-body, so a rejected dispatch is visible
+      # in the run rather than hidden behind curl's default exit-0-on-403.
       - name: Notify viewer (catalog artifact)
         if: |
           steps.execute.outputs.invocation_state == 'SUCCEEDED' &&
@@ -192,7 +197,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
         run: |
           echo "Pipeline complete — asking bgg-viewer to rebuild its catalog artifact."
-          curl -X POST \
+          curl --fail-with-body -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/phenrickson/bgg-viewer/dispatches \
