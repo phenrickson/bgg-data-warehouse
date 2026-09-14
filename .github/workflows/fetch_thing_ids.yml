@@ -1,10 +1,19 @@
 name: Fetch Thing IDs
 
 on:
-  # Scheduled scraping moved to the residential-IP home box (Cloudflare blocks
-  # datacenter egress). This workflow is now a manual fallback only.
-  # See docs/superpowers/specs/2026-06-18-home-box-scrape-design.md
+  # ID discovery probes the XML API rather than scraping sitemaps, so it no
+  # longer needs residential egress: Cloudflare blocks datacenter IPs on the
+  # HTML/sitemap paths, but the authenticated API is unaffected. Scheduling
+  # therefore moved back here from the home box.
+  schedule:
+    - cron: '0 6 * * *'  # 01:00 US Central, matching the old home-box window
   workflow_dispatch:
+    inputs:
+      source:
+        description: 'Discovery method'
+        type: choice
+        options: [bgg_api_probe, bgg_sitemap]
+        default: bgg_api_probe
 
 env:
   GCP_PROJECT_ID: bgg-data-warehouse
@@ -33,9 +42,11 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: |
-          uv sync
-          uv run playwright install --with-deps chromium
+        run: uv sync
+
+      - name: Install browser (sitemap mode only)
+        if: ${{ inputs.source == 'bgg_sitemap' }}
+        run: uv run playwright install --with-deps chromium
 
       - name: Get pre-run counts
         id: before
@@ -48,8 +59,11 @@ jobs:
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
 
       - name: Fetch Thing IDs
+        env:
+          BGG_API_TOKEN: ${{ secrets.BGG_API_TOKEN }}
         run: |
-          uv run python -m src.pipeline.fetch_thing_ids
+          uv run python -m src.pipeline.fetch_thing_ids \
+            --source "${{ inputs.source || 'bgg_api_probe' }}"
 
       - name: Write job summary
         if: always()

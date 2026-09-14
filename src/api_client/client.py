@@ -36,10 +36,19 @@ class BGGAPIClient:
     RETRY_DELAY = 5  # seconds
     THROTTLE_DELAY = 0.5  # seconds
 
-    def __init__(self) -> None:
-        """Initialize the API client."""
+    def __init__(self, throttle_delay: Optional[float] = None, log_requests: bool = True) -> None:
+        """Initialize the API client.
+
+        Args:
+            throttle_delay: Seconds between requests. Defaults to THROTTLE_DELAY.
+                Bulk callers should pass a larger value: BGG returns 429 well
+                before the documented 2 req/s when requests are sustained.
+            log_requests: Write a row to raw.request_log per request.
+        """
         self.last_request_time = datetime.min.replace(tzinfo=UTC)
         self.session = requests.Session()
+        self.throttle_delay = throttle_delay if throttle_delay is not None else self.THROTTLE_DELAY
+        self.log_requests = log_requests
         self.api_token = os.getenv("BGG_API_TOKEN")
         if not self.api_token:
             logger.warning("BGG_API_TOKEN not found in environment variables")
@@ -48,8 +57,8 @@ class BGGAPIClient:
         """Wait to respect the rate limit."""
         now = datetime.now(UTC)
         elapsed = (now - self.last_request_time).total_seconds()
-        if elapsed < self.THROTTLE_DELAY:
-            time.sleep(self.THROTTLE_DELAY - elapsed)
+        if elapsed < self.throttle_delay:
+            time.sleep(self.throttle_delay - elapsed)
         self.last_request_time = datetime.now(UTC)
 
     def _log_request(
@@ -86,6 +95,9 @@ class BGGAPIClient:
         if error_message:
             logger.error(f"Error details: {error_message}")
 
+        if not self.log_requests:
+            return
+
         # Log to BigQuery
         try:
             config = get_bigquery_config()
@@ -114,12 +126,20 @@ class BGGAPIClient:
         except Exception as e:
             logger.error(f"Failed to log request to BigQuery: {e}")
 
-    def get_thing(self, game_ids: Union[int, List[int]], stats: bool = True) -> Optional[Dict]:
+    def get_thing(
+        self,
+        game_ids: Union[int, List[int]],
+        stats: bool = True,
+        type_filter: Optional[str] = "boardgame",
+    ) -> Optional[Dict]:
         """Get details for one or more games.
 
         Args:
             game_ids: Single game ID or list of game IDs to fetch
             stats: Whether to include statistics
+            type_filter: Value for the API's `type` param. Pass None to omit it,
+                which returns each item with its own type - required for ID
+                probing, where expansions and accessories must not be filtered out.
 
         Returns:
             Dictionary containing game details or None if request fails
@@ -136,8 +156,9 @@ class BGGAPIClient:
         params = {
             "id": ids_str,
             "stats": int(stats),
-            "type": "boardgame",
         }
+        if type_filter is not None:
+            params["type"] = type_filter
 
         # Add API token to headers
         headers = {}

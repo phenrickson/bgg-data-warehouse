@@ -5,12 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.7] - 2026-09-13
+## [0.6.7] - 2026-09-14
+
+### Added
+
+- **ID discovery via the XML API** (`src/modules/id_probe_fetcher.py`): new IDs are found by walking the numeric ID space above the highest known ID instead of crawling BGG's sitemaps. BGG publishes no endpoint that enumerates the catalog or reports new items, so IDs still have to be discovered — but the API has no bot-protection surface, where the sitemap path does. `fetch_thing_ids` takes `--source bgg_api_probe` (default) or `bgg_sitemap`, and rows record which method found them in the `source` column. Replaying the probe over a known ID range recovered 100% of its items plus 16 the sitemap had missed, since the sitemap is regenerated periodically while the API is live.
+
+### Changed
+
+- **Scheduled ID discovery moved back to GitHub Actions** from the residential-IP home box. Cloudflare blocks datacenter egress on BGG's HTML/sitemap paths, but not on the authenticated API, so the residential IP is no longer required. `Fetch Thing IDs` runs on a schedule again and the existing `workflow_run` trigger resumes the `Fetch New Games → Dataform` chain. The home box and its `repository_dispatch` remain functional and are not yet retired; the box job now runs the probe too.
+- **`BGGAPIClient` takes `throttle_delay` and `log_requests`.** BGG throttles sustained traffic well before the documented 2 req/s — a 0.5s cadence drew `429` after ~48 consecutive requests — so bulk callers pace themselves separately from the detail pipeline, which is unaffected at ~50 requests/day.
+- **`get_thing()` accepts `type_filter=None`** to omit the `type` parameter. It previously hardcoded `type=boardgame`, which would have hidden expansions and accessories from the probe.
+- **Scrape Heartbeat now checks for a recent successful `Fetch Thing IDs` run** rather than a home-box `repository_dispatch`, which no longer indicates health now that the schedule is back in Actions.
 
 ### Fixed
 
-- **Home-box `git pull` permanently blocked by a stale `uv.lock`**: the 0.6.6 release bumped `pyproject.toml`'s version but not `uv.lock`, so every `uv run` on the home box silently regenerated a locally-modified lockfile that then conflicted with the daily `git pull --ff-only`, leaving the box running stale code. Regenerated `uv.lock` to match.
+- **Home-box `git pull` permanently blocked by a stale `uv.lock`**: the 0.6.6 release bumped `pyproject.toml`'s version but not `uv.lock`, so every `uv run` on the box silently regenerated a locally-modified lockfile that then aborted the nightly `git pull --ff-only`. This had been failing since 2026-07-15, leaving the box **36 commits behind `main`** and running two-month-old code; the sitemap scrape kept working, so nothing surfaced it. Regenerated `uv.lock` to match.
 - **Cloudflare hard-block page treated as a retryable challenge**: `_wait_for_cloudflare` only checked for the "Just a moment" JS-challenge title; a terminal `Attention Required! | Cloudflare` block page (a static "you have been blocked" response, not a solvable challenge) matched the same wait condition, so the scrape burned its full timeout and all retries for nothing before failing. It now raises `CloudflareBlockedError` immediately on a block page.
+
+### Documentation
+
+- Corrected `docs/bgg_api.md`: the XML API now **requires** authentication (BGG made this change in September 2026; the doc claimed it was public), documented the real rate-limit behavior, and recorded how item discovery works and why.
 
 ## [0.6.6] - 2026-07-15
 
