@@ -1,8 +1,14 @@
 #Requires -Version 5.1
-# Home-box wrapper for the residential-IP thing_ids scrape.
-# Runs the native scrape, and on success fires a GitHub repository_dispatch.
+# Home-box wrapper for thing_ids discovery.
+# Runs the pipeline and, on success, fires a GitHub repository_dispatch.
 # Secrets live in <repo>/credentials/ (gitignored); never logged.
-# See docs/superpowers/specs/2026-06-18-home-box-scrape-design.md
+#
+# TEMPORARY: this now runs the XML API probe rather than the sitemap scrape.
+# Cloudflare hard-blocks this box's IP on BGG's HTML paths, but the
+# authenticated API is unaffected, so the box can keep feeding the chain.
+# Fetch Thing IDs is also scheduled in GitHub Actions now, so once that is
+# confirmed healthy this job is redundant and should be disabled in Task
+# Scheduler. See docs/superpowers/specs/2026-06-18-home-box-scrape-design.md
 
 $ErrorActionPreference = 'Stop'
 
@@ -55,26 +61,35 @@ try {
   if (-not (Test-Path $SaKey))   { Log "FATAL: missing $SaKey";   exit 1 }
   if (-not (Test-Path $PatFile)) { Log "FATAL: missing $PatFile"; exit 1 }
 
+  # The probe needs BGG_API_TOKEN: BGG's XML API rejects anonymous requests
+  # with 401. The pipeline reads it from .env via load_dotenv().
+  $EnvFile = Join-Path $RepoRoot '.env'
+  if (-not (Test-Path $EnvFile)) { Log "FATAL: missing $EnvFile (needs BGG_API_TOKEN)"; exit 1 }
+  if (-not (Select-String -Path $EnvFile -Pattern '^\s*BGG_API_TOKEN\s*=\s*\S' -Quiet)) {
+    Log "FATAL: BGG_API_TOKEN not set in $EnvFile"
+    exit 1
+  }
+
   # Scoped SA, set for THIS process only (not a global/system env var).
   $env:GOOGLE_APPLICATION_CREDENTIALS = $SaKey
 
   # Force UTF-8 from Python so its log output matches the log file's encoding.
   $env:PYTHONUTF8 = '1'
 
-  Log "Running scrape..."
+  Log "Running ID probe..."
   # Run via cmd so the native command's combined output goes cleanly to the log
   # and its exit code is read from $LASTEXITCODE. PowerShell 5.1 mangles native
   # `2>&1` (wraps stderr as ErrorRecords and, under ErrorActionPreference Stop,
   # aborts on the first stderr line - which Python logging emits immediately).
-  cmd /c "chcp 65001 >nul & uv run python -m src.pipeline.fetch_thing_ids >> `"$LogFile`" 2>&1"
+  cmd /c "chcp 65001 >nul & uv run python -m src.pipeline.fetch_thing_ids --source bgg_api_probe >> `"$LogFile`" 2>&1"
   $code = $LASTEXITCODE
 
   if ($code -ne 0) {
-    Log "Scrape FAILED (exit $code) - NOT dispatching."
+    Log "ID probe FAILED (exit $code) - NOT dispatching."
     exit $code
   }
 
-  Log "Scrape OK - firing repository_dispatch..."
+  Log "ID probe OK - firing repository_dispatch..."
   $pat = (Get-Content $PatFile -Raw).Trim()
   $headers = @{
     Authorization = "Bearer $pat"

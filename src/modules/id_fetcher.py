@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 RAW_DATASET = "raw"
 THING_IDS_TABLE = "thing_ids"
 
+# Discovery methods, recorded in the `source` column for provenance
+SOURCE_SITEMAP = "bgg_sitemap"
+SOURCE_PROBE = "bgg_api_probe"
+
 
 class IDFetcher:
     """Fetches and manages BoardGameGeek IDs."""
@@ -55,11 +59,33 @@ class IDFetcher:
             logger.error("Failed to fetch existing IDs: %s", e)
             return set()
 
-    def upload_new_ids(self, new_games: List[dict]) -> None:
+    def get_max_game_id(self) -> int:
+        """Get the highest known real game ID, i.e. the frontier to probe above.
+
+        Restricted to genuine board game types: raw.thing_ids contains a
+        `test_type` fixture row at 999999 that would otherwise become the
+        starting point and send the probe into empty ID space.
+
+        Returns:
+            Highest known game_id.
+        """
+        query = f"""
+        SELECT MAX(game_id) AS max_id
+        FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`
+        WHERE type IN ('boardgame', 'boardgameexpansion', 'boardgameaccessory')
+        """
+        max_id = list(self.client.query(query).result())[0].max_id
+        if max_id is None:
+            raise RuntimeError("No existing game IDs found; cannot determine probe start")
+        logger.info("Highest known game_id: %d", max_id)
+        return int(max_id)
+
+    def upload_new_ids(self, new_games: List[dict], source: str = SOURCE_SITEMAP) -> None:
         """Upload new game IDs to BigQuery.
 
         Args:
             new_games: List of dictionaries containing game IDs and types to upload
+            source: Value recorded in the `source` column for provenance
         """
         if not new_games:
             logger.info("No new IDs to upload")
@@ -76,7 +102,7 @@ class IDFetcher:
                 "type": [game["type"] for game in new_games],
                 "processed": [False] * len(new_games),
                 "process_timestamp": [None] * len(new_games),
-                "source": ["bgg_sitemap"] * len(new_games),
+                "source": [source] * len(new_games),
                 "load_timestamp": [now] * len(new_games),
             }
         )
@@ -130,20 +156,26 @@ class IDFetcher:
             # Clean up temp table
             self.client.delete_table(temp_table, not_found_ok=True)
 
-    def run(self, use_browser: bool = True) -> bool:
+    def run(self, source: str = SOURCE_PROBE) -> bool:
         """Run the ID fetcher pipeline.
 
         Args:
-            use_browser: Use browser-based fetching (default True, legacy param for compatibility)
+            source: Discovery method. SOURCE_SITEMAP crawls BGG's sitemaps with a
+                browser (subject to Cloudflare); SOURCE_PROBE walks the ID space
+                above the known frontier via the XML API.
 
         Returns:
             bool: True if new IDs were found and added, False otherwise
         """
-        logger.info("Starting ID fetcher")
+        logger.info("Starting ID fetcher (source=%s)", source)
 
         try:
-            # Fetch IDs from BGG sitemaps
-            all_games = self._fetch_via_browser()
+            if source == SOURCE_PROBE:
+                all_games = self._fetch_via_probe()
+            elif source == SOURCE_SITEMAP:
+                all_games = self._fetch_via_browser()
+            else:
+                raise ValueError(f"Unknown source: {source}")
 
             if not all_games:
                 logger.warning("No games fetched from BGG")
@@ -157,7 +189,7 @@ class IDFetcher:
 
             if new_games:
                 logger.info("Found %d new game IDs", len(new_games))
-                self.upload_new_ids(new_games)
+                self.upload_new_ids(new_games, source=source)
                 return True
             else:
                 logger.info("No new game IDs found")
@@ -166,6 +198,17 @@ class IDFetcher:
         except Exception as e:
             logger.error(f"ID fetcher failed: {e}")
             raise
+
+    def _fetch_via_probe(self) -> List[dict]:
+        """Discover new IDs by probing the XML API above the known frontier.
+
+        Returns:
+            List of game dicts with game_id and type
+        """
+        from .id_probe_fetcher import ProbeIDFetcher
+
+        start_id = self.get_max_game_id() + 1
+        return ProbeIDFetcher().probe(start_id)
 
     def _fetch_via_browser(self) -> List[dict]:
         """Fetch game IDs directly from BGG using browser automation.

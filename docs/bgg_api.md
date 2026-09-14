@@ -4,9 +4,16 @@ This document outlines the BoardGameGeek XML API2 endpoints and usage guidelines
 
 ## Authentication
 
-BoardGameGeek's XML API2 is **public — no authentication is required**. This project
-reads an optional `BGG_API_TOKEN` environment variable and, if set, sends it as a
-Bearer token, but BGG does not require it and the pipeline runs fine without one.
+BoardGameGeek's XML API2 **requires authentication**. Anonymous requests are rejected
+with `401 Unauthorized` and the body `Unauthorized. See
+https://boardgamegeek.com/using_the_xml_api`. Set `BGG_API_TOKEN`; the client sends it
+as a Bearer token. In CI it comes from the `BGG_API_TOKEN` repository secret.
+
+> This changed on BGG's side in September 2026 — the API was previously public.
+
+Note that the token governs the **API** only. BGG's Cloudflare protection is separate
+and applies to the HTML/sitemap paths, which can return `403` for an IP even while
+authenticated API requests from that same IP succeed.
 
 ## API Base URL
 ```
@@ -14,7 +21,13 @@ https://boardgamegeek.com/xmlapi2/
 ```
 
 ## Rate Limiting
-- Maximum 2 requests per second
+- 2 requests per second is the documented ceiling, but **sustained** traffic at that
+  rate is throttled: a 0.5s cadence drew `429 Rate limit exceeded` after ~48
+  consecutive requests (measured 2026-09-14). The limit appears to be on burst rate
+  rather than daily volume — the detail pipeline issues ~50 requests/day spread over
+  ~30 minutes and never sees a 429.
+- Bulk callers should pass a larger `throttle_delay` to `BGGAPIClient` (the probe uses
+  2.0s) rather than relying on the default.
 - Respect HTTP 429 responses with exponential backoff
 - Cache responses when possible
 
@@ -69,6 +82,28 @@ Example:
     </item>
 </items>
 ```
+
+## Discovering new items
+
+BGG publishes **no endpoint that enumerates the catalog or reports newly added
+items** — `/thing` needs IDs you already have, and `/search` matches on name. IDs
+must therefore be discovered some other way. This project uses two:
+
+- **API probe** (`src/modules/id_probe_fetcher.py`, default): walks the numeric ID
+  space above the highest known ID. IDs come from one pool shared with `rpgitem`,
+  `videogame`, `bgsleeve` and others, so each item's own `type` decides whether it is
+  kept. Requires `type` to be omitted from the request, or expansions and accessories
+  are filtered out.
+- **Sitemap crawl** (`src/modules/id_fetcher_browser.py`): scrapes BGG's sitemaps with
+  a stealth browser. Sees the whole catalog rather than only the frontier, so it also
+  catches items added *below* the frontier (~2% of arrivals), but depends on getting
+  past Cloudflare.
+
+Measured against the live API on 2026-09-14: ~45% of IDs near the frontier are board
+game items, the largest gap between consecutive real IDs was 8 (112 across populated
+space), and a probe replayed over a known range recovered 100% of its items — plus 16
+the sitemap had missed, since the sitemap is regenerated periodically while the API is
+live.
 
 ### Error Handling
 

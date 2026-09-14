@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
 
 
+class CloudflareBlockedError(RuntimeError):
+    """Raised when Cloudflare returns a terminal block page rather than a solvable challenge."""
+
+
 class BrowserIDFetcher:
     """Fetches BGG game IDs by scraping sitemaps with a real browser."""
 
@@ -54,10 +58,23 @@ class BrowserIDFetcher:
         Args:
             page: Playwright page object
             timeout: Max seconds to wait
+
+        Raises:
+            CloudflareBlockedError: The page is a terminal Cloudflare block
+                ("Attention Required! | Cloudflare" / "Sorry, you have been
+                blocked"), not a solvable JS challenge. This page never
+                changes, so waiting out the timeout or retrying is pointless -
+                fail immediately instead of burning MAX_RETRIES * timeout.
+            TimeoutError: A "Just a moment" challenge never resolved in time.
         """
         start = time.time()
         while time.time() - start < timeout:
             title = page.title()
+            if "Attention Required" in title:
+                raise CloudflareBlockedError(
+                    "Cloudflare returned a hard block page, not a solvable "
+                    "challenge - this IP is likely blocklisted; retrying will not help"
+                )
             if "Just a moment" not in title and "Cloudflare" not in title:
                 return
             logger.info("Waiting for Cloudflare challenge...")
@@ -132,6 +149,9 @@ class BrowserIDFetcher:
                     logger.info(f"  {url}")
                 return full_urls
 
+            except CloudflareBlockedError:
+                # Terminal block, not a transient challenge - retrying won't help.
+                raise
             except Exception as e:
                 last_error = e
                 if attempt < self.MAX_RETRIES - 1:
