@@ -1,9 +1,12 @@
 name: Scrape Heartbeat
 
-# Fetch Thing IDs is scheduled again, so a failed run raises its own red X. What
-# that can't catch is the schedule silently not firing at all - GitHub disables
-# cron triggers on inactive repos - so this checks that a *successful* run landed
-# within the threshold, whatever triggered it (schedule, manual, or home box).
+# A failed discovery run raises its own red X. What that can't catch is the
+# chain silently not running at all - a cron GitHub stopped firing, a workflow
+# left disabled, a home box that never dispatched. So this checks the outcome:
+# that Fetch New Games succeeded within the threshold. Every discovery path
+# ends there (Actions via workflow_run, the home box via repository_dispatch),
+# so it is green whichever one did the work - unlike checking Fetch Thing IDs
+# runs, which the home-box path never produces.
 on:
   schedule:
     - cron: '0 12 * * *'  # 6h after the box's 06:00 UTC slot
@@ -17,28 +20,28 @@ jobs:
     name: Warn if ID discovery has not run
     runs-on: ubuntu-latest
     steps:
-      - name: Check for a recent successful Fetch Thing IDs run
+      - name: Check for a recent successful Fetch New Games run
         env:
           GH_TOKEN: ${{ github.token }}
           THRESHOLD_HOURS: '26'  # normal age ~6h; a single missed daily run = ~30h, trips cleanly
         run: |
-          # Most recent successful "Fetch Thing IDs" run, regardless of trigger.
+          # Most recent successful "Run Fetch New Games" run, regardless of trigger.
           LAST=$(gh api \
-            "repos/${{ github.repository }}/actions/workflows/fetch_thing_ids.yml/runs?status=success&per_page=1" \
+            "repos/${{ github.repository }}/actions/workflows/fetch_new_games.yml/runs?status=success&per_page=1" \
             --jq '.workflow_runs[0].created_at // empty')
 
           if [ -z "$LAST" ]; then
-            echo "::error::No successful Fetch Thing IDs run found at all."
+            echo "::error::No successful Fetch New Games run found at all."
             exit 1
           fi
 
           LAST_EPOCH=$(date -d "$LAST" +%s)
           NOW_EPOCH=$(date +%s)
           AGE_HOURS=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
-          echo "Last successful ID discovery: $LAST (${AGE_HOURS}h ago)"
+          echo "Last successful Fetch New Games: $LAST (${AGE_HOURS}h ago)"
 
           if [ "$AGE_HOURS" -gt "$THRESHOLD_HOURS" ]; then
-            echo "::error::No successful ID discovery in ${AGE_HOURS}h (> ${THRESHOLD_HOURS}h). Check that the schedule is still firing."
+            echo "::error::No successful Fetch New Games in ${AGE_HOURS}h (> ${THRESHOLD_HOURS}h). Neither the Actions schedule nor the home box completed discovery."
             exit 1
           fi
           echo "Heartbeat OK."
