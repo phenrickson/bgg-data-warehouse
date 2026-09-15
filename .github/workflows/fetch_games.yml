@@ -39,7 +39,7 @@ jobs:
           gcloud run jobs execute bgg-fetch-games \
             --project=${GCP_PROJECT_ID} \
             --region=${GCP_REGION} \
-            --update-env-vars=GAME_IDS=${{ github.event.inputs.game_ids }} \
+            --update-env-vars="^|^GAME_IDS=${{ github.event.inputs.game_ids }}" \
             --wait
 
       - name: Write job summary
