@@ -156,12 +156,15 @@ class BGGDataProcessor:
             Publication year or None if not found
         """
         year = item.get("yearpublished", {})
-        if isinstance(year, str):
-            return int(year) if year.isdigit() and int(year) > 0 else None
-        year_value = year.get("@value")
-        return (
-            int(year_value) if year_value and year_value.isdigit() and int(year_value) > 0 else None
-        )
+        year_value = year if isinstance(year, str) else year.get("@value")
+        # BGG encodes BC dates as negative years (Go is -2200) and "unknown" as 0.
+        # str.isdigit() rejects the leading minus, so parse with int() and only
+        # treat 0 / unparseable as missing.
+        try:
+            parsed = int(year_value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed != 0 else None
 
     def _extract_links(self, item: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
         """Extract all linked entities (categories, mechanics, etc.).

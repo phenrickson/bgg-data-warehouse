@@ -8,6 +8,7 @@ on:
       - 'config/cloudbuild.yaml'
       - 'src/pipeline/**'
       - 'src/modules/**'
+      - 'src/data_processor/**'
   workflow_dispatch:
 
 env:

@@ -189,6 +189,18 @@ def test_extract_year_string_zero(processor):
     year = processor._extract_year(item)
     assert year is None
 
+def test_extract_year_negative(processor):
+    """BGG encodes BC publication dates as negative years (Go is -2200)."""
+    item = {"yearpublished": {"@value": "-2200"}}
+    year = processor._extract_year(item)
+    assert year == -2200
+
+def test_extract_year_string_negative(processor):
+    """Negative years are preserved for the bare-string shape too."""
+    item = {"yearpublished": "-2600"}
+    year = processor._extract_year(item)
+    assert year == -2600
+
 def test_poll_results_single_result(processor):
     """Test extracting poll results when results is a single dict."""
     item = {
