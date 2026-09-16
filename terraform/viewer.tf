@@ -163,6 +163,19 @@ resource "google_service_account_iam_member" "bgg_viewer_self_sign" {
   member             = "serviceAccount:${google_service_account.bgg_viewer.email}"
 }
 
+# Local development as the same identity. `gcloud auth application-default login
+# --impersonate-service-account=bgg-viewer@...` makes every ADC call from a dev machine
+# (BigQuery *and* URL signing) run as the SA, so `just dev` takes the real GCS signed-URL
+# path instead of logging a SigningError and rebuilding the catalog from BigQuery. That
+# needs tokenCreator on the SA for the person impersonating — without it, impersonation
+# fails closed and takes the BigQuery fallback down with it (403 on every ADC call).
+# Same literal-user pattern as warehouse_api.tf's invoker list.
+resource "google_service_account_iam_member" "bgg_viewer_local_impersonation" {
+  service_account_id = google_service_account.bgg_viewer.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "user:phil.henrickson@gmail.com"
+}
+
 # The CI identity behind GCP_SA_KEY_BGG_DW runs bgg-viewer's catalog-artifact.yml, which
 # uploads the artifact and rewrites the pointer. objectAdmin rather than objectCreator: the
 # pointer is overwritten in place on every run, not created once.
