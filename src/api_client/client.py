@@ -49,7 +49,9 @@ class BGGAPIClient:
         self.session = requests.Session()
         self.throttle_delay = throttle_delay if throttle_delay is not None else self.THROTTLE_DELAY
         self.log_requests = log_requests
-        self.api_token = os.getenv("BGG_API_TOKEN")
+        # Secret stores commonly carry a trailing newline from paste; http.client
+        # rejects it in a header value, which took down the first Actions run.
+        self.api_token = (os.getenv("BGG_API_TOKEN") or "").strip() or None
         if not self.api_token:
             logger.warning("BGG_API_TOKEN not found in environment variables")
 
