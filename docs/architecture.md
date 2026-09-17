@@ -13,16 +13,16 @@ as a Cloud Run job (and runnable locally with `uv run python -m src.pipeline.<na
 
 ### 1. ID discovery — `fetch_thing_ids`
 
-Discovers new game IDs by scraping BGG's sitemap index and per-type sitemaps
-(`boardgame`, `boardgameexpansion`, `boardgameaccessory`). BGG serves these behind
-Cloudflare, so the scrape drives a real (stealth) browser via Playwright rather than
-plain HTTP. New IDs are MERGEd into `raw.thing_ids` (idempotent — a re-run or
+Discovers new game IDs by probing BGG's XML API2 for IDs above the current maximum
+in `raw.thing_ids` (`--source bgg_api_probe`, the default). The authenticated API is
+not behind Cloudflare's datacenter block, so this runs on GitHub Actions on a daily
+06:00 UTC cron. New IDs are MERGEd into `raw.thing_ids` (idempotent — a re-run or
 catch-up is safe).
 
-Because Cloudflare blocks datacenter egress, the **scheduled** scrape runs
-off-platform on a residential-IP "home box" (see [scripts/box/README.md](../scripts/box/README.md)),
-which fires a `thing_ids_fetched` `repository_dispatch` on success. The
-`fetch_thing_ids.yml` GitHub Actions workflow remains as a manual fallback.
+Sitemap scraping (`--source bgg_sitemap`) is kept as a legacy option. It drives a
+stealth Playwright browser and needs residential egress, which is what the
+off-platform "home box" (see [scripts/box/README.md](../scripts/box/README.md)) was for;
+that path still works via its `thing_ids_fetched` `repository_dispatch`.
 
 ### 2. Fetch — `fetch_new_games` / `fetch_games` / `refresh_old_games`
 
@@ -31,8 +31,8 @@ in `raw.raw_responses`, then process it into the normalized `core` tables in the
 run. The `src/api_client` module handles rate limiting (~2 req/s) and retries; the
 `src/data_processor` module parses XML into rows.
 
-- **`fetch_new_games`** — fetches every unfetched ID in `raw.thing_ids`. Triggered by
-  the home box's `thing_ids_fetched` dispatch.
+- **`fetch_new_games`** — fetches every unfetched ID in `raw.thing_ids`. Runs after
+  `fetch_thing_ids` completes.
 - **`refresh_old_games`** — re-fetches games whose data is stale under the
   publication-year policy in `config/bigquery.yaml` (recent games weekly → vintage
   bi-annually). Runs after `fetch_new_games` completes, so one Dataform/ML
@@ -60,7 +60,7 @@ The two repos coordinate with a bidirectional `repository_dispatch` handshake (b
 
 ```mermaid
 graph TD
-    S[BGG sitemaps] -->|scrape IDs| T[raw.thing_ids]
+    S[BGG XML API2 probe] -->|new IDs| T[raw.thing_ids]
     T -->|unfetched IDs| F[fetch_new_games / refresh_old_games / fetch_games]
     A[BGG XML API2] --> F
     F -->|raw XML| R[raw.raw_responses]
@@ -77,14 +77,15 @@ graph TD
 Rather than a fixed schedule, the daily run is event-driven via `repository_dispatch`:
 
 1. Home box (~06:00 UTC) → `thing_ids_fetched` → **Run Fetch New Games**.
-2. Fetch/refresh completion → (via `workflow_run`) **Run Dataform** → publishes
-   `analytics` + `predictions`.
+2. `Fetch Thing IDs` → `Run Fetch New Games` → `Run Refresh Old Games` (runs on any
+   conclusion of the previous step) → (via `workflow_run`) **Run Dataform** → publishes
+   `analytics` + `predictions`. One chain, one cascade per day.
 3. Dataform success → `dataform_complete` dispatch → `bgg-predictive-models` begins
    scoring.
 4. As the ML repo finishes each stage it dispatches back — `complexity_complete`,
    `text_embeddings_complete`, `embeddings_complete` — each re-running Dataform to
    publish the new outputs. `embeddings_complete` is the end of the cycle.
-5. **Scrape Heartbeat** (12:00 UTC) fails if no home-box dispatch has landed in ~26h.
+5. **Scrape Heartbeat** (12:00 UTC) fails if `Run Fetch New Games` hasn't succeeded in ~26h.
 
 ## Datasets
 
