@@ -1,8 +1,10 @@
 name: Run Dataform
 
 on:
+  # Run Fetch New Games is not listed: Run Refresh Old Games chains off it and
+  # is the single daily entry point, so new games ride the same cascade.
   workflow_run:
-    workflows: ["Run Fetch New Games", "Run Refresh Old Games", "Run Fetch Games"]
+    workflows: ["Run Refresh Old Games", "Run Fetch Games"]
     types: [completed]
 
   # Triggered by ML pipeline

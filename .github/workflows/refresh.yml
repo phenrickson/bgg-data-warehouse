@@ -1,8 +1,15 @@
 name: Run Refresh Old Games
 
 on:
-  schedule:
-    - cron: '0 7 * * *'  # Run daily at 7 AM UTC
+  # Runs after Run Fetch New Games completes — success, failure, or skipped —
+  # so the daily chain is one sequence: Fetch Thing IDs -> Fetch New Games ->
+  # Refresh Old Games -> Run Dataform. Deliberately not gated on conclusion:
+  # a failed ID discovery should still refresh existing games. This replaced
+  # the 07:00 UTC cron, which fired a second full Dataform/ML cascade an hour
+  # after the 06:00 fetch chain's own.
+  workflow_run:
+    workflows: ["Run Fetch New Games"]
+    types: [completed]
   workflow_dispatch:
 
 env:
