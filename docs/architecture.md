@@ -35,7 +35,8 @@ run. The `src/api_client` module handles rate limiting (~2 req/s) and retries; t
   the home box's `thing_ids_fetched` dispatch.
 - **`refresh_old_games`** — re-fetches games whose data is stale under the
   publication-year policy in `config/bigquery.yaml` (recent games weekly → vintage
-  bi-annually). Scheduled daily at 07:00 UTC.
+  bi-annually). Runs after `fetch_new_games` completes, so one Dataform/ML
+  cascade per day covers both new and refreshed games.
 - **`fetch_games`** — on-demand fetch/refresh of a specific set of IDs (from the
   `GAME_IDS` env var / the `fetch_games.yml` `game_ids` input).
 

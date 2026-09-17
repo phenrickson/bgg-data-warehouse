@@ -33,7 +33,7 @@ diagrams under [docs/architecture/diagrams/](docs/architecture/diagrams/).
 |----------|--------------|-------------|
 | `fetch_thing_ids` | Discovers new game IDs by scraping BGG sitemaps (a stealth browser bypasses Cloudflare); MERGEs them into `raw.thing_ids`. | **Scheduled off-platform on a residential-IP home box** — datacenter egress is Cloudflare-blocked. On success the box fires a `thing_ids_fetched` `repository_dispatch`. The `Fetch Thing IDs` GitHub Actions workflow remains as a manual fallback. See [scripts/box/README.md](scripts/box/README.md). |
 | `fetch_new_games` | Fetches API responses for unfetched IDs in `raw.thing_ids` and processes them into `core` tables. | Triggered by the home box's `thing_ids_fetched` dispatch (and after `Fetch Thing IDs`). |
-| `refresh_old_games` | Re-fetches stale games based on a publication-year policy (see `config/bigquery.yaml`). | Scheduled daily at **07:00 UTC**. |
+| `refresh_old_games` | Re-fetches stale games based on a publication-year policy (see `config/bigquery.yaml`). | After `Run Fetch New Games` completes (any conclusion), so the daily chain runs Dataform once. |
 | `fetch_games` | On-demand fetch/refresh of specific game IDs. | Manual `workflow_dispatch` with a comma-separated `game_ids` input. |
 
 ### Orchestration (GitHub Actions + `repository_dispatch`)
@@ -60,9 +60,9 @@ Key workflows in `.github/workflows/`:
 | Workflow | Trigger |
 |----------|---------|
 | `fetch_new_games.yml` | `repository_dispatch: thing_ids_fetched`, after `Fetch Thing IDs`, or manual |
-| `refresh.yml` | daily `0 7 * * *`, or manual |
+| `refresh.yml` | after `Run Fetch New Games` (any conclusion), or manual |
 | `fetch_games.yml` | manual `workflow_dispatch` (`game_ids` input) |
-| `dataform.yml` | after a fetch/refresh, `repository_dispatch` from the ML repo, push to `definitions/**`, or manual |
+| `dataform.yml` | after `Run Refresh Old Games` or `Run Fetch Games`, `repository_dispatch` from the ML repo, push to `definitions/**`, or manual |
 | `fetch_thing_ids.yml` | manual fallback only |
 | `scrape_heartbeat.yml` | daily `0 12 * * *` |
 | `deploy.yml` | push to `main` (builds & deploys the Cloud Run jobs) |
