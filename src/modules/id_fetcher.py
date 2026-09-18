@@ -4,7 +4,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import List, Set
+from typing import FrozenSet, List, Set
 
 import polars as pl
 from dotenv import load_dotenv
@@ -156,22 +156,24 @@ class IDFetcher:
             # Clean up temp table
             self.client.delete_table(temp_table, not_found_ok=True)
 
-    def run(self, source: str = SOURCE_PROBE) -> bool:
+    def run(self, source: str = SOURCE_PROBE, lookback: int = 0) -> bool:
         """Run the ID fetcher pipeline.
 
         Args:
             source: Discovery method. SOURCE_SITEMAP crawls BGG's sitemaps with a
                 browser (subject to Cloudflare); SOURCE_PROBE walks the ID space
-                above the known frontier via the XML API.
+                via the XML API.
+            lookback: For SOURCE_PROBE, how many IDs below the known max to
+                re-probe before walking the frontier. 0 = frontier only.
 
         Returns:
             bool: True if new IDs were found and added, False otherwise
         """
-        logger.info("Starting ID fetcher (source=%s)", source)
+        logger.info("Starting ID fetcher (source=%s, lookback=%d)", source, lookback)
 
         try:
             if source == SOURCE_PROBE:
-                all_games = self._fetch_via_probe()
+                all_games = self._fetch_via_probe(lookback=lookback)
             elif source == SOURCE_SITEMAP:
                 all_games = self._fetch_via_browser()
             else:
@@ -199,16 +201,39 @@ class IDFetcher:
             logger.error(f"ID fetcher failed: {e}")
             raise
 
-    def _fetch_via_probe(self) -> List[dict]:
-        """Discover new IDs by probing the XML API above the known frontier.
+    def _known_ids_from(self, floor: int) -> FrozenSet[int]:
+        """IDs already in raw.thing_ids at or above `floor`, so the probe can
+        skip them. Small (lookback-sized) and cheap."""
+        query = f"""
+        SELECT game_id
+        FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`
+        WHERE game_id >= @floor
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("floor", "INT64", floor)]
+        )
+        rows = self.client.query(query, job_config=job_config).result()
+        return frozenset(int(row.game_id) for row in rows)
+
+    def _fetch_via_probe(self, lookback: int = 0) -> List[dict]:
+        """Discover new IDs by probing the XML API around the known frontier.
+
+        Args:
+            lookback: IDs below the known max to re-probe (skipping ones we
+                already have) before walking above it. 0 = frontier only.
 
         Returns:
             List of game dicts with game_id and type
         """
         from .id_probe_fetcher import ProbeIDFetcher
 
-        start_id = self.get_max_game_id() + 1
-        return ProbeIDFetcher().probe(start_id)
+        max_id = self.get_max_game_id()
+        if lookback <= 0:
+            return ProbeIDFetcher().probe(max_id + 1)
+
+        start_id = max_id - lookback
+        skip = self._known_ids_from(start_id)
+        return ProbeIDFetcher().probe(start_id, frontier_id=max_id, skip=skip)
 
     def _fetch_via_browser(self) -> List[dict]:
         """Fetch game IDs directly from BGG using browser automation.
