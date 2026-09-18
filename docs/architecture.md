@@ -13,11 +13,15 @@ as a Cloud Run job (and runnable locally with `uv run python -m src.pipeline.<na
 
 ### 1. ID discovery — `fetch_thing_ids`
 
-Discovers new game IDs by probing BGG's XML API2 for IDs above the current maximum
-in `raw.thing_ids` (`--source bgg_api_probe`, the default). The authenticated API is
-not behind Cloudflare's datacenter block, so this runs on GitHub Actions on a daily
-06:00 UTC cron. New IDs are MERGEd into `raw.thing_ids` (idempotent — a re-run or
-catch-up is safe).
+Discovers new game IDs by probing BGG's XML API2 around the current maximum in
+`raw.thing_ids` (`--source bgg_api_probe`, the default). BGG allocates an ID on
+submission but publishes after approval, so most newly visible IDs sit *below* the
+frontier; the probe therefore starts `--lookback N` IDs back, skips IDs already
+known, and only counts misses at or above the frontier toward its stop. The
+authenticated API is not behind Cloudflare's datacenter block, so this runs on
+GitHub Actions at 06:00 UTC — lookback 500 Mon–Sat (new/upcoming games), 5,000 on
+Sunday (catch-up). New IDs are MERGEd into `raw.thing_ids` (idempotent — a re-run or
+catch-up is safe). Design: [probe lookback spec](superpowers/specs/2026-09-18-id-probe-lookback-design.md).
 
 Sitemap scraping (`--source bgg_sitemap`) is kept as a legacy option. It drives a
 stealth Playwright browser and needs residential egress, which is what the

@@ -5,8 +5,13 @@ on:
   # longer needs residential egress: Cloudflare blocks datacenter IPs on the
   # HTML/sitemap paths, but the authenticated API is unaffected. Scheduling
   # therefore moved back here from the home box.
+  # Two windows, one probe. Most newly published IDs sit below the frontier
+  # (reserved on submission, visible after approval), so the daily run looks
+  # back 500 and the Sunday run 5,000. See
+  # docs/superpowers/specs/2026-09-18-id-probe-lookback-design.md.
   schedule:
-    - cron: '0 6 * * *'  # 01:00 US Central, matching the old home-box window
+    - cron: '0 6 * * 1-6'  # 01:00 US Central; frontier + 500 back
+    - cron: '0 6 * * 0'    # Sunday: frontier + 5,000 back
   workflow_dispatch:
     inputs:
       source:
@@ -14,6 +19,10 @@ on:
         type: choice
         options: [bgg_api_probe, bgg_sitemap]
         default: bgg_api_probe
+      lookback:
+        description: 'IDs below the known max to re-probe (probe only)'
+        type: number
+        default: 500
 
 env:
   GCP_PROJECT_ID: bgg-data-warehouse
@@ -58,12 +67,26 @@ jobs:
             "SELECT COUNT(*) as cnt FROM \`bgg-data-warehouse.raw.thing_ids\`" | tail -1)
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
 
+      - name: Resolve lookback
+        id: lookback
+        run: |
+          if [ -n "${{ inputs.lookback }}" ]; then
+            LB="${{ inputs.lookback }}"
+          elif [ "$(date -u +%u)" = "7" ]; then
+            LB=5000
+          else
+            LB=500
+          fi
+          echo "lookback=$LB" >> $GITHUB_OUTPUT
+          echo "Lookback: $LB"
+
       - name: Fetch Thing IDs
         env:
           BGG_API_TOKEN: ${{ secrets.BGG_API_TOKEN }}
         run: |
           uv run python -m src.pipeline.fetch_thing_ids \
-            --source "${{ inputs.source || 'bgg_api_probe' }}"
+            --source "${{ inputs.source || 'bgg_api_probe' }}" \
+            --lookback "${{ steps.lookback.outputs.lookback }}"
 
       - name: Write job summary
         if: always()
@@ -80,6 +103,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lookback | ${{ steps.lookback.outputs.lookback }} |" >> $GITHUB_STEP_SUMMARY
           echo "| New IDs added | ${NEW_IDS} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Total IDs** | **${TOTAL}** |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

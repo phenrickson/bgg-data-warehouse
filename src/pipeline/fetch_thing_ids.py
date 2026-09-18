@@ -38,12 +38,24 @@ def main() -> None:
         default=SOURCE_PROBE,
         help="Discovery method (default: %(default)s)",
     )
+    parser.add_argument(
+        "--lookback",
+        type=int,
+        default=0,
+        help=(
+            "For %s: how many IDs below the known max to re-probe (skipping ones "
+            "already in raw.thing_ids) before walking the frontier. 0 = frontier only "
+            "(default: %%(default)s)" % SOURCE_PROBE
+        ),
+    )
     args = parser.parse_args()
 
-    logger.info("Starting fetch_thing_ids pipeline (source=%s)", args.source)
+    logger.info(
+        "Starting fetch_thing_ids pipeline (source=%s, lookback=%d)", args.source, args.lookback
+    )
 
     id_fetcher = IDFetcher()
-    ids_fetched = id_fetcher.run(source=args.source)
+    ids_fetched = id_fetcher.run(source=args.source, lookback=args.lookback)
 
     if ids_fetched:
         logger.info("fetch_thing_ids completed: new IDs were added to thing_ids table")

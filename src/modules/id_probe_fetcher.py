@@ -1,16 +1,24 @@
-"""Discover new BGG item IDs by probing the XML API above the known frontier.
+"""Discover new BGG item IDs by probing the XML API around the known frontier.
 
 BGG publishes no "list all items" or "what's new" endpoint, so IDs have to be
 discovered. The sitemap scrape does this by crawling HTML behind Cloudflare;
 this module instead walks the numeric ID space upward through the authenticated
 XML API, which has no bot-protection surface.
 
+BGG allocates an ID on submission but publishes the item only after approval,
+often weeks later - so most newly visible IDs sit *below* the frontier, in
+space the walk already passed. The walk therefore starts some way back (the
+caller's lookback), skipping IDs already in raw.thing_ids. Below the frontier a
+run of empty IDs is normal and never ends the walk; only misses at or above the
+frontier count toward the stop. See
+docs/superpowers/specs/2026-09-18-id-probe-lookback-design.md.
+
 IDs are drawn from one pool shared with RPGs, video games and sleeves, so each
 item's own `type` decides whether it is kept.
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, FrozenSet, Iterator, List, Optional
 
 from ..api_client.client import BGGAPIClient
 
@@ -70,34 +78,68 @@ class ProbeIDFetcher:
             return []
         return [items] if isinstance(items, dict) else items
 
-    def probe(self, start_id: int, max_ids: Optional[int] = None) -> List[Dict]:
+    def _batches(self, start_id: int, skip: FrozenSet[int]) -> Iterator[List[int]]:
+        """Yield successive batches of unknown IDs, walking upward from start_id.
+
+        A batch may span a gap where known IDs were skipped, so its IDs are not
+        necessarily contiguous.
+        """
+        current = start_id
+        while True:
+            batch: List[int] = []
+            while len(batch) < self.batch_size:
+                if current not in skip:
+                    batch.append(current)
+                current += 1
+            yield batch
+
+    def probe(
+        self,
+        start_id: int,
+        *,
+        frontier_id: Optional[int] = None,
+        skip: FrozenSet[int] = frozenset(),
+        max_ids: Optional[int] = None,
+    ) -> List[Dict]:
         """Walk the ID space upward from start_id, collecting board game items.
 
         Args:
-            start_id: First ID to probe (typically max known ID + 1).
+            start_id: First ID to consider. Equal to the frontier for a pure
+                frontier walk; `max_known - lookback` to re-probe the space
+                below it.
+            frontier_id: The highest known ID. Misses below it are expected and
+                do not count toward the stop; misses at or above it do.
+                Defaults to start_id.
+            skip: IDs already known (present in raw.thing_ids); never requested.
             max_ids: Optional hard cap on how many IDs to examine, as a
                 backstop against walking indefinitely.
 
         Returns:
             List of {"game_id": int, "type": str} for board game items found.
         """
+        if frontier_id is None:
+            frontier_id = start_id
+
         found: List[Dict] = []
         consecutive_misses = 0
         examined = 0
-        current = start_id
 
         logger.info(
-            "Probing for new IDs from %d (stop after %d consecutive misses)",
+            "Probing for new IDs from %d (frontier %d, %d known IDs skipped, "
+            "stop after %d consecutive misses above the frontier)",
             start_id,
+            frontier_id,
+            len(skip),
             self.stop_after_misses,
         )
 
-        while consecutive_misses < self.stop_after_misses:
+        for batch in self._batches(start_id, skip):
+            if consecutive_misses >= self.stop_after_misses:
+                break
             if max_ids is not None and examined >= max_ids:
-                logger.warning("Probe hit max_ids cap of %d at ID %d", max_ids, current)
+                logger.warning("Probe hit max_ids cap of %d at ID %d", max_ids, batch[0])
                 break
 
-            batch = list(range(current, current + self.batch_size))
             response = self.client.get_thing(batch, stats=False, type_filter=None)
 
             # A failed request is not evidence that the IDs are absent; treating
@@ -113,16 +155,18 @@ class ProbeIDFetcher:
 
             if items:
                 consecutive_misses = 0
-            else:
-                consecutive_misses += len(batch)
+            elif batch[-1] >= frontier_id:
+                # Only misses at/above the frontier are evidence we've run out
+                # of ID space; below it, gaps are unpublished submissions.
+                consecutive_misses += sum(1 for i in batch if i >= frontier_id)
 
             examined += len(batch)
-            current += self.batch_size
 
         logger.info(
-            "Probe examined %d IDs from %d, found %d board game items",
+            "Probe examined %d IDs from %d (frontier %d), found %d board game items",
             examined,
             start_id,
+            frontier_id,
             len(found),
         )
         return found
