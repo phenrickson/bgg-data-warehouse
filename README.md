@@ -31,7 +31,7 @@ diagrams under [docs/architecture/diagrams/](docs/architecture/diagrams/).
 
 | Pipeline | What it does | How it runs |
 |----------|--------------|-------------|
-| `fetch_thing_ids` | Discovers new game IDs by probing the XML API2 above the current max ID; MERGEs them into `raw.thing_ids`. Sitemap scraping (`--source bgg_sitemap`) is kept as a legacy option — it needs residential egress, see [scripts/box/README.md](scripts/box/README.md). | Scheduled daily at **06:00 UTC** on GitHub Actions. |
+| `fetch_thing_ids` | Discovers new game IDs by probing the XML API2 around the current max ID — `--lookback N` re-probes the N IDs below it (skipping known ones) before walking the frontier, since most newly published IDs were reserved earlier; MERGEs them into `raw.thing_ids`. Sitemap scraping (`--source bgg_sitemap`) is kept as a legacy option — it needs residential egress, see [scripts/box/README.md](scripts/box/README.md). | **06:00 UTC** on GitHub Actions: lookback 500 Mon–Sat, 5,000 on Sunday. See the [probe lookback spec](docs/superpowers/specs/2026-09-18-id-probe-lookback-design.md). |
 | `fetch_new_games` | Fetches API responses for unfetched IDs in `raw.thing_ids` and processes them into `core` tables. | After `Fetch Thing IDs` (or a `thing_ids_fetched` dispatch from the home box, if used). |
 | `refresh_old_games` | Re-fetches stale games based on a publication-year policy (see `config/bigquery.yaml`). | After `Run Fetch New Games` completes (any conclusion), so the daily chain runs Dataform once. |
 | `fetch_games` | On-demand fetch/refresh of specific game IDs. | Manual `workflow_dispatch` with a comma-separated `game_ids` input. |
@@ -63,7 +63,7 @@ Key workflows in `.github/workflows/`:
 
 | Workflow | Trigger |
 |----------|---------|
-| `fetch_thing_ids.yml` | daily `0 6 * * *`, or manual (`source` input: `bgg_api_probe` default, `bgg_sitemap` legacy) |
+| `fetch_thing_ids.yml` | `0 6 * * 1-6` (lookback 500) and `0 6 * * 0` (lookback 5,000), or manual (`source`, `lookback` inputs) |
 | `fetch_new_games.yml` | after `Fetch Thing IDs`, `repository_dispatch: thing_ids_fetched`, or manual |
 | `refresh.yml` | after `Run Fetch New Games` (any conclusion), or manual |
 | `fetch_games.yml` | manual `workflow_dispatch` (`game_ids` input) |
