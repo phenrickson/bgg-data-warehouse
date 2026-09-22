@@ -26,9 +26,12 @@ jobs:
           THRESHOLD_HOURS: '26'  # normal age ~6h; a single missed daily run = ~30h, trips cleanly
         run: |
           # Most recent successful "Run Fetch New Games" run, regardless of trigger.
+          # Take the max over a window rather than element 0: the runs listing has
+          # served a stale, out-of-order page before, and per_page=1 turns a single
+          # misordered element into a false alarm.
           LAST=$(gh api \
-            "repos/${{ github.repository }}/actions/workflows/fetch_new_games.yml/runs?status=success&per_page=1" \
-            --jq '.workflow_runs[0].created_at // empty')
+            "repos/${{ github.repository }}/actions/workflows/fetch_new_games.yml/runs?status=success&per_page=20" \
+            --jq '[.workflow_runs[].created_at] | max // empty')
 
           if [ -z "$LAST" ]; then
             echo "::error::No successful Fetch New Games run found at all."
