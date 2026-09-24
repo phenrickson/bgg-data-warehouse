@@ -6,7 +6,7 @@ optional blocks (predictions, embedding, provenance) return 200 with a possibly-
 body since a real game may simply not have that block yet.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from src.warehouse.readers import games as reader
 
@@ -70,17 +70,39 @@ def get_similar(
     metric: str | None = None,
     min_ratings: int | None = None,
     dims: int | None = None,
+    collection: str | None = None,
+    year_min: int | None = None,
+    ids: list[int] | None = Query(None),
 ):
     """Similar games.
 
-    With no tuning parameters this serves the **precomputed** ``profile``
-    (``similar`` | ``sicko`` | ``recommender``, default ``similar``) — one partitioned
-    lookup. Supplying any of `n`, `band`, `metric`, `min_ratings` or `dims` computes it
-    **live** with those settings — same filtering semantics either way. This is the
-    two-tier pattern the front-end wants: fast default on load, live when the user
-    tweaks.
+    Three modes:
+
+    - **Precomputed** (no other parameters): the named ``profile`` (``similar`` |
+      ``sicko`` | ``recommender``, default ``similar``) from ``game_neighbors`` — one
+      clustered lookup. Returns a list.
+    - **Pooled** (any of ``collection``, ``year_min``, ``ids``): every profile's
+      neighbours *within that pool*, computed live with exactly the ``game_neighbors``
+      logic. Returns ``{profile: [rows]}``; ``profile`` is ignored. ~3 s.
+    - **Tuned** (any of ``n``, ``band``, ``metric``, ``min_ratings``, ``dims``): a live
+      distance ranking with a complexity band and ratings floor only — it does **not**
+      apply the profile's rating blend, percentile filters or product-line cap. Returns
+      a list.
+
+    Pool and tuning parameters can't be combined (400).
     """
+    pooled = collection is not None or year_min is not None or bool(ids)
+    tuned = any(v is not None for v in (n, band, metric, min_ratings, dims))
+    if pooled and tuned:
+        raise HTTPException(
+            status_code=400,
+            detail="pool parameters (collection, year_min, ids) can't be combined with tuning parameters",
+        )
     try:
+        if pooled:
+            return reader.get_similar_pooled(
+                game_id, collection=collection, year_min=year_min, ids=ids,
+            )
         return reader.get_similar(
             game_id, profile=profile, n=n, band=band,
             metric=metric, min_ratings=min_ratings, dims=dims,

@@ -112,3 +112,28 @@ def test_similar_rejects_bad_metric(monkeypatch):
     monkeypatch.setattr(games_router.reader, "get_similar", boom)
     r = client.get("/games/13/similar?metric=NOPE")
     assert r.status_code == 400, "invalid tuning params should be 400, not 500"
+
+
+def test_similar_pooled_routes_pool_params(monkeypatch):
+    seen = {}
+
+    def fake(game_id, **kw):
+        seen.update(kw)
+        return {"similar": [], "recommender": [], "sicko": []}
+
+    monkeypatch.setattr(games_router.reader, "get_similar_pooled", fake)
+    r = client.get("/games/13/similar?collection=phenrickson&year_min=2016&ids=1&ids=2")
+    assert r.status_code == 200
+    assert set(r.json()) == {"similar", "recommender", "sicko"}
+    assert seen == {"collection": "phenrickson", "year_min": 2016, "ids": [1, 2]}
+
+
+def test_similar_pool_and_tuning_is_400(monkeypatch):
+    monkeypatch.setattr(games_router.reader, "get_similar_pooled",
+                        _must_not_be_called)
+    r = client.get("/games/13/similar?collection=phenrickson&band=0.5")
+    assert r.status_code == 400
+
+
+def _must_not_be_called(*a, **k):
+    raise AssertionError("should not be called")
