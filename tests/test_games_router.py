@@ -125,7 +125,13 @@ def test_similar_pooled_routes_pool_params(monkeypatch):
     r = client.get("/games/13/similar?collection=phenrickson&year_min=2016&ids=1&ids=2")
     assert r.status_code == 200
     assert set(r.json()) == {"similar", "recommender", "sicko"}
-    assert seen == {"collection": "phenrickson", "year_min": 2016, "ids": [1, 2]}
+    assert seen == {"collection": "phenrickson", "exclude_collection": None,
+                    "year_min": 2016, "ids": [1, 2]}
+
+    seen.clear()
+    r = client.get("/games/13/similar?exclude_collection=phenrickson")
+    assert r.status_code == 200
+    assert seen["exclude_collection"] == "phenrickson" and seen["collection"] is None
 
 
 def test_similar_pool_and_tuning_is_400(monkeypatch):

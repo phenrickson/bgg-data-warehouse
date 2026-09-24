@@ -71,6 +71,7 @@ def get_similar(
     min_ratings: int | None = None,
     dims: int | None = None,
     collection: str | None = None,
+    exclude_collection: str | None = None,
     year_min: int | None = None,
     ids: list[int] | None = Query(None),
 ):
@@ -81,9 +82,9 @@ def get_similar(
     - **Precomputed** (no other parameters): the named ``profile`` (``similar`` |
       ``sicko`` | ``recommender``, default ``similar``) from ``game_neighbors`` — one
       clustered lookup. Returns a list.
-    - **Pooled** (any of ``collection``, ``year_min``, ``ids``): every profile's
-      neighbours *within that pool*, computed live with exactly the ``game_neighbors``
-      logic. Returns ``{profile: [rows]}``; ``profile`` is ignored. ~3 s.
+    - **Pooled** (any of ``collection``, ``exclude_collection``, ``year_min``, ``ids``):
+      every profile's neighbours *within that pool*, computed live with exactly the
+      ``game_neighbors`` logic. Returns ``{profile: [rows]}``; ``profile`` is ignored. ~3 s.
     - **Tuned** (any of ``n``, ``band``, ``metric``, ``min_ratings``, ``dims``): a live
       distance ranking with a complexity band and ratings floor only — it does **not**
       apply the profile's rating blend, percentile filters or product-line cap. Returns
@@ -91,17 +92,20 @@ def get_similar(
 
     Pool and tuning parameters can't be combined (400).
     """
-    pooled = collection is not None or year_min is not None or bool(ids)
+    pooled = (collection is not None or exclude_collection is not None
+              or year_min is not None or bool(ids))
     tuned = any(v is not None for v in (n, band, metric, min_ratings, dims))
     if pooled and tuned:
         raise HTTPException(
             status_code=400,
-            detail="pool parameters (collection, year_min, ids) can't be combined with tuning parameters",
+            detail=("pool parameters (collection, exclude_collection, year_min, ids) "
+                    "can't be combined with tuning parameters"),
         )
     try:
         if pooled:
             return reader.get_similar_pooled(
-                game_id, collection=collection, year_min=year_min, ids=ids,
+                game_id, collection=collection, exclude_collection=exclude_collection,
+                year_min=year_min, ids=ids,
             )
         return reader.get_similar(
             game_id, profile=profile, n=n, band=band,

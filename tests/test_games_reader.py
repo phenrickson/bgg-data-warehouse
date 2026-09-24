@@ -327,3 +327,12 @@ class TestSimilarPooled:
         with pytest.raises(ValueError):
             games.get_similar_pooled(
                 13, ids=list(range(games.MAX_POOL_IDS + 1)), client=self._client())
+
+    def test_exclude_collection_drops_owned_games(self):
+        client = self._client()
+        out = games.get_similar_pooled(13, exclude_collection="phenrickson", client=client)
+        sql, cfg = client.calls[-1]
+        assert "NOT IN" in sql and "user_collections" in sql
+        assert "phenrickson" not in sql
+        assert {p.name for p in cfg.query_parameters} >= {"exclude_username"}
+        assert set(out) == {"similar", "recommender", "sicko"}

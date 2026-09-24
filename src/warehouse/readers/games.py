@@ -276,6 +276,7 @@ def get_similar_pooled(
     game_id: int,
     *,
     collection: Optional[str] = None,
+    exclude_collection: Optional[str] = None,
     year_min: Optional[int] = None,
     ids: Optional[list[int]] = None,
     client: Optional[bigquery.Client] = None,
@@ -289,8 +290,9 @@ def get_similar_pooled(
     ``includes/similarity_profiles.js``), so this path and the precomputed table cannot
     drift. Unrestricted, it reproduces ``game_neighbors`` exactly (checked 2026-09-24).
 
-    Pool forms combine with AND: ``collection`` (a username's owned games), ``year_min``,
-    ``ids``. At least one is required — without a pool the precomputed table already
+    Pool forms combine with AND: ``collection`` (a username's owned games),
+    ``exclude_collection`` (everything *except* a username's owned games — "what's out
+    there like this that I don't have"), ``year_min``, ``ids``. At least one is required — without a pool the precomputed table already
     answers, via :func:`get_similar` / :func:`get_game`.
 
     Returns ``{profile: [rows]}`` keyed by every profile name, ``[]`` where a profile has no
@@ -299,8 +301,8 @@ def get_similar_pooled(
     Cost is a full scan of ``game_similarity_search`` (~75 MB, ~3 s) whatever the pool: the
     global rating percentile and the seed lookup read the whole table.
     """
-    if collection is None and year_min is None and not ids:
-        raise ValueError("a pool is required: collection, year_min or ids")
+    if collection is None and exclude_collection is None and year_min is None and not ids:
+        raise ValueError("a pool is required: collection, exclude_collection, year_min or ids")
     if ids and len(ids) > MAX_POOL_IDS:
         raise ValueError(f"too many ids in pool: {len(ids)} (max {MAX_POOL_IDS})")
 
@@ -311,6 +313,13 @@ def get_similar_pooled(
             "WHERE username = @username AND owned = TRUE)"
         )
         params.append(bigquery.ScalarQueryParameter("username", "STRING", collection))
+    if exclude_collection is not None:
+        predicates.append(
+            f"g.game_id NOT IN (SELECT game_id FROM `{dataset('collections')}.user_collections` "
+            "WHERE username = @exclude_username AND owned = TRUE)"
+        )
+        params.append(
+            bigquery.ScalarQueryParameter("exclude_username", "STRING", exclude_collection))
     if year_min is not None:
         predicates.append("g.year_published >= @year_min")
         params.append(bigquery.ScalarQueryParameter("year_min", "INT64", year_min))
