@@ -135,9 +135,14 @@ Per request, one statement:
 3. **D's actual size** at 162 games and at a large collection — measure before choosing a
    format.
 4. **Surprise me** — which of its readings, settled against real output.
-5. **Embedding version consistency.** `bgg_game_embeddings` and `game_similarity_search` are
-   incremental on `game_id`; a new version that does not re-embed every game could leave
-   mixed vector spaces. Unverified — check `COUNT(DISTINCT embedding_version)`.
+5. **Stale embeddings outlive the null-year exclusion** (cleanup, not blocking). Checked
+   2026-09-24: `game_similarity_search` holds 129,261 rows on `embedding_version` 6 and 11
+   on version 5. Example: 398331 (a real game, "Pond", 152 ratings) now has
+   `year_published = NULL` in `games_features`; the embedding pipeline's change detection
+   and loader both require a year, so it is never re-embedded, and its v5 row persists
+   through the incremental merges into `game_neighbors`. The catalog also still includes it
+   (its working set has no year condition). Fix to scope later — e.g. drop embeddings for
+   games the pipeline now excludes, and/or filter candidates to the latest version.
 
 ## Not doing
 
