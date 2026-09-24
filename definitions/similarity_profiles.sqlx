@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: "analytics",
+  name: "similarity_profiles",
+  description: "One row per similarity profile, materialized from includes/similarity_profiles.js — the same parameters game_neighbors inlines. Lets the read API's live, pool-scoped similarity search join the profiles instead of copying them into Python, so the precomputed and live paths cannot drift."
+}
+
+js {
+  function lit(v, type) {
+    if (v === null || v === undefined) return `CAST(NULL AS ${type})`;
+    if (type === "STRING") return `'${v}'`;
+    return `CAST(${v} AS ${type})`;
+  }
+
+  // Every field game_neighbors reads, in one row per profile. A profile missing a field
+  // fails the compile rather than landing a silent NULL.
+  const FIELDS = [
+    ["name", "STRING"],
+    ["weight", "FLOAT64"],
+    ["complexity_band", "FLOAT64"],
+    ["max_per_family", "INT64"],
+    ["min_similarity", "FLOAT64"],
+    ["min_rating_pct", "FLOAT64"],
+    ["max_rating_pct", "FLOAT64"],
+    ["min_users_rated", "INT64"],
+    ["source_min_users_rated", "INT64"],
+    ["top_k", "INT64"],
+    ["dims", "INT64"],
+    ["distance", "STRING"],
+  ];
+
+  const rows = similarity_profiles.profiles.map((p) => {
+    const cols = FIELDS.map(([f, type]) => {
+      if (!(f in p)) throw new Error(`similarity profile ${p.name} is missing ${f}`);
+      return `${lit(p[f], type)} AS ${f}`;
+    });
+    return `SELECT ${cols.join(", ")}`;
+  });
+}
+
+${rows.join("\nUNION ALL\n")}
