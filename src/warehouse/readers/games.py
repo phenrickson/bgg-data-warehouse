@@ -267,6 +267,124 @@ def _similar_live(
     )
 
 
+# An explicit pool travels as an array parameter; cap it so a request can't ship an
+# unbounded list into the query.
+MAX_POOL_IDS = 5000
+
+
+def get_similar_pooled(
+    game_id: int,
+    *,
+    collection: Optional[str] = None,
+    year_min: Optional[int] = None,
+    ids: Optional[list[int]] = None,
+    client: Optional[bigquery.Client] = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Every profile's neighbours for one game, **within a pool**, computed live.
+
+    The same logic as ``definitions/game_neighbors.sqlx`` — rating blend, complexity band,
+    similarity floor, rating-percentile floor/ceiling, source ratings floor, product-line
+    cap, ``top_k`` — for a single source, with the candidates restricted to the pool. The
+    parameters come from ``analytics.similarity_profiles`` (materialized from the same
+    ``includes/similarity_profiles.js``), so this path and the precomputed table cannot
+    drift. Unrestricted, it reproduces ``game_neighbors`` exactly (checked 2026-09-24).
+
+    Pool forms combine with AND: ``collection`` (a username's owned games), ``year_min``,
+    ``ids``. At least one is required — without a pool the precomputed table already
+    answers, via :func:`get_similar` / :func:`get_game`.
+
+    Returns ``{profile: [rows]}`` keyed by every profile name, ``[]`` where a profile has no
+    neighbours in the pool — the game document's ``similar_profiles`` shape.
+
+    Cost is a full scan of ``game_similarity_search`` (~75 MB, ~3 s) whatever the pool: the
+    global rating percentile and the seed lookup read the whole table.
+    """
+    if collection is None and year_min is None and not ids:
+        raise ValueError("a pool is required: collection, year_min or ids")
+    if ids and len(ids) > MAX_POOL_IDS:
+        raise ValueError(f"too many ids in pool: {len(ids)} (max {MAX_POOL_IDS})")
+
+    predicates, params = [], []
+    if collection is not None:
+        predicates.append(
+            f"g.game_id IN (SELECT game_id FROM `{dataset('collections')}.user_collections` "
+            "WHERE username = @username AND owned = TRUE)"
+        )
+        params.append(bigquery.ScalarQueryParameter("username", "STRING", collection))
+    if year_min is not None:
+        predicates.append("g.year_published >= @year_min")
+        params.append(bigquery.ScalarQueryParameter("year_min", "INT64", year_min))
+    if ids:
+        predicates.append("g.game_id IN UNNEST(@ids)")
+        params.append(bigquery.ArrayQueryParameter("ids", "INT64", list(ids)))
+
+    gss = f"`{dataset('analytics')}.game_similarity_search`"
+    sql = f"""
+    WITH profiles AS (
+      SELECT * FROM `{dataset('analytics')}.similarity_profiles`
+    ),
+    rating_pct AS (
+      SELECT game_id, PERCENT_RANK() OVER (ORDER BY geek_rating) AS geek_pct
+      FROM {gss} WHERE geek_rating > 0
+    ),
+    src AS (
+      SELECT complexity, users_rated, embedding
+      FROM {gss} WHERE game_id = @game_id AND complexity IS NOT NULL
+    ),
+    cand AS (
+      SELECT g.game_id, g.name, g.year_published, g.complexity, g.users_rated,
+             g.average_rating, g.geek_rating, g.embedding
+      FROM {gss} g
+      WHERE g.complexity IS NOT NULL AND g.game_id != @game_id
+        AND {' AND '.join(predicates)}
+    ),
+    pairs AS (
+      SELECT t.* EXCEPT (embedding), s.complexity AS src_complexity, s.users_rated AS src_users,
+             ML.DISTANCE(t.embedding, s.embedding, 'COSINE') AS distance
+      FROM cand t CROSS JOIN src s
+    ),
+    scored AS (
+      SELECT
+        p.name AS profile, p.max_per_family AS cap, p.top_k,
+        pr.game_id, pr.name, pr.year_published, pr.distance, pr.average_rating, pr.geek_rating,
+        pl.product_line_id AS line,
+        p.weight * (1 - pr.distance) + (1 - p.weight) * COALESCE(rp.geek_pct, 0) AS score
+      FROM pairs pr
+      CROSS JOIN profiles p
+      LEFT JOIN rating_pct rp ON rp.game_id = pr.game_id
+      LEFT JOIN `{dataset('analytics')}.game_product_line` pl ON pl.game_id = pr.game_id
+      WHERE pr.src_users >= p.source_min_users_rated
+        AND pr.users_rated >= p.min_users_rated
+        AND (p.complexity_band IS NULL
+             OR pr.complexity BETWEEN pr.src_complexity - p.complexity_band
+                                  AND pr.src_complexity + p.complexity_band)
+        AND (1 - pr.distance) >= p.min_similarity
+        AND (p.min_rating_pct = 0 OR COALESCE(rp.geek_pct, 0) >= p.min_rating_pct)
+        AND (p.max_rating_pct = 1 OR COALESCE(rp.geek_pct, 0) < p.max_rating_pct)
+    ),
+    kept AS (
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY profile, line ORDER BY score DESC) AS line_rn
+        FROM scored
+      )
+      -- a lineless game is never capped; cap 0 keeps only lineless games
+      WHERE cap IS NULL OR line IS NULL OR line_rn <= cap
+    ),
+    ranked AS (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY profile ORDER BY score DESC) AS rn FROM kept
+    )
+    SELECT profile,
+           ARRAY_AGG(STRUCT(game_id, name, year_published, distance, average_rating, geek_rating)
+                     ORDER BY score DESC) AS similar
+    FROM ranked WHERE rn <= top_k
+    GROUP BY profile
+    """
+    client = client or get_client()
+    rows = _rows(client, sql, game_id, extra_params=params)
+    by_profile = {r["profile"]: [dict(s) for s in r["similar"]] for r in rows}
+    return {name: by_profile.get(name, []) for name in PROFILE_NAMES}
+
+
 def get_provenance(game_id: int, client: Optional[bigquery.Client] = None) -> Optional[dict[str, Any]]:
     """Fetch/load metadata — when the warehouse last pulled this game from BGG."""
     client = client or get_client()

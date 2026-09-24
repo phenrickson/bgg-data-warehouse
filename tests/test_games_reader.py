@@ -276,3 +276,54 @@ class TestExplicitColumns:
         result = games.get_features(13, client=_full_client())
         assert result["name"] == "Catan"
         assert result["player_counts"] == PLAYER_COUNTS
+
+
+class TestSimilarPooled:
+    """Live, pool-scoped search: the game_neighbors profile logic over a restricted pool."""
+
+    POOLED_ROWS = [{"profile": "similar", "similar": SIMILAR_ROWS},
+                   {"profile": "recommender", "similar": RECOMMENDER_ROWS}]
+
+    def _client(self):
+        return RoutingClient({"game_similarity_search": self.POOLED_ROWS})
+
+    def test_requires_a_pool(self):
+        import pytest
+        with pytest.raises(ValueError):
+            games.get_similar_pooled(13, client=self._client())
+
+    def test_keys_every_profile_empty_when_absent(self):
+        out = games.get_similar_pooled(13, year_min=2016, client=self._client())
+        assert out == {"similar": SIMILAR_ROWS, "recommender": RECOMMENDER_ROWS, "sicko": []}
+
+    def test_carries_the_profile_logic(self):
+        """Regression: the pooled path must be the game_neighbors logic, not a bare distance rank."""
+        client = self._client()
+        games.get_similar_pooled(13, year_min=2016, client=client)
+        sql = client.calls[-1][0]
+        assert "similarity_profiles" in sql
+        assert "PERCENT_RANK()" in sql
+        assert "game_product_line" in sql
+        assert "min_similarity" in sql and "max_rating_pct" in sql
+        assert "source_min_users_rated" in sql
+
+    def test_pool_values_are_parameters_not_sql(self):
+        client = self._client()
+        games.get_similar_pooled(
+            13, collection="phenrickson", year_min=2016, ids=[1, 2], client=client)
+        sql, cfg = client.calls[-1]
+        assert "phenrickson" not in sql and "2016" not in sql
+        names = {p.name for p in cfg.query_parameters}
+        assert {"game_id", "username", "year_min", "ids"} <= names
+
+    def test_collection_reads_owned_games(self):
+        client = self._client()
+        games.get_similar_pooled(13, collection="phenrickson", client=client)
+        sql = client.calls[-1][0]
+        assert "user_collections" in sql and "owned = TRUE" in sql
+
+    def test_ids_are_capped(self):
+        import pytest
+        with pytest.raises(ValueError):
+            games.get_similar_pooled(
+                13, ids=list(range(games.MAX_POOL_IDS + 1)), client=self._client())
