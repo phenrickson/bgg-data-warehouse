@@ -107,7 +107,8 @@ def fetch_warehouse_counts(
     """One row of counts for the window.
 
     Only ``boardgame`` IDs are fetched, so fetch coverage is measured on those. A
-    refresh is any fetch of a game that already had an earlier fetch.
+    refresh attempt is a fetch of a game that already had a successful fetch; it
+    counts as refreshed only if it succeeded, so a batch BGG rejected still flags.
     """
     client = client or get_client()
     raw = dataset("raw")
@@ -122,15 +123,19 @@ def fetch_warehouse_counts(
           SELECT game_id, fetch_timestamp, fetch_status
           FROM `{raw}.fetched_responses`
         ),
-        first_fetch AS (
-          SELECT game_id, MIN(fetch_timestamp) AS first_ts
+        first_success AS (
+          SELECT game_id, MIN(fetch_timestamp) AS first_ok
           FROM fetches
+          WHERE fetch_status = 'success'
           GROUP BY game_id
         ),
         window_fetches AS (
-          SELECT f.game_id, f.fetch_status, f.fetch_timestamp > ff.first_ts AS is_refresh
+          SELECT
+            f.game_id,
+            f.fetch_status,
+            IFNULL(f.fetch_timestamp > fs.first_ok, FALSE) AS is_refresh
           FROM fetches f
-          JOIN first_fetch ff USING (game_id)
+          LEFT JOIN first_success fs USING (game_id)
           WHERE f.fetch_timestamp >= @window_start AND f.fetch_timestamp < @window_end
         ),
         new_boardgames AS (
@@ -151,7 +156,9 @@ def fetch_warehouse_counts(
           (SELECT COUNTIF(fetched) FROM new_boardgames) AS boardgames_fetched,
           (SELECT COUNTIF(attempted AND NOT fetched) FROM new_boardgames) AS boardgames_pending,
           (SELECT COUNTIF(NOT attempted) FROM new_boardgames) AS boardgames_unattempted,
-          (SELECT COUNTIF(is_refresh) FROM window_fetches) AS refreshed,
+          (SELECT COUNTIF(is_refresh) FROM window_fetches) AS refresh_attempts,
+          (SELECT COUNTIF(is_refresh AND fetch_status = 'success') FROM window_fetches)
+            AS refreshed,
           (SELECT COUNTIF(fetch_status != 'success') FROM window_fetches) AS failed_fetches
     """
     job_config = bigquery.QueryJobConfig(
@@ -198,7 +205,13 @@ def evaluate(jobs: list[JobRuns], counts: dict[str, int]) -> list[Check]:
         )
     )
 
-    checks.append(Check("Old games refreshed", str(counts["refreshed"]), counts["refreshed"] > 0))
+    checks.append(
+        Check(
+            "Old games refreshed",
+            f"{counts['refreshed']} of {counts['refresh_attempts']} attempts succeeded",
+            counts["refreshed"] > 0,
+        )
+    )
     checks.append(Check("Failed fetches", str(counts["failed_fetches"]), True))
     return checks
 

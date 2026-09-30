@@ -65,7 +65,7 @@ UTC, about 6h after the chain, so the window holds exactly one daily chain.
 | 2 | Searched | Fetch Thing IDs from check 1 | covered by check 1; reported on its own line |
 | 3a | New IDs found | `raw.thing_ids` with `load_timestamp` in window, by `type` | total is 0 ("worth a look": it has only happened in outages, but can happen legitimately) |
 | 3b | New games fetched | window boardgame IDs joined to `raw.fetched_responses` | any boardgame ID has **no fetch row at all** (never attempted). Attempted but not yet successful is reported, not flagged, because the fetcher retries those |
-| 4 | Old games refreshed | `raw.fetched_responses` rows in window whose `game_id` has an earlier fetch | 0 |
+| 4 | Old games refreshed | `raw.fetched_responses` rows in window whose `game_id` has an earlier *successful* fetch; attempts and successes both reported | 0 successful |
 | — | Failed fetches | `fetch_status != 'success'` in window | never, count only (3–19/day is normal) |
 
 Check 1 queries `.../actions/workflows/<file>/runs?created=>=<window start>`.

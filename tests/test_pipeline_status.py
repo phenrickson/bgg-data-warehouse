@@ -18,6 +18,7 @@ HEALTHY_COUNTS = {
     "boardgames_fetched": 23,
     "boardgames_pending": 0,
     "boardgames_unattempted": 0,
+    "refresh_attempts": 1000,
     "refreshed": 1000,
     "failed_fetches": 15,
 }
@@ -106,6 +107,15 @@ def test_zero_refreshed_flags():
     assert _flagged(checks) == ["Old games refreshed"]
 
 
+def test_refresh_attempts_that_all_failed_flag():
+    # BGG rejected the whole refresh batch: the job ran green but nothing refreshed.
+    counts = HEALTHY_COUNTS | {"refreshed": 0, "failed_fetches": 1000}
+    checks = ps.evaluate(_jobs(), counts)
+    assert _flagged(checks) == ["Old games refreshed"]
+    answer = next(c for c in checks if c.question == "Old games refreshed").answer
+    assert answer == "0 of 1000 attempts succeeded"
+
+
 def test_failed_fetches_never_flag():
     assert _flagged(ps.evaluate(_jobs(), HEALTHY_COUNTS | {"failed_fetches": 500})) == []
 
@@ -118,7 +128,7 @@ def test_render_marks_flagged_rows():
     body = ps.render(checks, START, END)
     assert "2026-09-29T10:00:00Z → 2026-09-30T12:00:00Z" in body
     assert "1 check(s) need a look" in body
-    assert "| ⚠️ | Old games refreshed | 0 |" in body
+    assert "| ⚠️ | Old games refreshed | 0 of 1000 attempts succeeded |" in body
     assert "| ✅ | Fetch Thing IDs ran |" in body
 
 
@@ -216,6 +226,16 @@ def test_fetch_warehouse_counts_binds_window_and_reads_raw():
     assert counts == HEALTHY_COUNTS
     assert params == {"window_start": START, "window_end": END}
     assert "raw.thing_ids" in sql and "raw.fetched_responses" in sql
+
+
+def test_refresh_counts_only_refetches_after_a_successful_fetch():
+    # A retry of a never-fetched game is not a refresh, and a failed refetch is an
+    # attempt, not a refresh.
+    client = FakeClient([HEALTHY_COUNTS])
+    ps.fetch_warehouse_counts(START, END, client=client)
+    sql = " ".join(client.calls[0][0].split())
+    assert "WHERE fetch_status = 'success' GROUP BY game_id" in sql
+    assert "COUNTIF(is_refresh AND fetch_status = 'success')" in sql
 
 
 # --- main -------------------------------------------------------------------
