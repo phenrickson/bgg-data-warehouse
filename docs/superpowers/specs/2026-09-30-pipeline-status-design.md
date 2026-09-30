@@ -75,49 +75,57 @@ as "missing", which still flags; see Risks.
 
 ## Components
 
-### 1. `.github/workflows/pipeline_status.yml` (new)
+### 1. `src/pipeline/pipeline_status.py` (new)
 
-Follows the repo's existing style: bash plus `bq` plus `gh`, as in
-`fetch_new_games.yml`.
+The checks live in Python so the flag rules have pytest coverage and the
+script can replay any past window locally (`--start/--end`). The workflow file
+only handles notification.
+
+- `fetch_job_runs(repo, workflow_file, start, end)`: GitHub REST
+  `.../actions/workflows/<file>/runs?created=<start>..<end>`, authenticated with
+  `GH_TOKEN`. Raises on a non-200 response.
+- `fetch_warehouse_counts(start, end)`: one parameterised BigQuery query over
+  `raw.thing_ids` and `raw.fetched_responses` that returns a single row: IDs
+  found by type, boardgames fetched, pending retry, never attempted, refreshed,
+  and failed fetches. It uses the `src.warehouse.bq` client and dataset helpers.
+- `evaluate(jobs, counts)`: returns a list of checks (question, answer, ok),
+  following the Checks table. Pure function.
+- `render(checks, start, end)`: markdown table (question · answer · ✅/⚠️).
+- `main()` writes the markdown to `--body-file` and to `$GITHUB_STEP_SUMMARY`,
+  and writes `flagged=true|false` to `$GITHUB_OUTPUT`. It exits non-zero only
+  if a query or API call errors.
+
+### 2. `.github/workflows/pipeline_status.yml` (new)
 
 - **Triggers:** `schedule: '0 12 * * *'`, plus `workflow_dispatch` with a
   `window_hours` input (default 26).
-- **Permissions:** `actions: read`, `issues: write`.
-- **Auth:** `google-github-actions/auth@v2` with `GCP_SA_KEY_BGG_DW`, then
-  `setup-gcloud`, as the other workflows do.
-- **Steps:**
-  1. *Job runs:* for each of the three workflow files, `gh api` the runs
-     listing with the `created` filter, then record the newest run's
-     `created_at`, `event` and `conclusion` and whether any run in the window
-     succeeded.
-  2. *Warehouse counts:* one `bq query` returning a single row. The counts are
-     IDs found by type, boardgames found, boardgames fetched successfully,
-     boardgames attempted but not successful, boardgames never attempted,
-     refreshed, and failed fetches.
-  3. *Evaluate and render:* build a markdown table (question · answer · ✅/⚠️)
-     and write it to `$GITHUB_STEP_SUMMARY` and to a body file. Set
-     `flagged=true|false`.
-  4. *Notify:* look up the open issue labelled `pipeline-status`
-     (`gh label create pipeline-status --force` first so the label exists).
-     - flagged, no open issue → `gh issue create` with the body.
-     - flagged, issue open → `gh issue comment` with the body.
-     - not flagged, issue open → comment "All clear" with the body, then
-       `gh issue close`.
-     - not flagged, no issue → nothing.
-- A step exits non-zero only when a query or API call itself errors.
+- **Permissions:** `contents: read`, `actions: read`, `issues: write`.
+- **Steps:** checkout, then `google-github-actions/auth@v2` with
+  `GCP_SA_KEY_BGG_DW`, then `setup-uv` and `uv sync`, then run the script.
+- **Notify:** look up the open issue labelled `pipeline-status`
+  (`gh label create pipeline-status --force` first so the label exists).
+  - flagged, no open issue → `gh issue create` with the body.
+  - flagged, issue open → `gh issue comment` with the body.
+  - not flagged, issue open → comment "All clear" with the body, then
+    `gh issue close`.
+  - not flagged, no issue → nothing.
 
-### 2. `.github/workflows/scrape_heartbeat.yml` (deleted)
+### 3. `.github/workflows/scrape_heartbeat.yml` (deleted)
 
-### 3. README
+### 4. README
 
 Replace the heartbeat paragraph with a short description of Pipeline Status and
 the `pipeline-status` issue.
 
 ## Validation
 
-- **SQL:** `bq query --dry_run` on the counts query, then one real run with the
-  window set to 2026-09-12 → 09-13 (flagged), 2026-09-16 (partial) and a
-  recent day (clean). The counts should match the September table above.
+- **Unit tests** (`tests/test_pipeline_status.py`, with BigQuery and GitHub
+  mocked) cover every flag rule, including the 09-16 case of one skipped run
+  plus one successful run.
+- **Local replay:** run `python -m src.pipeline.pipeline_status --start … --end …`
+  for 2026-09-12 → 09-13 (flagged: no Fetch New Games run, 0 IDs), 2026-09-15
+  12:00 → 09-16 12:00 (flagged: Fetch Thing IDs failed) and 2026-09-29 → 09-30
+  (clean). The counts should match the September table above.
 - **Workflow:** `workflow_dispatch` only works once the file is on `main`. After
   merge, run it twice:
   - `window_hours: 26` → clean status, no issue opened.
@@ -150,5 +158,5 @@ changes to `raw.*` writes.
 
 ## Delivery
 
-Branch `feat/pipeline-status` off `main`, one PR (workflow + heartbeat
-removal + README), merged by Phil. This spec lands on `docs/pipeline-status-design`.
+Branch `feat/pipeline-status` off this spec branch, one PR (spec, plan, script, workflow, heartbeat
+removal, README), merged by Phil.
