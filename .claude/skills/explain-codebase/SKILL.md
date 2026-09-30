@@ -34,7 +34,8 @@ code and data flow, cite concrete files, and don't guess. Read before you explai
 - **`definitions/*.sqlx` + `sources.js`** — Dataform: SQL transformations and source
   declarations. Config in `workflow_settings.yaml`.
 - **`.github/workflows/`** — orchestration. The chain `Fetch Thing IDs → Fetch New Games
-  → Run Dataform` is stitched with `repository_dispatch`; `Scrape Heartbeat` watches it.
+  → Refresh Old Games → Run Dataform` is stitched with `workflow_run`; `Pipeline Status`
+  reports on it daily.
 - **`scripts/box/`** — the residential-IP home-box scrape wrapper (Cloudflare blocks
   datacenter egress) and its setup docs.
 - **`config/`** — `bigquery.yaml` (project/datasets, refresh policy), `cloudbuild.yaml`.

@@ -56,8 +56,10 @@ cron 06:00 UTC ─ Fetch Thing IDs
 One chain, one Dataform/ML cascade per day. Refresh Old Games deliberately runs
 even if ID discovery failed, so existing games still get refreshed.
 
-`Scrape Heartbeat` runs daily at 12:00 UTC and fails loudly if `Run Fetch New Games`
-has not succeeded in ~26h (cron not firing, workflow disabled, discovery broken).
+`Pipeline Status` runs daily at 12:00 UTC and reports on the last ~26h: whether each
+job ran, whether we searched, how many new IDs were found and fetched, and how many
+old games were refreshed. A finding doesn't fail the run: it opens (or comments on)
+an issue labelled `pipeline-status`, which the next clean day closes.
 
 Key workflows in `.github/workflows/`:
 
@@ -68,7 +70,7 @@ Key workflows in `.github/workflows/`:
 | `refresh.yml` | after `Run Fetch New Games` (any conclusion), or manual |
 | `fetch_games.yml` | manual `workflow_dispatch` (`game_ids` input) |
 | `dataform.yml` | after `Run Refresh Old Games` or `Run Fetch Games`, `repository_dispatch` from the ML repo, push to `definitions/**`, or manual |
-| `scrape_heartbeat.yml` | daily `0 12 * * *` |
+| `pipeline_status.yml` | daily `0 12 * * *`, or manual (`window_hours` input) |
 | `deploy.yml` | push to `main` (builds & deploys the Cloud Run jobs) |
 | `terraform.yml` | push/PR to `terraform/**` |
 | `tag-release.yml` | push to `main` touching `pyproject.toml` |

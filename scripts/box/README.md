@@ -61,8 +61,8 @@ Create a daily task that runs the wrapper:
 - Confirm new IDs merge into `bgg-data-warehouse.raw.thing_ids`.
 - Confirm a `repository_dispatch`-triggered **Run Fetch New Games** appears in the GitHub
   Actions tab, and the downstream chain proceeds.
-- The **Scrape Heartbeat** workflow (`.github/workflows/scrape_heartbeat.yml`) will warn
-  if no dispatch lands within ~26h.
+- The **Pipeline Status** workflow (`.github/workflows/pipeline_status.yml`) opens a
+  `pipeline-status` issue if a job in the chain didn't run or new IDs weren't fetched.
 
 ## Notes
 

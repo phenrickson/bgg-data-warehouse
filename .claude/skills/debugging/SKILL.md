@@ -41,8 +41,9 @@ plausible-sounding fix and move on. Distinguish the symptom from the cause.
   `logs/fetch_thing_ids_YYYYMMDD.log`. Note these stamps are **local time** despite a
   trailing `Z`.
 - **CI:** `gh run list` and `gh run view <id> --log-failed` for GitHub Actions.
-  The daily chain is `Fetch Thing IDs → Fetch New Games → Dataform`, wired via
-  `repository_dispatch`; a missing dispatch shows up in the **Scrape Heartbeat** run.
+  The daily chain is `Fetch Thing IDs → Fetch New Games → Refresh Old Games → Dataform`,
+  wired via `workflow_run`. The daily **Pipeline Status** run (and its open
+  `pipeline-status` issue, if any) says which job didn't run or what didn't land.
 - **Data:** `bq query --nouse_legacy_sql '<SQL>'` to inspect `raw.*` and warehouse
   tables. Check row counts / freshness before assuming code is wrong.
 - **Run a pipeline locally:** `uv run python -m src.pipeline.<name>`.

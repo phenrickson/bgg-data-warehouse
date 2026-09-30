@@ -1,0 +1,77 @@
+name: Pipeline Status
+
+# Daily status of the discovery -> fetch -> refresh chain: did each job run, did
+# we search, were new IDs found and fetched, were old games refreshed. It reads
+# job runs and what landed in raw.*, not a single workflow's history.
+# Not a gate: a finding opens (or comments on) the open `pipeline-status` issue,
+# and the next clean day closes it. The job goes red only if the check itself
+# can't run. See docs/superpowers/specs/2026-09-30-pipeline-status-design.md.
+on:
+  schedule:
+    - cron: '0 12 * * *'  # ~6h after the 06:00 UTC chain
+  workflow_dispatch:
+    inputs:
+      window_hours:
+        description: 'Hours to look back'
+        type: number
+        default: 26
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  status:
+    name: Pipeline status
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Google Cloud Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Check pipeline
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run python -m src.pipeline.pipeline_status \
+            --window-hours "${{ inputs.window_hours || 26 }}" \
+            --body-file status.md
+
+      - name: Update status issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLAGGED: ${{ steps.check.outputs.flagged }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '\n[Workflow run](%s)\n' "$RUN_URL" >> status.md
+          gh label create pipeline-status --color D93F0B \
+            --description "Daily pipeline status needs a look" --force
+          ISSUE=$(gh issue list --label pipeline-status --state open \
+            --json number --jq '.[0].number // empty')
+
+          if [ "$FLAGGED" = "true" ]; then
+            if [ -n "$ISSUE" ]; then
+              gh issue comment "$ISSUE" --body-file status.md
+            else
+              gh issue create --title "Pipeline status needs a look" \
+                --label pipeline-status --body-file status.md
+            fi
+          elif [ -n "$ISSUE" ]; then
+            { echo "All clear."; echo; cat status.md; } > clear.md
+            gh issue comment "$ISSUE" --body-file clear.md
+            gh issue close "$ISSUE"
+          fi
