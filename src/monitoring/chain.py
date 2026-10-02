@@ -203,3 +203,58 @@ def _off_chain(runs: Runs, day: date, final_pass: dict[str, Any] | None) -> list
                 status, note = "warn", "Ran before today's predictions landed"
         out.append(_status(stage, run, status, note))
     return out
+
+
+def _minutes(start: str, end: str) -> int:
+    return round((parse_ts(end) - parse_ts(start)).total_seconds() / 60)
+
+
+def verdict(c: Chain) -> dict[str, Any]:
+    """The page headline: the first stage that isn't ok, or the end-to-end time."""
+    bad = next((s for s in c.stages if s.status != "ok"), None)
+    if bad is None:
+        first, last = c.stages[0], c.stages[-1]
+        return {
+            "status": "ok",
+            "stage": None,
+            "headline": "Chain completed",
+            "since": last.finished,
+            "duration_minutes": _minutes(first.started, last.finished),
+        }
+    if bad.status == "running":
+        status, headline = "running", f"Running: {bad.label}"
+    elif bad.status == "pending":
+        status, headline = "running", f"Waiting on {bad.label}"
+    elif bad.status == "warn":
+        status, headline = "warn", f"Stalled after {bad.label}"
+    elif bad.status == "fail":
+        status, headline = "fail", f"{bad.label} failed"
+    else:  # not_reached as the first non-ok stage: a skipped run
+        status, headline = "warn", f"{bad.label} never ran"
+    return {
+        "status": status,
+        "stage": bad.key,
+        "headline": headline,
+        "since": bad.finished or bad.started,
+        "duration_minutes": None,
+    }
+
+
+def history_start(now: datetime, days: int) -> datetime:
+    """Start of the oldest chain window in a ``days``-long history ending today."""
+    return window(chain_day(now) - timedelta(days=days - 1))[0]
+
+
+def build_report(runs: Runs, days: int, now: datetime) -> dict[str, Any]:
+    today = chain_day(now)
+    chains = [build_chain(runs, today - timedelta(days=d), now) for d in range(days - 1, -1, -1)]
+    current = chains[-1]
+    return {
+        "generated_at": iso(now),
+        "verdict": verdict(current),
+        "today": current.to_dict(),
+        "history": [
+            {"day": c.day.isoformat(), "stages": {s.key: s.status for s in c.stages}}
+            for c in chains
+        ],
+    }

@@ -156,3 +156,58 @@ def test_to_dict_is_json_ready():
     assert set(d["stages"][0]) == {
         "key", "label", "lane", "status", "started", "finished", "url", "event", "title", "note",
     }
+
+
+def test_verdict_ok_reports_duration():
+    v = chain.verdict(chain.build_chain(_fixture(), DAY, NOON))
+    assert v["status"] == "ok"
+    assert v["headline"] == "Chain completed"
+    assert v["stage"] is None
+    assert 30 <= v["duration_minutes"] <= 180
+
+
+def test_verdict_names_the_stall():
+    runs = _drop(_fixture(), "score_games", "game_embeddings", "dataform_4", "viewer_artifacts")
+    v = chain.verdict(chain.build_chain(runs, DAY, NOON))
+    assert v == {
+        "status": "warn",
+        "stage": "dataform_3",
+        "headline": "Stalled after Dataform · pass 3",
+        "since": _run_of(runs, "dataform_3")["updated_at"],
+        "duration_minutes": None,
+    }
+
+
+def test_verdict_failed_stage():
+    runs = copy.deepcopy(_fixture())
+    _run_of(runs, "score_complexity")["conclusion"] = "failure"
+    v = chain.verdict(chain.build_chain(runs, DAY, NOON))
+    assert (v["status"], v["stage"], v["headline"]) == (
+        "fail", "score_complexity", "Score Complexity failed")
+
+
+def test_verdict_waiting_before_the_chain_starts():
+    v = chain.verdict(chain.build_chain({}, DAY, datetime(2026, 10, 2, 5, 30, tzinfo=UTC)))
+    assert (v["status"], v["headline"]) == ("running", "Waiting on Fetch Thing IDs")
+
+
+def test_verdict_running():
+    runs = copy.deepcopy(_fixture())
+    _run_of(runs, "viewer_artifacts").update(status="in_progress", conclusion=None)
+    v = chain.verdict(chain.build_chain(runs, DAY, NOON))
+    assert (v["status"], v["headline"]) == ("running", "Running: Viewer Artifacts")
+
+
+def test_history_start_covers_the_requested_days():
+    assert chain.history_start(NOON, 3) == datetime(2026, 9, 30, 5, 0, tzinfo=UTC)
+
+
+def test_build_report_shape():
+    report = chain.build_report(_fixture(), 3, NOON)
+    assert set(report) == {"generated_at", "verdict", "today", "history"}
+    assert report["generated_at"] == "2026-10-02T12:00:00Z"
+    assert [h["day"] for h in report["history"]] == ["2026-09-30", "2026-10-01", "2026-10-02"]
+    assert report["history"][-1]["stages"]["viewer_artifacts"] == "ok"
+    assert report["history"][0]["stages"]["fetch_thing_ids"] == "fail"  # no runs in fixture
+    assert report["today"]["day"] == "2026-10-02"
+    json.dumps(report)
