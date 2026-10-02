@@ -53,7 +53,7 @@ One admin-only page in bgg-viewer, `/admin/pipeline`, that answers:
 
 1. Did today's chain run end to end, and if not, where did it stop?
 2. Is each downstream table fresh, and does it cover the games it should?
-3. Which model versions are live, and is an older one still serving games?
+3. Which model versions are live?
 
 ## Decisions
 
@@ -139,12 +139,8 @@ stage 12 `updated_at`).
   The 2025–2030 range is the scoring workflow's default (`run-scoring-service.yml`)
   and lives in one constant. Column names verified against the live schemas on
   2026-10-02.
-- `fetch_live_models(client=None) -> list[dict]`: every model version still behind
-  at least one game, read from the model columns of the serving tables
-  (`bgg_predictions`, `bgg_complexity_predictions`, `bgg_game_embeddings`,
-  `bgg_description_embeddings`): ~19MB per call. Not `monitoring.deployed_models`,
-  which aggregates the raw landing history (~360MB) and shows only the newest version.
-  More than one row per type flags an older version still serving games.
+- `fetch_deployed_models(client=None) -> list[dict]`: `SELECT` from
+  `monitoring.deployed_models`, newest `last_updated` per `model_type`.
 
 ### 4. `GET /monitoring/pipeline` on the warehouse API
 
@@ -164,7 +160,7 @@ Added to `services/warehouse_api/routers/monitoring.py`.
               "off_chain": [ … ]},
     "history": [{"day": "…", "stages": {"fetch_thing_ids": "ok", …}}],
     "tables": [{"table": "…", "last_updated": "…", "games": 0, "universe": 0}],
-    "models": [{"model_type": "…", "model_name": "…", "model_version": 3,
+    "models": [{"model_type": "…", "model_name": "…", "model_version": "…",
                 "games_count": 0, "last_updated": "…"}]
   }
   ```
