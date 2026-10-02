@@ -4,7 +4,7 @@
 
 **Goal:** An admin-only `/admin/pipeline` page in bgg-viewer that shows whether today's 12-stage chain ran end to end, how fresh and complete each downstream table is, and which models are live, all served by a new `GET /monitoring/pipeline` on the warehouse API.
 
-**Architecture:** The warehouse repo gets a small `src/monitoring/` package with two modules. `github.py` fetches GitHub Actions runs and is shared with Pipeline Status. `chain.py` holds the stage list and pure status rules. A BigQuery reader handles freshness and deployed models, and a route on the existing monitoring router serves it all, cached for 5 minutes. bgg-viewer adds a typed client method, pure display helpers, an admin-gated route and six small Svelte components that follow the mockup.
+**Architecture:** The warehouse repo gets a small `src/monitoring/` package with two modules. `github.py` fetches GitHub Actions runs and is shared with Pipeline Status. `chain.py` holds the stage list and pure status rules. A BigQuery reader handles freshness and live models, and a route on the existing monitoring router serves it all, cached for 5 minutes. bgg-viewer adds a typed client method, pure display helpers, an admin-gated route and six small Svelte components that follow the mockup.
 
 **Tech Stack:**
 - Warehouse: Python 3.12, FastAPI, google-cloud-bigquery, requests, pytest (`uv run --extra test python -m pytest`)
@@ -863,10 +863,9 @@ git commit -m "feat(monitor): verdict, history and report for the daily chain
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-### Task 4: Freshness and deployed-models reader
+### Task 4: Freshness and live-models reader
 
 **Files:**
-- Modify: `config/bigquery.yaml`. Add `monitoring: monitoring` under `datasets:`.
 - Create: `src/warehouse/readers/pipeline.py`
 - Create: `tests/test_pipeline_reader.py`
 
@@ -875,7 +874,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `SCORING_YEARS = (2025, 2030)`
   - `TABLES: list[TableSpec]`
   - `fetch_table_status(client=None) -> list[dict]`, rows with keys `table`, `last_updated`, `games`, `covered`, `universe` and `users`, in `TABLES` order
-  - `fetch_deployed_models(client=None) -> list[dict]`, rows with keys `model_category`, `model_type`, `model_name`, `model_version`, `experiment`, `games_count` and `last_updated`
+  - `fetch_live_models(client=None) -> list[dict]`, one row per (`model_type`, `model_name`, `model_version`) still serving at least one game, with keys `model_type`, `model_name`, `model_version` (int or None), `games_count` and `last_updated`; ordered by `model_type`, then newest first
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -942,15 +941,19 @@ def test_table_status_universes():
     assert by_name["predictions.user_collection_predictions"].count_users
 
 
-def test_deployed_models_latest_per_type():
-    row = {"model_category": "prediction", "model_type": "hurdle", "model_name": "h",
-           "model_version": "14", "experiment": "e", "games_count": 39316,
-           "last_updated": "2026-10-02T07:25:00Z"}
-    client = FakeClient([row])
-    assert pipeline.fetch_deployed_models(client=client) == [row]
+def test_live_models_reads_the_serving_tables_not_the_landing_history():
+    row = {"model_type": "hurdle", "model_name": "hurdle-v2026", "model_version": 3,
+           "games_count": 43564, "last_updated": "2026-10-02T07:23:11Z"}
+    old = row | {"model_version": 1, "games_count": 4319, "last_updated": "2026-02-16T08:04:19Z"}
+    client = FakeClient([row, old])
+    assert pipeline.fetch_live_models(client=client) == [row, old]
     sql, _ = client.calls[0]
-    assert "monitoring.deployed_models" in sql
-    assert "QUALIFY ROW_NUMBER() OVER (PARTITION BY model_type" in sql
+    for table in ("bgg_predictions", "bgg_complexity_predictions", "bgg_game_embeddings",
+                  "bgg_description_embeddings"):
+        assert f"predictions.{table}`" in sql
+    assert "deployed_models" not in sql and "landing" not in sql
+    for model_type in pipeline.MODEL_COLUMNS:
+        assert f"'{model_type}'" in sql
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -959,8 +962,6 @@ Run: `uv run --extra test python -m pytest tests/test_pipeline_reader.py -v`
 Expected: FAIL with `ImportError: cannot import name 'pipeline'`.
 
 - [ ] **Step 3: Implement**
-
-`config/bigquery.yaml`: under `datasets:`, add the line `  monitoring: monitoring` after `analytics: analytics`.
 
 `src/warehouse/readers/pipeline.py`:
 
@@ -1075,21 +1076,42 @@ def fetch_table_status(client: Optional[bigquery.Client] = None) -> list[dict[st
     ]
 
 
-def fetch_deployed_models(client: Optional[bigquery.Client] = None) -> list[dict[str, Any]]:
-    """The newest deployed model per type, from ``monitoring.deployed_models``.
+# model_type -> (serving table, name column, version column, timestamp column).
+# These are the deduped, one-row-per-game serving tables, so "live" means "a model
+# that is actually behind a prediction someone sees", and the scan is ~19MB. Not
+# monitoring.deployed_models: that view aggregates the raw landing history (~360MB,
+# raw.game_embeddings alone is 3.7M rows) and only shows the newest version.
+MODEL_COLUMNS = {
+    "hurdle": ("bgg_predictions", "hurdle_model_name", "hurdle_model_version", "score_ts"),
+    "rating": ("bgg_predictions", "rating_model_name", "rating_model_version", "score_ts"),
+    "users_rated": ("bgg_predictions", "users_rated_model_name",
+                    "users_rated_model_version", "score_ts"),
+    "geek_rating": ("bgg_predictions", "geek_rating_model_name",
+                    "geek_rating_model_version", "score_ts"),
+    "complexity": ("bgg_complexity_predictions", "complexity_model_name",
+                   "complexity_model_version", "score_ts"),
+    "game_embedding": ("bgg_game_embeddings", "embedding_model", "embedding_version",
+                       "created_ts"),
+    "text_embedding": ("bgg_description_embeddings", "embedding_model", "embedding_version",
+                       "created_ts"),
+}
 
-    The view aggregates the raw landing tables, so this scans ~360MB per call; the
-    route's 5-minute cache keeps that to a few calls an hour while the page is open.
+
+def fetch_live_models(client: Optional[bigquery.Client] = None) -> list[dict[str, Any]]:
+    """Every model version still serving at least one game, with how many.
+
+    More than one row per type means an older version is still behind some
+    predictions (e.g. games outside the daily scoring years that were never rescored).
     """
     client = client or get_client()
-    sql = f"""
-        SELECT model_category, model_type, model_name, model_version, experiment,
-               games_count, last_updated
-        FROM `{dataset('monitoring')}.deployed_models`
-        WHERE TRUE
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY model_type ORDER BY last_updated DESC) = 1
-        ORDER BY model_category, model_type
-    """
+    selects = [
+        f"""SELECT '{model_type}' AS model_type, {name} AS model_name,
+                   CAST({version} AS INT64) AS model_version,
+                   COUNT(*) AS games_count, MAX({ts}) AS last_updated
+            FROM `{dataset('predictions')}.{table}` GROUP BY 2, 3"""
+        for model_type, (table, name, version, ts) in MODEL_COLUMNS.items()
+    ]
+    sql = "\nUNION ALL\n".join(selects) + "\nORDER BY model_type, last_updated DESC"
     return [dict(r) for r in client.query(sql).result()]
 ```
 
@@ -1123,19 +1145,19 @@ pipeline.fetch_table_status(client=cap)
 job = client.query(cap.sql, job_config=bigquery.QueryJobConfig(
     query_parameters=cap.job_config.query_parameters, **cfg))
 print("tables OK, bytes:", job.total_bytes_processed)
-pipeline.fetch_deployed_models(client=cap)
+pipeline.fetch_live_models(client=cap)
 job = client.query(cap.sql, job_config=bigquery.QueryJobConfig(**cfg))
 print("models OK, bytes:", job.total_bytes_processed)
 EOF
 ```
 
-Expected: both print `OK`. Tables come in around 50–150 MB and models around 360 MB. If either query fails, fix the SQL. Don't drop a table to make it pass.
+Expected: both print `OK`. Tables come in around 50–150 MB and models around 20 MB. If either query fails, fix the SQL. Don't drop a table to make it pass.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add config/bigquery.yaml src/warehouse/readers/pipeline.py tests/test_pipeline_reader.py
-git commit -m "feat(monitor): table freshness/coverage and deployed-models reader
+git commit -m "feat(monitor): table freshness/coverage and live-models reader
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -1147,7 +1169,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `tests/test_monitoring_router.py` (append)
 
 **Interfaces:**
-- Consumes: `fetch_runs` (Task 1); `SOURCES`, `history_start` and `build_report` (Tasks 2–3); `fetch_table_status` and `fetch_deployed_models` (Task 4).
+- Consumes: `fetch_runs` (Task 1); `SOURCES`, `history_start` and `build_report` (Tasks 2–3); `fetch_table_status` and `fetch_live_models` (Task 4).
 - Produces: `GET /monitoring/pipeline?days=N`, returning `build_report(...) | {"tables": [...], "models": [...]}`. Errors: 503 when there's no `GH_TOKEN`, 502 on an upstream error, 422 when `days` is out of range.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_monitoring_router.py`)
@@ -1159,9 +1181,8 @@ import requests  # noqa: E402 — appended section; only these tests need it
 
 TABLE_ROW = {"table": "raw.thing_ids", "last_updated": "2026-10-02T06:30:00Z", "games": 5,
              "covered": None, "universe": None, "users": None}
-MODEL_ROW = {"model_category": "prediction", "model_type": "hurdle", "model_name": "h",
-             "model_version": "14", "experiment": "e", "games_count": 1,
-             "last_updated": "2026-10-02T07:25:00Z"}
+MODEL_ROW = {"model_type": "hurdle", "model_name": "hurdle-v2026", "model_version": 3,
+             "games_count": 1, "last_updated": "2026-10-02T07:23:11Z"}
 
 
 @pytest.fixture
@@ -1180,7 +1201,7 @@ def pipeline_ok(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "tok")
     monkeypatch.setattr(monitoring_router, "fetch_runs", fake_runs)
     monkeypatch.setattr(monitoring_router.pipeline_reader, "fetch_table_status", fake_tables)
-    monkeypatch.setattr(monitoring_router.pipeline_reader, "fetch_deployed_models",
+    monkeypatch.setattr(monitoring_router.pipeline_reader, "fetch_live_models",
                         lambda: [MODEL_ROW])
     return calls
 
@@ -1297,7 +1318,7 @@ def get_pipeline(days: int = Query(14, ge=1, le=30)):
     try:
         runs = _collect_runs(chain.history_start(now, days), now, token)
         tables = pipeline_reader.fetch_table_status()
-        models = pipeline_reader.fetch_deployed_models()
+        models = pipeline_reader.fetch_live_models()
     except Exception as exc:  # GitHub or BigQuery: report it, don't serve a partial status
         raise HTTPException(502, f"pipeline status unavailable: {exc}") from exc
 
@@ -1331,7 +1352,7 @@ for t in d['tables']: print(t)
 print(len(d['models']), 'models')"
 ```
 
-Expected: a real verdict, which on a normal afternoon is `Chain completed`. You should also see 12 stages, 9 table rows with plausible counts and timestamps, and 7 models (5 prediction + 2 embedding types). Stop the server afterwards.
+Expected: a real verdict, which on a normal afternoon is `Chain completed`. You should also see 12 stages, 9 table rows with plausible counts and timestamps, and at least 7 model rows (one per type; more where an older version still serves some games — on 2026-10-02 hurdle, rating and users_rated each had a v1 serving 4,319 games). Stop the server afterwards.
 
 - [ ] **Step 6: Commit**
 
@@ -1378,7 +1399,7 @@ Implements docs/superpowers/specs/2026-10-02-pipeline-monitor-design.md (warehou
 
 - src/monitoring/github.py: run fetching shared with Pipeline Status, now paginated
 - src/monitoring/chain.py: the 12 stages + off-chain jobs, status rules, verdict, history
-- src/warehouse/readers/pipeline.py: table freshness/coverage + deployed models
+- src/warehouse/readers/pipeline.py: table freshness/coverage + live models (~19MB, from the serving tables)
 - GET /monitoring/pipeline on the warehouse API (5-min cache; 503 without GH_TOKEN)
 
 **Do not deploy-merge until the GH_TOKEN secret exists** — see Task 7 of the plan.
@@ -1490,7 +1511,7 @@ All Part B commands run from `/Users/phenrickson/Documents/projects/bgg-viewer`,
 
 **Interfaces:**
 - Produces:
-  - types `StageStatusName`, `Lane`, `PipelineStage`, `PipelineVerdict`, `PipelineTableRow`, `DeployedModelRow`, `PipelineStatus`
+  - types `StageStatusName`, `Lane`, `PipelineStage`, `PipelineVerdict`, `PipelineTableRow`, `LiveModelRow`, `PipelineStatus`
   - `WarehouseClient.getPipelineStatus(days?: number): Promise<PipelineStatus>`
 
 - [ ] **Step 1: Write the failing tests** (append to `client.test.ts`)
@@ -1593,12 +1614,11 @@ export interface PipelineTableRow {
 	users: number | null;
 }
 
-export interface DeployedModelRow {
-	model_category: string;
+/** One model version still serving at least one game. Several per type = an older version lingers. */
+export interface LiveModelRow {
 	model_type: string;
 	model_name: string | null;
-	model_version: string | null;
-	experiment: string | null;
+	model_version: number | null;
 	games_count: number;
 	last_updated: string | null;
 }
@@ -1609,7 +1629,7 @@ export interface PipelineStatus {
 	today: { day: string; stages: PipelineStage[]; off_chain: PipelineStage[] };
 	history: { day: string; stages: Record<string, StageStatusName> }[];
 	tables: PipelineTableRow[];
-	models: DeployedModelRow[];
+	models: LiveModelRow[];
 }
 ```
 
@@ -1650,7 +1670,7 @@ export type {
 	PipelineStage,
 	PipelineVerdict,
 	PipelineTableRow,
-	DeployedModelRow,
+	LiveModelRow,
 	PipelineStatus
 } from './types';
 ```
@@ -2010,7 +2030,7 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
 - Create: `src/lib/monitoring/ChainLanes.svelte`
 - Create: `src/lib/monitoring/HistoryGrid.svelte`
 - Create: `src/lib/monitoring/TableStatus.svelte`
-- Create: `src/lib/monitoring/DeployedModels.svelte`
+- Create: `src/lib/monitoring/LiveModels.svelte`
 - Create: `src/routes/(app)/admin/pipeline/+page.svelte`
 
 **Interfaces:**
@@ -2298,14 +2318,18 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
 </style>
 ```
 
-- [ ] **Step 6: `DeployedModels.svelte`**
+- [ ] **Step 6: `LiveModels.svelte`**
 
 ```svelte
 <script lang="ts">
-  import type { DeployedModelRow } from '$lib/server/warehouse';
+  import type { LiveModelRow } from '$lib/server/warehouse';
+  import StatusBadge from './StatusBadge.svelte';
   import { clock } from './display';
 
-  let { models }: { models: DeployedModelRow[] } = $props();
+  // Rows arrive ordered by model_type, newest first, so any row after the first of
+  // its type is an older version that still serves some games.
+
+  let { models }: { models: LiveModelRow[] } = $props();
   const fmt = new Intl.NumberFormat('en-US');
   const day = (iso: string | null) =>
     iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—';
@@ -2315,10 +2339,14 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
   <table>
     <thead><tr><th>Model</th><th>Version</th><th class="num">Games</th><th>Last scored (UTC)</th></tr></thead>
     <tbody>
-      {#each models as m (m.model_type)}
-        <tr>
-          <td>{m.model_type}<div class="sub mono">{m.model_name ?? '—'}</div></td>
-          <td class="mono">{m.model_version ?? '—'}</td>
+      {#each models as m, i (`${m.model_type}:${m.model_name}:${m.model_version}`)}
+        {@const older = i > 0 && models[i - 1].model_type === m.model_type}
+        <tr class:older>
+          <td>
+            {m.model_type}<div class="sub mono">{m.model_name ?? '—'}</div>
+            {#if older}<StatusBadge status="warn" label="Older version still serving" />{/if}
+          </td>
+          <td class="mono">{m.model_version != null ? `v${m.model_version}` : '—'}</td>
           <td class="num">{fmt.format(m.games_count)}</td>
           <td class="tnum">{day(m.last_updated)} · {clock(m.last_updated)}</td>
         </tr>
@@ -2348,7 +2376,7 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
 <script lang="ts">
   import { Container, Stack } from '$lib/components/ui/layout';
   import ChainLanes from '$lib/monitoring/ChainLanes.svelte';
-  import DeployedModels from '$lib/monitoring/DeployedModels.svelte';
+  import LiveModels from '$lib/monitoring/LiveModels.svelte';
   import HistoryGrid from '$lib/monitoring/HistoryGrid.svelte';
   import TableStatus from '$lib/monitoring/TableStatus.svelte';
   import Verdict from '$lib/monitoring/Verdict.svelte';
@@ -2393,8 +2421,8 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
       </section>
 
       <section>
-        <h2>Deployed models <span>from monitoring.deployed_models</span></h2>
-        <DeployedModels models={s.models} />
+        <h2>Live models <span>every version behind a current prediction · older versions flagged</span></h2>
+        <LiveModels models={s.models} />
       </section>
     {/if}
   </Stack>
