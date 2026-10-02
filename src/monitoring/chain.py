@@ -37,6 +37,10 @@ class Stage:
     lane: str
     event: str | None = None
     title: str | None = None
+    # Take the earliest run created at/after this stage's run instead of the latest in
+    # the window. Pass 1's trigger (`workflow_run`) also fires after a manual Run Fetch
+    # Games, which would otherwise replace the chain's own pass 1.
+    after: str | None = None
 
     @property
     def source(self) -> tuple[str, str]:
@@ -57,7 +61,7 @@ STAGES = [
     Stage("fetch_new_games", "Fetch New Games", WAREHOUSE, "fetch_new_games.yml", "warehouse"),
     Stage("refresh_old_games", "Refresh Old Games", WAREHOUSE, "refresh.yml", "warehouse"),
     Stage("dataform_1", "Dataform · pass 1", WAREHOUSE, "dataform.yml", "warehouse",
-          event="workflow_run"),
+          event="workflow_run", after="refresh_old_games"),
     Stage("text_embeddings", "Text Embeddings", MODELS, "run-generate-text-embeddings.yml",
           "models"),
     Stage("dataform_2", "Dataform · pass 2", WAREHOUSE, "dataform.yml", "warehouse",
@@ -81,6 +85,8 @@ OFF_CHAIN = [
           "models"),
     Stage("pipeline_status", "Pipeline Status", WAREHOUSE, "pipeline_status.yml", "warehouse"),
 ]
+
+STAGE_BY_KEY = {s.key: s for s in STAGES}
 
 # Every (repo, workflow file) to list runs for. Dataform appears once.
 SOURCES = sorted({s.source for s in STAGES + OFF_CHAIN})
@@ -124,14 +130,27 @@ def chain_day(now: datetime) -> date:
     return (now.astimezone(UTC) - timedelta(hours=DAY_START.hour)).date()
 
 
-def _latest(stage: Stage, runs: Runs, day: date) -> dict[str, Any] | None:
-    """The stage's newest run created in the day's window (a rerun supersedes a failure)."""
+def _in_window(stage: Stage, runs: Runs, day: date) -> list[dict[str, Any]]:
     start, end = window(day)
-    found = [
+    return [
         r for r in runs.get(stage.source, [])
         if stage.matches(r) and start <= parse_ts(r["created_at"]) < end
     ]
-    return max(found, key=lambda r: parse_ts(r["created_at"]), default=None)
+
+
+def _latest(stage: Stage, runs: Runs, day: date) -> dict[str, Any] | None:
+    """The stage's newest run created in the day's window (a rerun supersedes a failure)."""
+    return max(_in_window(stage, runs, day), key=lambda r: parse_ts(r["created_at"]), default=None)
+
+
+def _pick(stage: Stage, runs: Runs, day: date,
+          picked: dict[str, dict[str, Any] | None]) -> dict[str, Any] | None:
+    anchor = picked.get(stage.after) if stage.after else None
+    if anchor is None:
+        return _latest(stage, runs, day)
+    after = [r for r in _in_window(stage, runs, day)
+             if parse_ts(r["created_at"]) >= parse_ts(anchor["created_at"])]
+    return min(after, key=lambda r: parse_ts(r["created_at"]), default=None)
 
 
 def _own_status(run: dict[str, Any]) -> str:
@@ -165,7 +184,10 @@ def _handed_off(run: dict[str, Any], nxt: dict[str, Any] | None) -> bool:
 
 
 def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
-    picked = [_latest(s, runs, day) for s in STAGES]
+    by_key: dict[str, dict[str, Any] | None] = {}
+    for s in STAGES:
+        by_key[s.key] = _pick(s, runs, day, by_key)
+    picked = [by_key[s.key] for s in STAGES]
     stages: list[StageStatus] = []
     blocked = False  # an upstream stage failed, stalled or never ran
     for i, (stage, run) in enumerate(zip(STAGES, picked)):
@@ -185,7 +207,11 @@ def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
         stages.append(_status(stage, run, status, note))
         blocked = blocked or status in ("fail", "warn", "not_reached")
 
-    final_pass = picked[[s.key for s in STAGES].index("dataform_4")]
+    # Predictions first land with the day's first successful pass 4; a later re-chain
+    # (a push to definitions/**) must not make the 08:00 collection scoring look early.
+    landed = [r for r in _in_window(STAGE_BY_KEY["dataform_4"], runs, day)
+              if _own_status(r) == "ok"]
+    final_pass = min(landed, key=lambda r: parse_ts(r["created_at"]), default=None)
     return Chain(day, stages, _off_chain(runs, day, final_pass))
 
 

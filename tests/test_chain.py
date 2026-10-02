@@ -211,3 +211,37 @@ def test_build_report_shape():
     assert report["history"][0]["stages"]["fetch_thing_ids"] == "fail"  # no runs in fixture
     assert report["today"]["day"] == "2026-10-02"
     json.dumps(report)
+
+
+def _later_dataform_run(runs: chain.Runs, conclusion: str = "success", **overrides) -> None:
+    """A `workflow_run` Dataform run after the chain, e.g. set off by a manual Run Fetch Games."""
+    src = BY_KEY["dataform_1"].source
+    runs[src].append(dict(_run_of(runs, "dataform_1"), created_at="2026-10-02T14:00:00Z",
+                          updated_at="2026-10-02T14:02:00Z", conclusion=conclusion,
+                          html_url="https://github.com/x/later", **overrides))
+
+
+def test_later_fetch_games_dataform_run_does_not_replace_pass_1():
+    runs = copy.deepcopy(_fixture())
+    real = _run_of(runs, "dataform_1")["html_url"]
+    _later_dataform_run(runs)
+    c = chain.build_chain(runs, DAY, datetime(2026, 10, 2, 15, 0, tzinfo=UTC))
+    p1 = next(s for s in c.stages if s.key == "dataform_1")
+    assert (p1.status, p1.url) == ("ok", real)
+    assert chain.verdict(c)["status"] == "ok"
+
+
+def test_later_skipped_fetch_games_dataform_run_does_not_replace_pass_1():
+    runs = copy.deepcopy(_fixture())
+    _later_dataform_run(runs, conclusion="skipped")
+    c = chain.build_chain(runs, DAY, datetime(2026, 10, 2, 15, 0, tzinfo=UTC))
+    assert _statuses(c)["dataform_1"] == "ok"
+
+
+def test_collection_scoring_compares_against_first_final_pass():
+    runs = copy.deepcopy(_fixture())
+    p4 = BY_KEY["dataform_4"]
+    runs[p4.source].append(dict(_run_of(runs, "dataform_4"), created_at="2026-10-02T14:30:00Z",
+                                updated_at="2026-10-02T14:32:00Z"))
+    c = chain.build_chain(runs, DAY, datetime(2026, 10, 2, 15, 0, tzinfo=UTC))
+    assert next(s for s in c.off_chain if s.key == "collection_scoring").status == "ok"
