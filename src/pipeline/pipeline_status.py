@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import requests
 from google.cloud import bigquery
 
+from src.monitoring.github import fetch_runs, iso, parse_ts
 from src.warehouse.bq import dataset, get_client
 
 DEFAULT_REPO = "phenrickson/bgg-data-warehouse"
@@ -61,42 +61,6 @@ class Check:
     question: str
     answer: str
     ok: bool
-
-
-def _iso(ts: datetime) -> str:
-    return ts.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _parse_ts(value: str) -> datetime:
-    """Parse an ISO timestamp; a naive one is taken as UTC, not local time."""
-    ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
-
-
-def fetch_job_runs(
-    repo: str,
-    workflow_file: str,
-    start: datetime,
-    end: datetime,
-    token: str,
-    session=requests,
-) -> list[dict[str, Any]]:
-    """Runs of one workflow created in ``[start, end]``.
-
-    The ``created`` range changes every run, so the request can't be answered from
-    the stale listing that false-alarmed the old heartbeat.
-    """
-    resp = session.get(
-        f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_file}/runs",
-        params={"created": f"{_iso(start)}..{_iso(end)}", "per_page": 100},
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return [
-        {k: r[k] for k in ("created_at", "event", "status", "conclusion")}
-        for r in resp.json()["workflow_runs"]
-    ]
 
 
 def fetch_warehouse_counts(
@@ -220,7 +184,7 @@ def render(checks: list[Check], start: datetime, end: datetime) -> str:
     flagged = [c for c in checks if not c.ok]
     heading = f"**{len(flagged)} check(s) need a look**" if flagged else "**All checks passed**"
     lines = [
-        f"## Pipeline status: {_iso(start)} → {_iso(end)}",
+        f"## Pipeline status: {iso(start)} → {iso(end)}",
         "",
         heading,
         "",
@@ -251,11 +215,11 @@ def main(argv: list[str] | None = None) -> None:
     if not token:
         sys.exit("GH_TOKEN is not set (locally: GH_TOKEN=$(gh auth token))")
 
-    end = _parse_ts(args.end) if args.end else datetime.now(UTC)
-    start = _parse_ts(args.start) if args.start else end - timedelta(hours=args.window_hours)
+    end = parse_ts(args.end) if args.end else datetime.now(UTC)
+    start = parse_ts(args.start) if args.start else end - timedelta(hours=args.window_hours)
 
     jobs = [
-        JobRuns(label, wf, fetch_job_runs(args.repo, wf, start, end, token)) for label, wf in JOBS
+        JobRuns(label, wf, fetch_runs(args.repo, wf, start, end, token)) for label, wf in JOBS
     ]
     checks = evaluate(jobs, fetch_warehouse_counts(start, end))
     body = render(checks, start, end)
