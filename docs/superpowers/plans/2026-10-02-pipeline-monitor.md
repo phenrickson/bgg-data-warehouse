@@ -863,9 +863,10 @@ git commit -m "feat(monitor): verdict, history and report for the daily chain
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-### Task 4: Freshness and deployed-models reader
+### Task 4: `deployed_models` as a table on the serving tables, and the reader
 
 **Files:**
+- Modify: `definitions/deployed_models.sqlx` (rewrite: view over raw landing history → table over the serving tables)
 - Modify: `config/bigquery.yaml`. Add `monitoring: monitoring` under `datasets:`.
 - Create: `src/warehouse/readers/pipeline.py`
 - Create: `tests/test_pipeline_reader.py`
@@ -875,7 +876,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `SCORING_YEARS = (2025, 2030)`
   - `TABLES: list[TableSpec]`
   - `fetch_table_status(client=None) -> list[dict]`, rows with keys `table`, `last_updated`, `games`, `covered`, `universe` and `users`, in `TABLES` order
-  - `fetch_deployed_models(client=None) -> list[dict]`, rows with keys `model_category`, `model_type`, `model_name`, `model_version`, `experiment`, `games_count` and `last_updated`
+  - `monitoring.deployed_models` (Dataform table): one row per (`model_type`, `model_name`, `model_version`) still behind at least one game in the serving tables. Columns `model_category`, `model_type`, `model_name`, `model_version` (INT64), `experiment`, `algorithm`, `games_count`, `last_updated`. `embedding_dim` and `document_method` are dropped (only the retired bgg-dash-viewer read them; no queries in 30 days of job history).
+  - `fetch_deployed_models(client=None) -> list[dict]`: every row, ordered by `model_category`, `model_type`, newest first. More than one row for a type = an older version still serving games.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -942,15 +944,16 @@ def test_table_status_universes():
     assert by_name["predictions.user_collection_predictions"].count_users
 
 
-def test_deployed_models_latest_per_type():
-    row = {"model_category": "prediction", "model_type": "hurdle", "model_name": "h",
-           "model_version": "14", "experiment": "e", "games_count": 39316,
-           "last_updated": "2026-10-02T07:25:00Z"}
-    client = FakeClient([row])
-    assert pipeline.fetch_deployed_models(client=client) == [row]
+def test_deployed_models_returns_every_live_version():
+    row = {"model_category": "prediction", "model_type": "hurdle", "model_name": "hurdle-v2026",
+           "model_version": 3, "experiment": "e", "algorithm": None, "games_count": 43564,
+           "last_updated": "2026-10-02T07:23:11Z"}
+    old = row | {"model_version": 1, "games_count": 4319, "last_updated": "2026-02-16T08:04:19Z"}
+    client = FakeClient([row, old])
+    assert pipeline.fetch_deployed_models(client=client) == [row, old]
     sql, _ = client.calls[0]
     assert "monitoring.deployed_models" in sql
-    assert "QUALIFY ROW_NUMBER() OVER (PARTITION BY model_type" in sql
+    assert "QUALIFY" not in sql, "the table already holds only live versions; keep them all"
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -959,6 +962,63 @@ Run: `uv run --extra test python -m pytest tests/test_pipeline_reader.py -v`
 Expected: FAIL with `ImportError: cannot import name 'pipeline'`.
 
 - [ ] **Step 3: Implement**
+
+Replace `definitions/deployed_models.sqlx` entirely with:
+
+```sql
+config {
+  type: "table",
+  schema: "monitoring",
+  name: "deployed_models",
+  description: "Every model version still behind at least one current prediction or embedding, with how many games it serves. Built from the deduped serving tables (one row per game), not the raw landing history, so 'deployed' means 'serving'. More than one row per model_type = an older version still serves some games."
+}
+
+-- Prediction models: one name/version/experiment column set per model in bgg_predictions.
+WITH p AS (
+  SELECT * FROM ${ref("bgg_predictions")}
+),
+prediction_models AS (
+  SELECT 'hurdle' AS model_type, hurdle_model_name AS model_name,
+         CAST(hurdle_model_version AS INT64) AS model_version, hurdle_experiment AS experiment,
+         COUNT(*) AS games_count, MAX(score_ts) AS last_updated
+  FROM p GROUP BY 2, 3, 4
+  UNION ALL
+  SELECT 'rating', rating_model_name, CAST(rating_model_version AS INT64), rating_experiment,
+         COUNT(*), MAX(score_ts)
+  FROM p GROUP BY 2, 3, 4
+  UNION ALL
+  SELECT 'users_rated', users_rated_model_name, CAST(users_rated_model_version AS INT64),
+         users_rated_experiment, COUNT(*), MAX(score_ts)
+  FROM p GROUP BY 2, 3, 4
+  UNION ALL
+  SELECT 'geek_rating', geek_rating_model_name, CAST(geek_rating_model_version AS INT64),
+         geek_rating_experiment, COUNT(*), MAX(score_ts)
+  FROM p GROUP BY 2, 3, 4
+  UNION ALL
+  SELECT 'complexity', complexity_model_name, CAST(complexity_model_version AS INT64),
+         complexity_experiment, COUNT(*), MAX(score_ts)
+  FROM ${ref("bgg_complexity_predictions")} GROUP BY 2, 3, 4
+),
+
+embedding_models AS (
+  SELECT 'game_embedding' AS model_type, embedding_model AS model_name,
+         CAST(embedding_version AS INT64) AS model_version, algorithm,
+         COUNT(*) AS games_count, MAX(created_ts) AS last_updated
+  FROM ${ref("bgg_game_embeddings")} GROUP BY 2, 3, 4
+  UNION ALL
+  SELECT 'text_embedding', embedding_model, CAST(embedding_version AS INT64), algorithm,
+         COUNT(*), MAX(created_ts)
+  FROM ${ref("bgg_description_embeddings")} GROUP BY 2, 3, 4
+)
+
+SELECT 'prediction' AS model_category, model_type, model_name, model_version, experiment,
+       CAST(NULL AS STRING) AS algorithm, games_count, last_updated
+FROM prediction_models
+UNION ALL
+SELECT 'embedding', model_type, model_name, model_version, CAST(NULL AS STRING), algorithm,
+       games_count, last_updated
+FROM embedding_models
+```
 
 `config/bigquery.yaml`: under `datasets:`, add the line `  monitoring: monitoring` after `analytics: analytics`.
 
@@ -1076,19 +1136,14 @@ def fetch_table_status(client: Optional[bigquery.Client] = None) -> list[dict[st
 
 
 def fetch_deployed_models(client: Optional[bigquery.Client] = None) -> list[dict[str, Any]]:
-    """The newest deployed model per type, from ``monitoring.deployed_models``.
-
-    The view aggregates the raw landing tables, so this scans ~360MB per call; the
-    route's 5-minute cache keeps that to a few calls an hour while the page is open.
-    """
+    """Every model version still serving games, from the ``monitoring.deployed_models``
+    table (a dozen rows; Dataform rebuilds it on each pass from the serving tables)."""
     client = client or get_client()
     sql = f"""
         SELECT model_category, model_type, model_name, model_version, experiment,
-               games_count, last_updated
+               algorithm, games_count, last_updated
         FROM `{dataset('monitoring')}.deployed_models`
-        WHERE TRUE
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY model_type ORDER BY last_updated DESC) = 1
-        ORDER BY model_category, model_type
+        ORDER BY model_category, model_type, last_updated DESC
     """
     return [dict(r) for r in client.query(sql).result()]
 ```
@@ -1129,13 +1184,31 @@ print("models OK, bytes:", job.total_bytes_processed)
 EOF
 ```
 
-Expected: both print `OK`. Tables come in around 50–150 MB and models around 360 MB. If either query fails, fix the SQL. Don't drop a table to make it pass.
+Expected: both print `OK`, with tables around 50 MB. Until the new `deployed_models` table is built, the models query still reads the old view, which has the same columns and scans about 360 MB. Once the table is built it's a few KB. If either query fails, fix the SQL. Don't drop a table to make it pass.
+
+- [ ] **Step 5b: Compile Dataform and dry-run the new model SQL**
+
+Run: `npx -y @dataform/cli@3.0.0 compile`
+Expected: compiles with no errors, listing `monitoring.deployed_models` as a `table`.
+
+Then dry-run the table's SELECT on its own, with the refs written out, to confirm the columns and the scan size:
+
+```bash
+npx -y @dataform/cli@3.0.0 compile --json \
+  | uv run python -c "import json,sys; d=json.load(sys.stdin); print(next(t['query'] for t in d['tables'] if t['target']['name']=='deployed_models'))" \
+  > /tmp/deployed_models.sql
+bq query --use_legacy_sql=false --dry_run < /tmp/deployed_models.sql
+```
+
+Expected: `Query successfully validated`, processing about 20 MB (it was ~19 MB on 2026-10-02).
+
+Don't create the table by hand. Dataform builds it when this merges: `dataform.yml` runs on any push to `definitions/**` on `main`, and it replaces the view with a table. Locally, the reader works against the old view in the meantime.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add config/bigquery.yaml src/warehouse/readers/pipeline.py tests/test_pipeline_reader.py
-git commit -m "feat(monitor): table freshness/coverage and deployed-models reader
+git add definitions/deployed_models.sqlx config/bigquery.yaml src/warehouse/readers/pipeline.py tests/test_pipeline_reader.py
+git commit -m "feat(monitor): deployed_models as a table on the serving tables; freshness reader
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -1159,9 +1232,9 @@ import requests  # noqa: E402 — appended section; only these tests need it
 
 TABLE_ROW = {"table": "raw.thing_ids", "last_updated": "2026-10-02T06:30:00Z", "games": 5,
              "covered": None, "universe": None, "users": None}
-MODEL_ROW = {"model_category": "prediction", "model_type": "hurdle", "model_name": "h",
-             "model_version": "14", "experiment": "e", "games_count": 1,
-             "last_updated": "2026-10-02T07:25:00Z"}
+MODEL_ROW = {"model_category": "prediction", "model_type": "hurdle", "model_name": "hurdle-v2026",
+             "model_version": 3, "experiment": "e", "algorithm": None, "games_count": 1,
+             "last_updated": "2026-10-02T07:23:11Z"}
 
 
 @pytest.fixture
@@ -1331,7 +1404,7 @@ for t in d['tables']: print(t)
 print(len(d['models']), 'models')"
 ```
 
-Expected: a real verdict, which on a normal afternoon is `Chain completed`. You should also see 12 stages, 9 table rows with plausible counts and timestamps, and 7 models (5 prediction + 2 embedding types). Stop the server afterwards.
+Expected: a real verdict, which on a normal afternoon is `Chain completed`. You should also see 12 stages, 9 table rows with plausible counts and timestamps, and at least 7 model rows, one per type. There are more where an older version still serves games (on 2026-10-02, v1 hurdle, rating and users_rated each still served 4,319 games). Stop the server afterwards.
 
 - [ ] **Step 6: Commit**
 
@@ -1593,12 +1666,14 @@ export interface PipelineTableRow {
 	users: number | null;
 }
 
+/** One model version still serving games. Several rows for a type = an older version lingers. */
 export interface DeployedModelRow {
-	model_category: string;
+	model_category: 'prediction' | 'embedding';
 	model_type: string;
 	model_name: string | null;
-	model_version: string | null;
+	model_version: number | null;
 	experiment: string | null;
+	algorithm: string | null;
 	games_count: number;
 	last_updated: string | null;
 }
@@ -2303,7 +2378,11 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
 ```svelte
 <script lang="ts">
   import type { DeployedModelRow } from '$lib/server/warehouse';
+  import StatusBadge from './StatusBadge.svelte';
   import { clock } from './display';
+
+  // Rows arrive ordered by category, type, newest first, so any row after the first
+  // of its type is an older version still serving some games.
 
   let { models }: { models: DeployedModelRow[] } = $props();
   const fmt = new Intl.NumberFormat('en-US');
@@ -2315,10 +2394,14 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
   <table>
     <thead><tr><th>Model</th><th>Version</th><th class="num">Games</th><th>Last scored (UTC)</th></tr></thead>
     <tbody>
-      {#each models as m (m.model_type)}
+      {#each models as m, i (`${m.model_type}:${m.model_name}:${m.model_version}`)}
+        {@const older = i > 0 && models[i - 1].model_type === m.model_type}
         <tr>
-          <td>{m.model_type}<div class="sub mono">{m.model_name ?? '—'}</div></td>
-          <td class="mono">{m.model_version ?? '—'}</td>
+          <td>
+            {m.model_type}<div class="sub mono">{m.model_name ?? '—'}</div>
+            {#if older}<StatusBadge status="warn" label="Older version still serving" />{/if}
+          </td>
+          <td class="mono">{m.model_version != null ? `v${m.model_version}` : '—'}</td>
           <td class="num">{fmt.format(m.games_count)}</td>
           <td class="tnum">{day(m.last_updated)} · {clock(m.last_updated)}</td>
         </tr>
@@ -2393,7 +2476,7 @@ Six components in `src/lib/monitoring/` and the page that composes them. Follow 
       </section>
 
       <section>
-        <h2>Deployed models <span>from monitoring.deployed_models</span></h2>
+        <h2>Deployed models <span>every version behind a current prediction · older versions flagged</span></h2>
         <DeployedModels models={s.models} />
       </section>
     {/if}

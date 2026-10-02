@@ -45,7 +45,9 @@ What nobody can see today:
 - **Downstream freshness and coverage.** Nothing compares the prediction, embedding and
   coordinate tables against the games they should cover, or says when each last moved.
 - **Which models are live.** `monitoring.deployed_models` exists but nothing in
-  bgg-viewer reads it.
+  bgg-viewer reads it. It is also the wrong shape: a view over the raw landing history
+  (~360MB per query; `raw.game_embeddings` alone is 3.7M rows) that lists every version
+  ever landed, not the versions actually serving predictions.
 
 ## Goal
 
@@ -53,7 +55,7 @@ One admin-only page in bgg-viewer, `/admin/pipeline`, that answers:
 
 1. Did today's chain run end to end, and if not, where did it stop?
 2. Is each downstream table fresh, and does it cover the games it should?
-3. Which model versions are live?
+3. Which model versions are live, and is an older one still serving some games?
 
 ## Decisions
 
@@ -64,8 +66,12 @@ One admin-only page in bgg-viewer, `/admin/pipeline`, that answers:
   each from a cold start (see #131/#132). Cut.
 - **No new notifications.** The `pipeline-status` GitHub issue stays the push channel.
   Widening it to the whole chain is a follow-up that can reuse `build_chain`.
-- **No Dataform view.** The SQL lives in a Python reader, as `pipeline_status` and
-  `/new-games` already do, so nothing must run through Dataform before the page works.
+- **No new Dataform view for freshness.** That SQL lives in a Python reader, as
+  `pipeline_status` and `/new-games` already do.
+- **Fix `monitoring.deployed_models` rather than work around it.** Rebuild it as a
+  *table* on the serving tables (see Components). Only the retired bgg-dash-viewer read
+  it, and BigQuery job history shows no queries against it in the 30 days to 2026-10-02,
+  so changing its meaning and dropping `embedding_dim`/`document_method` is safe.
 - **Status colours avoid green/red.** Blue = ok, amber = needs attention, violet =
   failed; every state also carries a glyph and a word.
 
@@ -139,8 +145,24 @@ stage 12 `updated_at`).
   The 2025–2030 range is the scoring workflow's default (`run-scoring-service.yml`)
   and lives in one constant. Column names verified against the live schemas on
   2026-10-02.
-- `fetch_deployed_models(client=None) -> list[dict]`: `SELECT` from
-  `monitoring.deployed_models`, newest `last_updated` per `model_type`.
+- `fetch_deployed_models(client=None) -> list[dict]`: every row of the
+  `monitoring.deployed_models` table (a dozen rows), newest first within each type.
+
+### 3b. `definitions/deployed_models.sqlx` (rewritten)
+
+- `type: "table"`, not a view. Dataform rebuilds it on each of the four daily passes
+  (~26MB each), so the API's read is a few KB.
+- Built from the deduped serving tables via `ref()`: the model name, version and
+  experiment columns of `bgg_predictions` (hurdle, rating, users_rated, geek_rating),
+  `bgg_complexity_predictions`, and the `embedding_model`/`embedding_version`/`algorithm`
+  columns of `bgg_game_embeddings` and `bgg_description_embeddings`.
+- One row per (`model_type`, `model_name`, `model_version`) still behind at least one
+  game, with `games_count` and `last_updated`. Columns: `model_category`, `model_type`,
+  `model_name`, `model_version` (INT64), `experiment`, `algorithm`, `games_count`,
+  `last_updated`. More than one row for a type means an older version still serves some
+  games (on 2026-10-02: v1 hurdle, rating and users_rated still served 4,319 games).
+- Ships with the warehouse PR; `dataform.yml` rebuilds it on merge (push to
+  `definitions/**`). Until then the reader's columns also exist on the old view.
 
 ### 4. `GET /monitoring/pipeline` on the warehouse API
 
