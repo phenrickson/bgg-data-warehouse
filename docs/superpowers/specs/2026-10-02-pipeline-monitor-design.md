@@ -128,7 +128,8 @@ stage 12 `updated_at`).
 ### 3. `src/warehouse/readers/pipeline.py` (new)
 
 - `fetch_table_status(client=None) -> list[dict]`: one parameterised BigQuery query
-  that returns `table`, `last_updated`, `games`, `universe` (nullable) per row:
+  that returns `table`, `last_updated`, `games`, `covered`, `universe` (nullable) and
+  `users` (collection predictions only) per row:
 
 | Table | `last_updated` from | Universe (coverage denominator) |
 |---|---|---|
@@ -181,7 +182,8 @@ Added to `services/warehouse_api/routers/monitoring.py`.
               "status": "ok", "started": "…", "finished": "…", "url": "…", "event": "…"}],
               "off_chain": [ … ]},
     "history": [{"day": "…", "stages": {"fetch_thing_ids": "ok", …}}],
-    "tables": [{"table": "…", "last_updated": "…", "games": 0, "universe": 0}],
+    "tables": [{"table": "…", "last_updated": "…", "games": 0, "covered": 0, "universe": 0,
+                "users": null}],
     "models": [{"model_type": "…", "model_name": "…", "model_version": "…",
                 "games_count": 0, "last_updated": "…"}]
   }
