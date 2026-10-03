@@ -153,6 +153,21 @@ The node colour stays based on freshness only.
 - **URL:** the selected node is kept in `?node=<id>`, so a table can be linked
   directly.
 
+## Also in this change: clickable history cells on Pipeline
+
+Each cell in Pipeline's 14-day grid links to its run on GitHub.
+
+- **Warehouse:** in `build_report`, each history cell changes from a bare status to
+  `{"status": ..., "url": ...}`, taking `url` from the stage's chosen run (`null` when
+  there is none). `today` is unchanged.
+- **Viewer:** `PipelineStatus.history[].stages` becomes
+  `Record<string, { status: StageStatusName; url: string | null }>`. In
+  `HistoryGrid.svelte`, a cell with a `url` is a link that opens the run in a new tab,
+  with the same `title` text. A cell without one stays a plain cell.
+- **Tests:** `test_build_report_shape` checks a history cell's `url`. A vitest test
+  checks that a cell with a URL renders as a link, or, if component tests aren't set
+  up, it covers a small helper that maps a cell to `{ href, label }`.
+
 ## Validation
 
 - **pytest:**
