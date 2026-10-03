@@ -65,6 +65,11 @@ The whole chain (all twelve stages across the three repos), table freshness and
 coverage, and the live model versions are served by the warehouse API at
 `GET /monitoring/pipeline` and shown on bgg-viewer's admin `/admin/pipeline` page. The
 API needs `GH_TOKEN` to read Actions history (locally: `GH_TOKEN=$(gh auth token)`).
+`GET /monitoring/lineage` serves the Dataform lineage (latest clean compilation of
+`main`, parsed by `src/monitoring/lineage.py`, which the lineage action also uses) with
+row counts and last-modified times from BigQuery table metadata, and
+`GET /monitoring/tables/{project.dataset.table}` serves one table's schema; both back
+the admin Lineage page.
 
 Key workflows in `.github/workflows/`:
 
