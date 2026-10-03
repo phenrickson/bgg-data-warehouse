@@ -33,6 +33,8 @@ steps:
       - '--cpu=1'
       - '--max-instances=5'
       - '--port=8080'
+      # GitHub token for GET /monitoring/pipeline (Secret Manager; see terraform/warehouse_api.tf).
+      - '--set-secrets=GH_TOKEN=warehouse-api-github-token:latest'
 
 images:
   - 'gcr.io/$PROJECT_ID/bgg-warehouse-api:latest'
