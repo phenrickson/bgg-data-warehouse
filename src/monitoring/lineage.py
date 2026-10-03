@@ -5,6 +5,8 @@ Standard library only, so the lineage GitHub action
 See docs/superpowers/specs/2026-10-03-lineage-view-design.md.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any
 
