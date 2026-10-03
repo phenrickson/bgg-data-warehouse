@@ -136,11 +136,11 @@ stage 12 `updated_at`).
 | `raw.thing_ids` | `MAX(load_timestamp)` | — |
 | `raw.fetched_responses` | `MAX(fetch_timestamp)` | distinct `boardgame` IDs in `raw.thing_ids` |
 | `analytics.games_features` | `MAX(load_timestamp)` | — |
-| `predictions.bgg_description_embeddings` | `MAX(created_ts)` | `games_features` |
-| `predictions.bgg_complexity_predictions` | `MAX(score_ts)` | `games_features` |
+| `predictions.bgg_description_embeddings` | `MAX(created_ts)` | `games_features` with a `year_published` (the ML services' own rule) |
+| `predictions.bgg_complexity_predictions` | `MAX(score_ts)` | `games_features` with a `year_published` (the ML services' own rule) |
 | `predictions.bgg_predictions` | `MAX(score_ts)` | `games_features` with `year_published` 2025–2030 |
-| `predictions.bgg_game_embeddings` | `MAX(created_ts)` | `games_features` |
-| `predictions.bgg_game_coordinates` | `MAX(created_ts)` | `games_features` |
+| `predictions.bgg_game_embeddings` | `MAX(created_ts)` | `games_features` with a `year_published` (the ML services' own rule) |
+| `predictions.bgg_game_coordinates` | `MAX(created_ts)` | `games_features` with a `year_published` (the ML services' own rule) |
 | `predictions.user_collection_predictions` | `MAX(score_ts)` | — (also returns distinct users) |
 
   The 2025–2030 range is the scoring workflow's default (`run-scoring-service.yml`)

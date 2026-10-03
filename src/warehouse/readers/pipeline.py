@@ -34,15 +34,15 @@ TABLES = [
               universe="boardgame_ids", where="t.fetch_status = 'success'"),
     TableSpec("analytics.games_features", "analytics", "games_features", "load_timestamp"),
     TableSpec("predictions.bgg_description_embeddings", "predictions",
-              "bgg_description_embeddings", "created_ts", universe="all_games"),
+              "bgg_description_embeddings", "created_ts", universe="dated_games"),
     TableSpec("predictions.bgg_complexity_predictions", "predictions",
-              "bgg_complexity_predictions", "score_ts", universe="all_games"),
+              "bgg_complexity_predictions", "score_ts", universe="dated_games"),
     TableSpec("predictions.bgg_predictions", "predictions", "bgg_predictions", "score_ts",
               universe="scoring_games"),
     TableSpec("predictions.bgg_game_embeddings", "predictions", "bgg_game_embeddings",
-              "created_ts", universe="all_games"),
+              "created_ts", universe="dated_games"),
     TableSpec("predictions.bgg_game_coordinates", "predictions", "bgg_game_coordinates",
-              "created_ts", universe="all_games"),
+              "created_ts", universe="dated_games"),
     TableSpec("predictions.user_collection_predictions", "predictions",
               "user_collection_predictions", "score_ts", count_users=True),
 ]
@@ -51,7 +51,11 @@ TABLES = [
 def _universes() -> str:
     features = f"`{dataset('analytics')}.games_features`"
     return f"""
-        all_games AS (SELECT DISTINCT game_id FROM {features}),
+        -- The ML services only embed/score games with a year_published
+        -- (bgg-predictive-models services/*/main.py), so that is their universe.
+        dated_games AS (
+          SELECT DISTINCT game_id FROM {features} WHERE year_published IS NOT NULL
+        ),
         scoring_games AS (
           SELECT DISTINCT game_id FROM {features}
           WHERE year_published BETWEEN @year_start AND @year_end
