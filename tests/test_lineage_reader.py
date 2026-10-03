@@ -109,3 +109,12 @@ def test_schema_flattens_nested_records():
 def test_schema_lets_not_found_through():
     with pytest.raises(gexc.NotFound):
         reader.fetch_table_schema("p.d.gone", client=FakeBQ({"p.d.gone": gexc.NotFound("x")}))
+
+
+def test_meta_turns_any_per_table_failure_into_a_node_error():
+    # A transport error or timeout on one table must stay on that node, not 502 the graph.
+    client = FakeBQ({"p.d.ok": _table(), "p.d.flaky": ConnectionError("reset by peer")})
+    meta = reader.fetch_table_meta(["p.d.ok", "p.d.flaky"], client=client)
+    assert meta["p.d.ok"]["error"] is None
+    assert meta["p.d.flaky"]["rows"] is None
+    assert "reset by peer" in meta["p.d.flaky"]["error"]

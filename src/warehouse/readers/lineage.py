@@ -63,6 +63,8 @@ def _meta(client: bigquery.Client, table_id: str) -> dict[str, Any]:
         return _EMPTY_META | {"error": "no access"}
     except gexc.GoogleAPICallError as exc:
         return _EMPTY_META | {"error": f"{exc.code}: {exc.message}"}
+    except Exception as exc:  # timeout, connection reset, auth refresh: stays on this node
+        return _EMPTY_META | {"error": f"{type(exc).__name__}: {exc}"}
     return {"rows": table.num_rows, "bytes": table.num_bytes, "last_modified": table.modified,
             "type": table.table_type, "error": None}
 
