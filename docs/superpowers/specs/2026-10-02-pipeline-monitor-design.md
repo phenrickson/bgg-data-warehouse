@@ -215,7 +215,10 @@ Added to `services/warehouse_api/routers/monitoring.py`.
     `pending` state (dashed, like not reached, labelled "Waiting").
 - **Tokens** in `src/app.css`: `--status-ok`, `--status-warn`, `--status-fail`, light
   and dark, as in the mockup.
-- **Nav:** a "Pipeline" link, rendered only for the admin.
+- **Admin panel:** an "Admin" link beside Settings (and in the mobile menu), rendered
+  only for the admin, opens `/admin`: an admin-only panel (404 otherwise) with its own
+  sub-nav. It opens straight onto Pipeline, its only section so far; later admin tools
+  join the sub-nav.
 - **Freshness status** in `TableStatus` (viewer-side, display only): "Fresh" if
   `last_updated` is on or after today's stage 1 start; otherwise "A day old" / "N days
   old" in amber. Coverage bar amber below 99.5%.
