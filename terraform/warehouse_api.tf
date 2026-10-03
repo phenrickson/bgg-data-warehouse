@@ -40,3 +40,31 @@ resource "google_cloud_run_v2_service_iam_binding" "warehouse_api_invokers" {
 
   members = var.warehouse_api_invoker_members
 }
+
+# GitHub token the read API uses to list Actions runs for GET /monitoring/pipeline.
+# The three repos are public; the token only lifts the rate limit, so a fine-grained
+# token with public read-only access and no permissions is enough. The version is
+# added by hand (never in git or state):
+#   printf %s "$TOKEN" | gcloud secrets versions add warehouse-api-github-token \
+#     --data-file=- --project=bgg-data-warehouse
+resource "google_secret_manager_secret" "warehouse_api_github_token" {
+  secret_id = "warehouse-api-github-token"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    managed_by  = "terraform"
+    purpose     = "monitoring"
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "warehouse_api_github_token_access" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.warehouse_api_github_token.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:bgg-data-warehouse@${var.project_id}.iam.gserviceaccount.com"
+}
