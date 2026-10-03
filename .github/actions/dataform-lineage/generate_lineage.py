@@ -10,52 +10,28 @@ Generates lineage diagrams from Dataform compilation results in multiple formats
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 
-def make_node_id(schema: str, name: str) -> str:
-    """Create a valid node ID (alphanumeric with underscores)."""
-    return f"{schema}__{name}".replace(".", "_").replace("-", "_")
+# The parser is shared with the warehouse API (src/monitoring/lineage.py, standard
+# library only). The checked-out repo root is three levels above this file.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from src.monitoring.lineage import parse_compilation_result as _parse  # noqa: E402
+
+
+def make_node_id(node_id: str) -> str:
+    """A Mermaid/vis.js-safe id (alphanumeric with underscores)."""
+    return re.sub(r"[^0-9A-Za-z_]", "_", node_id)
 
 
 def parse_compilation_result(compilation_data: dict) -> tuple[set, list]:
-    """
-    Parse Dataform compilation result and extract nodes and edges.
-
-    Returns:
-        tuple: (nodes set of (id, label, schema), edges list of (from_id, to_id))
-    """
-    nodes = set()
-    edges = []
-
-    actions = compilation_data.get("compilationResultActions", [])
-    print(f"Processing {len(actions)} actions from compilation result")
-
-    for action in actions:
-        target = action.get("target", {})
-        schema = target.get("schema", "unknown")
-        name = target.get("name", "unknown")
-        node_id = make_node_id(schema, name)
-        label = f"{schema}.{name}"
-        nodes.add((node_id, label, schema))
-
-        # Get dependencies from relation or operations
-        dep_targets = []
-        if "relation" in action:
-            dep_targets = action["relation"].get("dependencyTargets", [])
-        elif "operations" in action:
-            dep_targets = action["operations"].get("dependencyTargets", [])
-
-        for dep in dep_targets:
-            dep_schema = dep.get("schema", "unknown")
-            dep_name = dep.get("name", "unknown")
-            dep_id = make_node_id(dep_schema, dep_name)
-            dep_label = f"{dep_schema}.{dep_name}"
-            nodes.add((dep_id, dep_label, dep_schema))
-            edges.append((dep_id, node_id))
-
-    return nodes, edges
+    """The shared parser, adapted to this script's (id, label, group) node tuples."""
+    nodes, edges = _parse(compilation_data)
+    print(f"Processing {len(nodes)} nodes from compilation result")
+    node_tuples = {(make_node_id(n.id), f"{n.dataset}.{n.name}", n.dataset) for n in nodes}
+    return node_tuples, [(make_node_id(a), make_node_id(b)) for a, b in edges]
 
 
 def generate_mermaid(nodes: set, edges: list) -> str:

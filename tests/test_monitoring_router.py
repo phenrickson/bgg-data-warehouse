@@ -154,3 +154,96 @@ def test_pipeline_upstream_error_is_502(pipeline_ok, monkeypatch):
 def test_pipeline_rejects_out_of_range_days(pipeline_ok):
     assert client.get("/monitoring/pipeline?days=0").status_code == 422
     assert client.get("/monitoring/pipeline?days=31").status_code == 422
+
+
+# --- /monitoring/lineage and /monitoring/tables/{id} ------------------------
+
+import json as _json  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+from google.api_core import exceptions as _gexc  # noqa: E402
+
+_COMPILATION = _json.loads(
+    (_Path(__file__).parent / "fixtures/dataform_compilation_2026-10-03.json").read_text())
+_SUMMARY = {"name": "projects/p/compilationResults/c1", "createTime": "2026-10-03T17:46:47Z",
+            "resolvedGitCommitSha": "4b04de42f410"}
+_GF = "bgg-data-warehouse.analytics.games_features"
+
+
+@pytest.fixture
+def lineage_ok(monkeypatch):
+    calls = {"compilation": 0, "schema": 0}
+
+    def fake_compilation():
+        calls["compilation"] += 1
+        return _SUMMARY, _COMPILATION
+
+    def fake_meta(ids):
+        return {i: {"rows": 1, "bytes": 2, "last_modified": "2026-10-03T07:19:00Z",
+                    "type": "TABLE", "error": None} for i in ids}
+
+    def fake_schema(table_id):
+        calls["schema"] += 1
+        return [{"name": "game_id", "type": "INTEGER", "mode": "NULLABLE", "description": None}]
+
+    monkeypatch.setattr(monitoring_router.lineage_reader, "fetch_compilation", fake_compilation)
+    monkeypatch.setattr(monitoring_router.lineage_reader, "fetch_table_meta", fake_meta)
+    monkeypatch.setattr(monitoring_router.lineage_reader, "fetch_table_schema", fake_schema)
+    return calls
+
+
+def test_lineage_shape(lineage_ok):
+    r = client.get("/monitoring/lineage")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {"generated_at", "compilation", "nodes", "edges"}
+    assert body["compilation"] == {"name": _SUMMARY["name"], "created": _SUMMARY["createTime"],
+                                   "commit": "4b04de4"}
+    node = next(n for n in body["nodes"] if n["id"] == _GF)
+    assert node["kind"] == "incremental" and node["rows"] == 1 and node["error"] is None
+    assert ["bgg-data-warehouse.analytics.games_active", _GF] in body["edges"]
+
+
+def test_lineage_is_cached(lineage_ok):
+    client.get("/monitoring/lineage")
+    client.get("/monitoring/lineage")
+    assert lineage_ok["compilation"] == 1
+
+
+def test_lineage_upstream_error_is_502(lineage_ok, monkeypatch):
+    def boom():
+        raise RuntimeError("no clean compilation of main among the latest 20")
+
+    monkeypatch.setattr(monitoring_router.lineage_reader, "fetch_compilation", boom)
+    r = client.get("/monitoring/lineage")
+    assert r.status_code == 502
+    assert "no clean compilation" in r.json()["detail"]
+
+
+def test_table_schema(lineage_ok):
+    r = client.get(f"/monitoring/tables/{_GF}")
+    assert r.status_code == 200
+    assert r.json() == {"id": _GF, "schema": [
+        {"name": "game_id", "type": "INTEGER", "mode": "NULLABLE", "description": None}]}
+    client.get(f"/monitoring/tables/{_GF}")
+    assert lineage_ok["schema"] == 1, "schema is cached per table"
+
+
+def test_table_schema_rejects_ids_outside_lineage(lineage_ok):
+    r = client.get("/monitoring/tables/some-other-project.secrets.passwords")
+    assert r.status_code == 400
+    assert lineage_ok["schema"] == 0
+
+
+def test_table_schema_not_found_and_no_access(lineage_ok, monkeypatch):
+    def missing(table_id):
+        raise _gexc.NotFound("gone")
+
+    monkeypatch.setattr(monitoring_router.lineage_reader, "fetch_table_schema", missing)
+    assert client.get(f"/monitoring/tables/{_GF}").status_code == 404
+
+    def denied(table_id):
+        raise _gexc.Forbidden("nope")
+
+    monkeypatch.setattr(monitoring_router.lineage_reader, "fetch_table_schema", denied)
+    assert client.get(f"/monitoring/tables/{_GF}").status_code == 403

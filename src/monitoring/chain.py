@@ -280,7 +280,7 @@ def build_report(runs: Runs, days: int, now: datetime) -> dict[str, Any]:
         "verdict": verdict(current),
         "today": current.to_dict(),
         "history": [
-            {"day": c.day.isoformat(), "stages": {s.key: s.status for s in c.stages}}
+            {"day": c.day.isoformat(), "stages": {s.key: {"status": s.status, "url": s.url} for s in c.stages}}
             for c in chains
         ],
     }

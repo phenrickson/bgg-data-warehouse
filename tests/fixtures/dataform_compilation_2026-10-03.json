@@ -1,0 +1,826 @@
+{
+  "compilationResultActions": [
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "player_counts",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "best_player_counts",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "categories",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_categories",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "filter_categories",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "designers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_designers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "filter_designers",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "mechanics",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_mechanics",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "filter_mechanics",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "filter_publishers",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "filter_categories",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "filter_mechanics",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "filter_designers",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "filter_options_combined",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "publishers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_publishers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "filter_publishers",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_dropdown_options",
+        "schema": "analytics"
+      }
+    },
+    {
+      "operations": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_similarity_search",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_product_line",
+            "schema": "analytics"
+          }
+        ]
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_neighbors",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_implementations",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_expansions",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_families",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "families",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_features",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_product_line",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "player_count_recommendations",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "fetched_responses",
+            "schema": "raw"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_features",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_predictions",
+            "schema": "predictions"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_game_coordinates",
+            "schema": "predictions"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_profile",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_game_embeddings",
+            "schema": "predictions"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_features",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_complexity_predictions",
+            "schema": "predictions"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_similarity_search",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games",
+            "schema": "core"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "games_active",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_categories",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "categories",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_mechanics",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "mechanics",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_publishers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "publishers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_designers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "designers",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_artists",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "artists",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_families",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "families",
+            "schema": "core"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "games_features",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "player_counts",
+            "schema": "core"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_active",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "VIEW"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "player_count_recommendations",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "similarity_profiles",
+        "schema": "analytics"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "user_collections",
+            "schema": "collections"
+          }
+        ],
+        "relationType": "VIEW"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "user_collections",
+        "schema": "collections"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "artists",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "categories",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "designers",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "families",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_artists",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_categories",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_designers",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_expansions",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_families",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_implementations",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_mechanics",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_publishers",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "games",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "mechanics",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "player_counts",
+        "schema": "core"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "publishers",
+        "schema": "core"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_predictions",
+            "schema": "predictions"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_complexity_predictions",
+            "schema": "predictions"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_game_embeddings",
+            "schema": "predictions"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "bgg_description_embeddings",
+            "schema": "predictions"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "deployed_models",
+        "schema": "monitoring"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "complexity_predictions",
+            "schema": "raw"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "bgg_complexity_predictions",
+        "schema": "predictions"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "description_embeddings",
+            "schema": "raw"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "bgg_description_embeddings",
+        "schema": "predictions"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "game_coordinates",
+            "schema": "raw"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "bgg_game_coordinates",
+        "schema": "predictions"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "game_embeddings",
+            "schema": "raw"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "bgg_game_embeddings",
+        "schema": "predictions"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "ml_predictions_landing",
+            "schema": "raw"
+          },
+          {
+            "database": "bgg-data-warehouse",
+            "name": "game_first_prediction",
+            "schema": "predictions"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "bgg_predictions",
+        "schema": "predictions"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "ml_predictions_landing",
+            "schema": "raw"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_first_prediction",
+        "schema": "predictions"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-predictive-models",
+            "name": "collection_models_registry",
+            "schema": "raw"
+          },
+          {
+            "database": "bgg-predictive-models",
+            "name": "collection_predictions_landing",
+            "schema": "raw"
+          }
+        ],
+        "relationType": "INCREMENTAL_TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "user_collection_predictions",
+        "schema": "predictions"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "fetched_responses",
+        "schema": "raw"
+      }
+    },
+    {
+      "relation": {
+        "dependencyTargets": [
+          {
+            "database": "bgg-data-warehouse",
+            "name": "games_features",
+            "schema": "analytics"
+          }
+        ],
+        "relationType": "TABLE"
+      },
+      "target": {
+        "database": "bgg-data-warehouse",
+        "name": "game_features_hash",
+        "schema": "staging"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "user_collections",
+        "schema": "collections"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "collection_models_registry",
+        "schema": "raw"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "collection_predictions_landing",
+        "schema": "raw"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "complexity_predictions",
+        "schema": "raw"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "description_embeddings",
+        "schema": "raw"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "game_coordinates",
+        "schema": "raw"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "game_embeddings",
+        "schema": "raw"
+      }
+    },
+    {
+      "declaration": {},
+      "target": {
+        "database": "bgg-predictive-models",
+        "name": "ml_predictions_landing",
+        "schema": "raw"
+      }
+    }
+  ]
+}

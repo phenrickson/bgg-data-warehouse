@@ -207,8 +207,9 @@ def test_build_report_shape():
     assert set(report) == {"generated_at", "verdict", "today", "history"}
     assert report["generated_at"] == "2026-10-02T12:00:00Z"
     assert [h["day"] for h in report["history"]] == ["2026-09-30", "2026-10-01", "2026-10-02"]
-    assert report["history"][-1]["stages"]["viewer_artifacts"] == "ok"
-    assert report["history"][0]["stages"]["fetch_thing_ids"] == "fail"  # no runs in fixture
+    assert report["history"][-1]["stages"]["viewer_artifacts"]["status"] == "ok"
+    assert report["history"][-1]["stages"]["viewer_artifacts"]["url"].startswith("https://github.com/")
+    assert report["history"][0]["stages"]["fetch_thing_ids"] == {"status": "fail", "url": None}
     assert report["today"]["day"] == "2026-10-02"
     json.dumps(report)
 
