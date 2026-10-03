@@ -60,9 +60,9 @@ def test_table_status_universes():
 
 def test_deployed_models_returns_every_live_version():
     row = {"model_category": "prediction", "model_type": "hurdle", "model_name": "hurdle-v2026",
-           "model_version": 3, "experiment": "e", "algorithm": None, "games_count": 43564,
+           "model_version": "3", "experiment": "e", "algorithm": None, "games_count": 43564,
            "last_updated": "2026-10-02T07:23:11Z"}
-    old = row | {"model_version": 1, "games_count": 4319, "last_updated": "2026-02-16T08:04:19Z"}
+    old = row | {"model_version": "1", "games_count": 4319, "last_updated": "2026-02-16T08:04:19Z"}
     client = FakeClient([row, old])
     assert pipeline.fetch_deployed_models(client=client) == [row, old]
     sql, _ = client.calls[0]

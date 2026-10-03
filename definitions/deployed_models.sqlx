@@ -11,34 +11,34 @@ WITH p AS (
 ),
 prediction_models AS (
   SELECT 'hurdle' AS model_type, hurdle_model_name AS model_name,
-         CAST(hurdle_model_version AS INT64) AS model_version, hurdle_experiment AS experiment,
+         CAST(hurdle_model_version AS STRING) AS model_version, hurdle_experiment AS experiment,
          COUNT(*) AS games_count, MAX(score_ts) AS last_updated
   FROM p GROUP BY 2, 3, 4
   UNION ALL
-  SELECT 'rating', rating_model_name, CAST(rating_model_version AS INT64), rating_experiment,
+  SELECT 'rating', rating_model_name, CAST(rating_model_version AS STRING), rating_experiment,
          COUNT(*), MAX(score_ts)
   FROM p GROUP BY 2, 3, 4
   UNION ALL
-  SELECT 'users_rated', users_rated_model_name, CAST(users_rated_model_version AS INT64),
+  SELECT 'users_rated', users_rated_model_name, CAST(users_rated_model_version AS STRING),
          users_rated_experiment, COUNT(*), MAX(score_ts)
   FROM p GROUP BY 2, 3, 4
   UNION ALL
-  SELECT 'geek_rating', geek_rating_model_name, CAST(geek_rating_model_version AS INT64),
+  SELECT 'geek_rating', geek_rating_model_name, CAST(geek_rating_model_version AS STRING),
          geek_rating_experiment, COUNT(*), MAX(score_ts)
   FROM p GROUP BY 2, 3, 4
   UNION ALL
-  SELECT 'complexity', complexity_model_name, CAST(complexity_model_version AS INT64),
+  SELECT 'complexity', complexity_model_name, CAST(complexity_model_version AS STRING),
          complexity_experiment, COUNT(*), MAX(score_ts)
   FROM ${ref("bgg_complexity_predictions")} GROUP BY 2, 3, 4
 ),
 
 embedding_models AS (
   SELECT 'game_embedding' AS model_type, embedding_model AS model_name,
-         CAST(embedding_version AS INT64) AS model_version, algorithm,
+         CAST(embedding_version AS STRING) AS model_version, algorithm,
          COUNT(*) AS games_count, MAX(created_ts) AS last_updated
   FROM ${ref("bgg_game_embeddings")} GROUP BY 2, 3, 4
   UNION ALL
-  SELECT 'text_embedding', embedding_model, CAST(embedding_version AS INT64), algorithm,
+  SELECT 'text_embedding', embedding_model, CAST(embedding_version AS STRING), algorithm,
          COUNT(*), MAX(created_ts)
   FROM ${ref("bgg_description_embeddings")} GROUP BY 2, 3, 4
 )

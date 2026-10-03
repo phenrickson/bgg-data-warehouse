@@ -159,7 +159,7 @@ stage 12 `updated_at`).
   columns of `bgg_game_embeddings` and `bgg_description_embeddings`.
 - One row per (`model_type`, `model_name`, `model_version`) still behind at least one
   game, with `games_count` and `last_updated`. Columns: `model_category`, `model_type`,
-  `model_name`, `model_version` (INT64), `experiment`, `algorithm`, `games_count`,
+  `model_name`, `model_version` (STRING, so `3` and `2027.0.1` both fit), `experiment`, `algorithm`, `games_count`,
   `last_updated`. More than one row for a type means an older version still serves some
   games (on 2026-10-02: v1 hurdle, rating and users_rated still served 4,319 games).
 - Ships with the warehouse PR; `dataform.yml` rebuilds it on merge (push to
