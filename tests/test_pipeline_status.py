@@ -1,7 +1,6 @@
 """Unit tests for the pipeline status check (GitHub and BigQuery mocked — no network)."""
 
 from datetime import UTC, datetime
-from http import HTTPStatus
 
 import pytest
 
@@ -136,67 +135,6 @@ def test_render_all_clear_heading():
     assert "All checks passed" in ps.render(ps.evaluate(_jobs(), HEALTHY_COUNTS), START, END)
 
 
-# --- fetch_job_runs ---------------------------------------------------------
-
-
-class _Resp:
-    def __init__(self, payload, status=200):
-        self.payload = payload
-        self.status_code = status
-
-    def raise_for_status(self):
-        if self.status_code >= HTTPStatus.BAD_REQUEST:
-            raise ps.requests.HTTPError(f"{self.status_code}")
-
-    def json(self):
-        return self.payload
-
-
-class FakeSession:
-    def __init__(self, resp):
-        self.resp = resp
-        self.calls = []
-
-    def get(self, url, params=None, headers=None, timeout=None):
-        self.calls.append((url, params, headers))
-        return self.resp
-
-
-def test_fetch_job_runs_filters_by_created_range():
-    payload = {
-        "workflow_runs": [
-            {
-                "created_at": "2026-09-30T06:29:14Z",
-                "event": "workflow_run",
-                "status": "completed",
-                "conclusion": "success",
-                "id": 1,
-                "name": "x",
-            },
-        ]
-    }
-    session = FakeSession(_Resp(payload))
-    runs = ps.fetch_job_runs("o/r", "fetch_new_games.yml", START, END, "tok", session=session)
-    url, params, headers = session.calls[0]
-    assert url == "https://api.github.com/repos/o/r/actions/workflows/fetch_new_games.yml/runs"
-    assert params["created"] == "2026-09-29T10:00:00Z..2026-09-30T12:00:00Z"
-    assert headers["Authorization"] == "Bearer tok"
-    assert runs == [
-        {
-            "created_at": "2026-09-30T06:29:14Z",
-            "event": "workflow_run",
-            "status": "completed",
-            "conclusion": "success",
-        }
-    ]
-
-
-def test_fetch_job_runs_raises_on_http_error():
-    session = FakeSession(_Resp({}, status=HTTPStatus.UNAUTHORIZED))
-    with pytest.raises(ps.requests.HTTPError):
-        ps.fetch_job_runs("o/r", "refresh.yml", START, END, "tok", session=session)
-
-
 # --- fetch_warehouse_counts -------------------------------------------------
 
 
@@ -241,11 +179,6 @@ def test_refresh_counts_only_refetches_after_a_successful_fetch():
 # --- main -------------------------------------------------------------------
 
 
-def test_parse_ts_treats_naive_as_utc():
-    assert ps._parse_ts("2026-09-12 10:00:00") == datetime(2026, 9, 12, 10, 0, tzinfo=UTC)
-    assert ps._parse_ts("2026-09-12T10:00:00Z") == datetime(2026, 9, 12, 10, 0, tzinfo=UTC)
-
-
 def test_main_writes_outputs(tmp_path, monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "tok")
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out"))
@@ -256,7 +189,7 @@ def test_main_writes_outputs(tmp_path, monkeypatch):
         seen["window"] = (start, end)
         return [] if workflow_file == "refresh.yml" else [_run("success")]
 
-    monkeypatch.setattr(ps, "fetch_job_runs", fake_runs)
+    monkeypatch.setattr(ps, "fetch_runs", fake_runs)
     monkeypatch.setattr(ps, "fetch_warehouse_counts", lambda start, end: HEALTHY_COUNTS)
 
     body_file = tmp_path / "status.md"

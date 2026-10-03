@@ -1,128 +1,52 @@
 config {
-  type: "view",
+  type: "table",
   schema: "monitoring",
   name: "deployed_models",
-  description: "Consolidated metadata about deployed ML models, extracted from their output tables."
+  description: "Every model version still behind at least one current prediction or embedding, with how many games it serves. Built from the deduped serving tables (one row per game), not the raw landing history, so 'deployed' means 'serving'. More than one row per model_type = an older version still serves some games."
 }
 
--- Prediction models metadata (from ml_predictions_landing)
-WITH prediction_models AS (
-  SELECT
-    'prediction' AS model_category,
-    'hurdle' AS model_type,
-    hurdle_model_name AS model_name,
-    hurdle_model_version AS model_version,
-    hurdle_experiment AS experiment,
-    CAST(NULL AS STRING) AS algorithm,
-    CAST(NULL AS INT64) AS embedding_dim,
-    CAST(NULL AS STRING) AS document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(score_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
-  GROUP BY hurdle_model_name, hurdle_model_version, hurdle_experiment
-
+-- Prediction models: one name/version/experiment column set per model in bgg_predictions.
+WITH p AS (
+  SELECT * FROM ${ref("bgg_predictions")}
+),
+prediction_models AS (
+  SELECT 'hurdle' AS model_type, hurdle_model_name AS model_name,
+         CAST(hurdle_model_version AS STRING) AS model_version, hurdle_experiment AS experiment,
+         COUNT(*) AS games_count, MAX(score_ts) AS last_updated
+  FROM p GROUP BY 2, 3, 4
   UNION ALL
-
-  SELECT
-    'prediction' AS model_category,
-    'complexity' AS model_type,
-    complexity_model_name AS model_name,
-    complexity_model_version AS model_version,
-    complexity_experiment AS experiment,
-    CAST(NULL AS STRING) AS algorithm,
-    CAST(NULL AS INT64) AS embedding_dim,
-    CAST(NULL AS STRING) AS document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(score_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
-  GROUP BY complexity_model_name, complexity_model_version, complexity_experiment
-
+  SELECT 'rating', rating_model_name, CAST(rating_model_version AS STRING), rating_experiment,
+         COUNT(*), MAX(score_ts)
+  FROM p GROUP BY 2, 3, 4
   UNION ALL
-
-  SELECT
-    'prediction' AS model_category,
-    'rating' AS model_type,
-    rating_model_name AS model_name,
-    rating_model_version AS model_version,
-    rating_experiment AS experiment,
-    CAST(NULL AS STRING) AS algorithm,
-    CAST(NULL AS INT64) AS embedding_dim,
-    CAST(NULL AS STRING) AS document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(score_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
-  GROUP BY rating_model_name, rating_model_version, rating_experiment
-
+  SELECT 'users_rated', users_rated_model_name, CAST(users_rated_model_version AS STRING),
+         users_rated_experiment, COUNT(*), MAX(score_ts)
+  FROM p GROUP BY 2, 3, 4
   UNION ALL
-
-  SELECT
-    'prediction' AS model_category,
-    'users_rated' AS model_type,
-    users_rated_model_name AS model_name,
-    users_rated_model_version AS model_version,
-    users_rated_experiment AS experiment,
-    CAST(NULL AS STRING) AS algorithm,
-    CAST(NULL AS INT64) AS embedding_dim,
-    CAST(NULL AS STRING) AS document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(score_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
-  GROUP BY users_rated_model_name, users_rated_model_version, users_rated_experiment
-
+  SELECT 'geek_rating', geek_rating_model_name, CAST(geek_rating_model_version AS STRING),
+         geek_rating_experiment, COUNT(*), MAX(score_ts)
+  FROM p GROUP BY 2, 3, 4
   UNION ALL
-
-  SELECT
-    'prediction' AS model_category,
-    'geek_rating' AS model_type,
-    geek_rating_model_name AS model_name,
-    geek_rating_model_version AS model_version,
-    geek_rating_experiment AS experiment,
-    CAST(NULL AS STRING) AS algorithm,
-    CAST(NULL AS INT64) AS embedding_dim,
-    CAST(NULL AS STRING) AS document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(score_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
-  GROUP BY geek_rating_model_name, geek_rating_model_version, geek_rating_experiment
+  SELECT 'complexity', complexity_model_name, CAST(complexity_model_version AS STRING),
+         complexity_experiment, COUNT(*), MAX(score_ts)
+  FROM ${ref("bgg_complexity_predictions")} GROUP BY 2, 3, 4
 ),
 
--- Game embeddings metadata
-game_embeddings AS (
-  SELECT
-    'embedding' AS model_category,
-    'game_embedding' AS model_type,
-    embedding_model AS model_name,
-    embedding_version AS model_version,
-    CAST(NULL AS STRING) AS experiment,
-    algorithm,
-    embedding_dim,
-    CAST(NULL AS STRING) AS document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(created_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "game_embeddings")}
-  GROUP BY embedding_model, embedding_version, algorithm, embedding_dim
-),
-
--- Text/description embeddings metadata
-description_embeddings AS (
-  SELECT
-    'embedding' AS model_category,
-    'text_embedding' AS model_type,
-    embedding_model AS model_name,
-    embedding_version AS model_version,
-    CAST(NULL AS STRING) AS experiment,
-    algorithm,
-    embedding_dim,
-    document_method,
-    COUNT(DISTINCT game_id) AS games_count,
-    MAX(created_ts) AS last_updated
-  FROM ${ref("bgg-predictive-models", "raw", "description_embeddings")}
-  GROUP BY embedding_model, embedding_version, algorithm, embedding_dim, document_method
+embedding_models AS (
+  SELECT 'game_embedding' AS model_type, embedding_model AS model_name,
+         CAST(embedding_version AS STRING) AS model_version, algorithm,
+         COUNT(*) AS games_count, MAX(created_ts) AS last_updated
+  FROM ${ref("bgg_game_embeddings")} GROUP BY 2, 3, 4
+  UNION ALL
+  SELECT 'text_embedding', embedding_model, CAST(embedding_version AS STRING), algorithm,
+         COUNT(*), MAX(created_ts)
+  FROM ${ref("bgg_description_embeddings")} GROUP BY 2, 3, 4
 )
 
--- Combine all model metadata
-SELECT * FROM prediction_models
+SELECT 'prediction' AS model_category, model_type, model_name, model_version, experiment,
+       CAST(NULL AS STRING) AS algorithm, games_count, last_updated
+FROM prediction_models
 UNION ALL
-SELECT * FROM game_embeddings
-UNION ALL
-SELECT * FROM description_embeddings
+SELECT 'embedding', model_type, model_name, model_version, CAST(NULL AS STRING), algorithm,
+       games_count, last_updated
+FROM embedding_models

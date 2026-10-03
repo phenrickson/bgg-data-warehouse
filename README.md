@@ -19,7 +19,7 @@ tables for downstream consumers.
    `repository_dispatch` event chain.
 6. **Consume** — the `analytics` and `predictions` datasets are read by downstream
    apps, notably the separate
-   [`bgg-dash-viewer`](https://github.com/phenrickson/bgg-dash-viewer) project. This
+   [`bgg-viewer`](https://github.com/phenrickson/bgg-viewer) project. This
    repo is the warehouse/back end; it does not serve a UI.
 
 For the full picture see [docs/architecture.md](docs/architecture.md) and the
@@ -60,6 +60,11 @@ even if ID discovery failed, so existing games still get refreshed.
 job ran, whether we searched, how many new IDs were found and fetched, and how many
 old games were refreshed. A finding doesn't fail the run: it opens (or comments on)
 an issue labelled `pipeline-status`, which the next clean day closes.
+
+The whole chain (all twelve stages across the three repos), table freshness and
+coverage, and the live model versions are served by the warehouse API at
+`GET /monitoring/pipeline` and shown on bgg-viewer's admin `/admin/pipeline` page. The
+API needs `GH_TOKEN` to read Actions history (locally: `GH_TOKEN=$(gh auth token)`).
 
 Key workflows in `.github/workflows/`:
 
@@ -156,8 +161,9 @@ gcloud run jobs execute bgg-refresh-old-games --region us-central1 --wait
 ## Consumers
 
 This repo is the warehouse itself and does not serve a UI. The consumer-facing app
-is the separate [`bgg-dash-viewer`](https://github.com/phenrickson/bgg-dash-viewer)
-project, which reads the `analytics` and `predictions` datasets. See the ecosystem
+is the separate [`bgg-viewer`](https://github.com/phenrickson/bgg-viewer)
+project, which reads the `analytics` and `predictions` datasets (directly and through
+the warehouse read API in `services/warehouse_api/`). See the ecosystem
 diagram in [docs/architecture/diagrams/](docs/architecture/diagrams/).
 
 ## Documentation

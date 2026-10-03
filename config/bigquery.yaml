@@ -6,6 +6,7 @@ datasets:
   raw: raw
   predictions: predictions
   analytics: analytics
+  monitoring: monitoring
 
 refresh_policy:
   batch_size: 1000
