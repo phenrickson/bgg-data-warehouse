@@ -53,7 +53,7 @@ def test_table_status_universes():
     by_name = {t.name: t for t in pipeline.TABLES}
     assert by_name["predictions.bgg_predictions"].universe == "scoring_games"
     assert by_name["raw.fetched_responses"].universe == "boardgame_ids"
-    assert by_name["predictions.bgg_game_coordinates"].universe == "all_games"
+    assert by_name["predictions.bgg_game_coordinates"].universe == "dated_games"
     assert by_name["raw.thing_ids"].universe is None
     assert by_name["predictions.user_collection_predictions"].count_users
 
@@ -68,3 +68,18 @@ def test_deployed_models_returns_every_live_version():
     sql, _ = client.calls[0]
     assert "monitoring.deployed_models" in sql
     assert "QUALIFY" not in sql, "the table already holds only live versions; keep them all"
+
+
+def test_ml_tables_measure_coverage_against_games_with_a_year():
+    # The embedding, complexity and coordinate services only score games with a
+    # year_published (bgg-predictive-models services/*/main.py), so ~12k yearless
+    # games must not count against them.
+    by_name = {t.name: t for t in pipeline.TABLES}
+    for name in ("predictions.bgg_description_embeddings", "predictions.bgg_complexity_predictions",
+                 "predictions.bgg_game_embeddings", "predictions.bgg_game_coordinates"):
+        assert by_name[name].universe == "dated_games", name
+    client = FakeClient([])
+    pipeline.fetch_table_status(client=client)
+    sql, _ = client.calls[0]
+    assert "dated_games AS (" in sql
+    assert "year_published IS NOT NULL" in sql
