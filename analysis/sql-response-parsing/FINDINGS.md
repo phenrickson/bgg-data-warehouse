@@ -15,3 +15,5 @@
 ### Sample results (5,000 games)
 - `games`: 5,000 core rows vs 5,000 parsed; 0 only-in-core, 0 only-in-parsed — exact match on all 26 columns.
 - `alternate_names`: 2,692 core rows vs 2,692 parsed; 0 only-in-core, 0 only-in-parsed — exact match.
+- Bridge tables (all 8): exact match, identical row counts, no duplicates in core — artists 3,180; categories 12,200; designers 4,937; expansions 1,640; families 8,593; implementations 277; mechanics 12,011; publishers 7,684.
+- Dimensions: compare runs; only meaningful on full population (Task 9). Sample shows a few core names differing from the earliest parsed name (e.g. designer 90564 core "Nathan Jenne" vs earliest parsed "Nate Jenne") — to classify in Task 9.
