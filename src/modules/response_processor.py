@@ -61,92 +61,6 @@ class ResponseProcessor:
         self.raw_responses_table = f"{self.project_id}.{RAW_DATASET}.{RAW_RESPONSES_TABLE}"
         self.processed_games_table = f"{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}"
 
-    def _convert_dataframe_to_list(self, df: Any) -> List[Dict]:
-        """Convert various DataFrame types to a list of dictionaries.
-
-        Args:
-            df: DataFrame-like object to convert
-
-        Returns:
-            List of dictionaries containing game data
-        """
-        try:
-            # Polars DataFrame
-            if hasattr(df, "to_dicts"):
-                return [
-                    {
-                        "record_id": row.get("record_id"),
-                        "game_id": row["game_id"],
-                        "response_data": row["response_data"],
-                        "fetch_timestamp": row.get("fetch_timestamp"),
-                    }
-                    for row in df.to_dicts()
-                ]
-
-            # Pandas DataFrame - check for pandas-specific attributes first
-            if hasattr(df, "to_dict") and hasattr(df, "iterrows"):
-                records = df.to_dict("records")
-                return [
-                    {
-                        "record_id": record.get("record_id"),
-                        "game_id": record["game_id"],
-                        "response_data": record["response_data"],
-                        "fetch_timestamp": record.get("fetch_timestamp"),
-                    }
-                    for record in records
-                ]
-
-            # Mock object handling (for testing)
-            if hasattr(df, "to_dict"):
-                records = df.to_dict()
-                if isinstance(records, dict):
-                    # Handle dictionary-style mock
-                    record_ids = records.get("record_id", [None] * len(records.get("game_id", [])))
-                    game_ids = records.get("game_id", [])
-                    response_data = records.get("response_data", [])
-                    fetch_timestamps = records.get("fetch_timestamp", [None] * len(game_ids))
-                    return [
-                        {
-                            "record_id": record_id,
-                            "game_id": game_id,
-                            "response_data": data,
-                            "fetch_timestamp": ts,
-                        }
-                        for record_id, game_id, data, ts in zip(
-                            record_ids, game_ids, response_data, fetch_timestamps
-                        )
-                    ]
-                elif isinstance(records, list):
-                    # Handle list-style mock
-                    return [
-                        {
-                            "record_id": record.get("record_id"),
-                            "game_id": record.get("game_id"),
-                            "response_data": record.get("response_data"),
-                            "fetch_timestamp": record.get("fetch_timestamp"),
-                        }
-                        for record in records
-                    ]
-
-            # Fallback for other mock objects
-            if hasattr(df, "_data"):
-                return [
-                    {
-                        "record_id": row.get("record_id"),
-                        "game_id": row["game_id"],
-                        "response_data": row["response_data"],
-                        "fetch_timestamp": row.get("fetch_timestamp"),
-                    }
-                    for row in df._data
-                ]
-
-            logger.warning(f"Unsupported DataFrame type: {type(df)}")
-            return []
-
-        except Exception as e:
-            logger.error(f"Failed to convert DataFrame: {e}")
-            return []
-
     def get_unprocessed_count(self) -> int:
         """Get count of remaining unprocessed responses.
 
@@ -173,18 +87,20 @@ class ResponseProcessor:
             logger.error(f"Failed to get unprocessed count: {e}")
             return 0
 
-    def get_unprocessed_responses(self) -> List[Dict]:
-        """Retrieve unprocessed responses from BigQuery.
+    def _select_unprocessed_batch(self) -> List[Dict]:
+        """Pick the next batch of unprocessed responses, without their payloads.
+
+        Reads only narrow columns so the response_data blob is never scanned
+        table-wide; _fetch_response_data loads payloads for this batch alone.
 
         Returns:
-            List of unprocessed game responses
+            Rows with record_id, game_id and fetch_timestamp, in processing order
         """
         query = f"""
         WITH responses AS (
             SELECT
                 r.record_id,
                 r.game_id,
-                r.response_data,
                 r.fetch_timestamp,
                 TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), r.fetch_timestamp, MINUTE) >= 30 as is_old,
                 ROW_NUMBER() OVER (
@@ -199,7 +115,7 @@ class ResponseProcessor:
             WHERE p.record_id IS NULL  -- Not yet processed
                 AND f.fetch_status = 'success'  -- Only process successful fetches
         )
-        SELECT record_id, game_id, response_data, fetch_timestamp
+        SELECT record_id, game_id, fetch_timestamp
         FROM responses
         WHERE row_num = 1  -- Only take the most recent response for each game_id
         ORDER BY
@@ -207,14 +123,73 @@ class ResponseProcessor:
             fetch_timestamp ASC  -- Then oldest to newest within each group
         LIMIT {self.batch_size}
         """
+        return [
+            {
+                "record_id": row["record_id"],
+                "game_id": row["game_id"],
+                "fetch_timestamp": row["fetch_timestamp"],
+            }
+            for row in self.bq_client.query(query).result()
+        ]
 
+    def _fetch_response_data(self, batch: List[Dict]) -> Dict[str, Any]:
+        """Load response_data for a selected batch.
+
+        The fetch_timestamp range prunes raw_responses' daily partitions and the
+        game_id filter its clustering, so this reads the batch, not the table.
+
+        Args:
+            batch: Rows from _select_unprocessed_batch
+
+        Returns:
+            response_data keyed by record_id
+        """
+        query = f"""
+        SELECT record_id, response_data
+        FROM `{self.raw_responses_table}`
+        WHERE record_id IN UNNEST(@record_ids)
+            AND game_id IN UNNEST(@game_ids)
+            AND fetch_timestamp BETWEEN @min_ts AND @max_ts
+        """
+        timestamps = [row["fetch_timestamp"] for row in batch]
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter(
+                    "record_ids", "STRING", [row["record_id"] for row in batch]
+                ),
+                bigquery.ArrayQueryParameter(
+                    "game_ids", "INT64", [row["game_id"] for row in batch]
+                ),
+                bigquery.ScalarQueryParameter("min_ts", "TIMESTAMP", min(timestamps)),
+                bigquery.ScalarQueryParameter("max_ts", "TIMESTAMP", max(timestamps)),
+            ]
+        )
+        result = self.bq_client.query(query, job_config=job_config).result()
+        return {row["record_id"]: row["response_data"] for row in result}
+
+    def get_unprocessed_responses(self) -> List[Dict]:
+        """Retrieve unprocessed responses from BigQuery.
+
+        Returns:
+            List of unprocessed game responses
+        """
         try:
-            # Execute query and get DataFrame
-            query_result = self.bq_client.query(query)
-            df = query_result.to_dataframe()
+            batch = self._select_unprocessed_batch()
+            if not batch:
+                return []
 
-            # Convert DataFrame to list using helper method
-            rows = self._convert_dataframe_to_list(df)
+            response_data = self._fetch_response_data(batch)
+
+            rows = []
+            for row in batch:
+                if row["record_id"] not in response_data:
+                    # Left unmarked so the next batch selects it again
+                    logger.error(
+                        f"Response {row['record_id']} for game {row['game_id']} "
+                        "was selected but not found when fetching response_data"
+                    )
+                    continue
+                rows.append({**row, "response_data": response_data[row["record_id"]]})
 
             # Process each row and parse response_data
             responses = []

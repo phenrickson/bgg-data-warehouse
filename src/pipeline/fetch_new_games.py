@@ -51,7 +51,7 @@ def main() -> None:
     logger.info("Step 2: Processing responses into normalized tables")
     logger.info("=" * 80)
     response_processor = ResponseProcessor(
-        batch_size=100,
+        batch_size=1000,
     )
     responses_processed = response_processor.run()
 
