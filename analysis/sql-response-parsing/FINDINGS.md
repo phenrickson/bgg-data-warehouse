@@ -21,3 +21,4 @@
 - `player_counts`: 29,160 vs 29,160 — exact match.
 - `language_dependence`: 23,945 core vs 23,930 parsed; 0 distinct differences — the 15 extra core rows are duplicates (see Differences).
 - `suggested_ages`: 56,376 vs 56,376 — exact match.
+- `rankings`: 1,746 vs 1,746 — exact match.
