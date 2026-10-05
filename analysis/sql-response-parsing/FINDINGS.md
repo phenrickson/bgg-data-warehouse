@@ -14,3 +14,4 @@
 
 ### Sample results (5,000 games)
 - `games`: 5,000 core rows vs 5,000 parsed; 0 only-in-core, 0 only-in-parsed — exact match on all 26 columns.
+- `alternate_names`: 2,692 core rows vs 2,692 parsed; 0 only-in-core, 0 only-in-parsed — exact match.
