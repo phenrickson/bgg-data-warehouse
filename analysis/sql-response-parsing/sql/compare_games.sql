@@ -1,10 +1,7 @@
 -- Today's snapshot (core_inputs records) vs the latest core.games row per game.
 WITH core_latest AS (
-  SELECT * EXCEPT(rn) FROM (
-    SELECT g.*, ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY load_timestamp DESC) rn
-    FROM `bgg-data-warehouse.core.games` g
-    WHERE game_id IN (SELECT game_id FROM `bgg-data-warehouse.scratch_parsing.parsed_games`)
-  ) WHERE rn = 1
+  SELECT * FROM `bgg-data-warehouse.scratch_parsing.core_games_latest`
+  WHERE game_id IN (SELECT game_id FROM `bgg-data-warehouse.scratch_parsing.parsed_games`)
 ),
 parsed AS (
   SELECT p.* EXCEPT(record_id, item_type)

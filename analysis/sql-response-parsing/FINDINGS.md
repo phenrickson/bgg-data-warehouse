@@ -10,3 +10,7 @@
 ## Differences
 | Table | Difference | Count | Classification | Resolution |
 |---|---|---|---|---|
+| games | Game 1's `core.games` row was built from a response `processed_responses` records as `failed` (2025-06-16, older processor); `core_inputs` originally required `success` and excluded it | 3 games warehouse-wide (141,561 vs 141,558 in `core_inputs`) | Processor behaviour | `core_inputs` matches on timestamp; status is only a tie-breaker. Recorded, not reproduced. |
+
+### Sample results (5,000 games)
+- `games`: 5,000 core rows vs 5,000 parsed; 0 only-in-core, 0 only-in-parsed — exact match on all 26 columns.
