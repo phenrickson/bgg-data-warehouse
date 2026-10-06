@@ -27,6 +27,10 @@ STAGE_ONE_DUE = time(7, 0)
 # Real hand-offs take seconds to a few minutes.
 HANDOFF = timedelta(minutes=30)
 
+# The first chain day run by the new daily chain (core → ML Pipeline → publish). Earlier
+# days ran the twelve-stage chain and are shown as one "old chain" cell, not re-judged.
+CUTOVER = date(2026, 10, 7)
+
 Runs = dict[tuple[str, str], list[dict[str, Any]]]
 # ML Pipeline run id -> that run's jobs (``github.fetch_jobs``).
 Jobs = dict[int, list[dict[str, Any]]]
@@ -82,6 +86,10 @@ STAGE_BY_KEY = {s.key: s for s in STAGES}
 
 # Every (repo, workflow file) to list runs for. Dataform appears once.
 SOURCES = sorted({s.source for s in STAGES + OFF_CHAIN})
+
+# The old chain's last Dataform pass: its result is that day's result.
+OLD_FINAL = Stage("old_final", "Old chain", WAREHOUSE, "dataform.yml", "warehouse",
+                  title="embeddings_complete")
 
 
 @dataclass(frozen=True)
@@ -355,16 +363,50 @@ def history_start(now: datetime, days: int) -> datetime:
     return window(chain_day(now) - timedelta(days=days - 1))[0]
 
 
-def build_report(runs: Runs, days: int, now: datetime) -> dict[str, Any]:
+def _old_day(runs: Runs, day: date) -> dict[str, Any]:
+    run = _latest(OLD_FINAL, runs, day)
+    return {"day": day.isoformat(), "era": "old",
+            "status": _own_status(run) if run else "not_reached",
+            "url": run.get("html_url") if run else None}
+
+
+def _cell(s: StageStatus) -> dict[str, Any]:
+    cell: dict[str, Any] = {"status": s.status, "url": s.url}
+    if s.key == "ml_pipeline":
+        side = [x for x in (s.steps or []) if x.branch == "side"]
+        cell["side"] = ("fail" if any(x.status == "fail" for x in side) else "ok") if side else None
+    return cell
+
+
+def build_report(runs: Runs, days: int, now: datetime, jobs: Jobs | None = None,
+                 cutover: date = CUTOVER) -> dict[str, Any]:
     today = chain_day(now)
-    chains = [build_chain(runs, today - timedelta(days=d), now) for d in range(days - 1, -1, -1)]
+    chains = [build_chain(runs, today - timedelta(days=d), now, jobs)
+              for d in range(days - 1, -1, -1)]
     current = chains[-1]
     return {
         "generated_at": iso(now),
         "verdict": verdict(current),
         "today": current.to_dict(),
         "history": [
-            {"day": c.day.isoformat(), "stages": {s.key: {"status": s.status, "url": s.url} for s in c.stages}}
+            _old_day(runs, c.day) if c.day < cutover else
+            {"day": c.day.isoformat(), "era": "new", "stages": {s.key: _cell(s) for s in c.stages}}
             for c in chains
         ],
     }
+
+
+def jobs_needed(runs: Runs, days: int, now: datetime, cutover: date = CUTOVER) -> list[int]:
+    """ML Pipeline runs whose jobs can change the answer: today's, and any history run that
+    didn't succeed (a successful run means every step, side branch included, succeeded)."""
+    today = chain_day(now)
+    ml = STAGE_BY_KEY["ml_pipeline"]
+    ids = []
+    for d in range(days - 1, -1, -1):
+        day = today - timedelta(days=d)
+        run = _latest(ml, runs, day) if day >= cutover else None
+        if run is None or run.get("id") is None:
+            continue
+        if day == today or run.get("conclusion") != "success":
+            ids.append(run["id"])
+    return ids

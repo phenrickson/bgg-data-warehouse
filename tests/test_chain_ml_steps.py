@@ -170,3 +170,61 @@ def test_running_ml_pipeline_is_running():
               started_at=None, completed_at=None)
     c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: js})
     assert _stage(c, "ml_pipeline").status == "running"
+
+
+def test_days_before_cutover_are_one_old_chain_cell():
+    runs = _runs()
+    dataform = chain.STAGE_BY_KEY["dataform_core"].source
+    runs[dataform].append({
+        "id": 7, "created_at": "2026-10-01T07:11:17Z", "updated_at": "2026-10-01T07:12:40Z",
+        "event": "repository_dispatch", "status": "completed", "conclusion": "success",
+        "display_title": "embeddings_complete", "html_url": "https://github.com/x/old",
+    })
+    report = chain.build_report(runs, 3, NOON, cutover=date(2026, 10, 2))
+    assert report["history"][0] == {"day": "2026-09-30", "era": "old", "status": "not_reached",
+                                    "url": None}
+    assert report["history"][1] == {"day": "2026-10-01", "era": "old", "status": "ok",
+                                    "url": "https://github.com/x/old"}
+    assert report["history"][2]["era"] == "new"
+
+
+def test_cutover_day_is_new_era():
+    report = chain.build_report({}, 2, datetime(2026, 10, 7, 12, 0, tzinfo=UTC))
+    assert [(h["day"], h["era"]) for h in report["history"]] == [
+        ("2026-10-06", "old"), ("2026-10-07", "new"),
+    ]
+
+
+def test_side_mark_on_history_cell():
+    js = _set(jobs(), "collection-scoring / score-collections", conclusion="failure")
+    report = chain.build_report(_runs(), 1, NOON, jobs={ML_ID: js}, cutover=date(2026, 9, 1))
+    cell = report["history"][-1]["stages"]["ml_pipeline"]
+    assert cell["status"] == "ok"
+    assert cell["side"] == "fail"
+
+
+def test_side_is_null_without_jobs():
+    report = chain.build_report(_runs(), 1, NOON, cutover=date(2026, 9, 1))
+    assert report["history"][-1]["stages"]["ml_pipeline"]["side"] is None
+    assert "side" not in report["history"][-1]["stages"]["dataform_core"]
+
+
+def test_jobs_needed_is_todays_run():
+    assert chain.jobs_needed(_runs(), 3, NOON, cutover=date(2026, 9, 1)) == [ML_ID]
+
+
+def test_successful_history_run_needs_no_jobs():
+    tomorrow = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+    assert chain.jobs_needed(_runs(), 3, tomorrow, cutover=date(2026, 9, 1)) == []
+
+
+def test_failed_history_run_needs_jobs():
+    runs = _runs()
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    runs[ml.source][0]["conclusion"] = "failure"
+    tomorrow = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+    assert chain.jobs_needed(runs, 3, tomorrow, cutover=date(2026, 9, 1)) == [ML_ID]
+
+
+def test_no_jobs_needed_before_cutover():
+    assert chain.jobs_needed(_runs(), 3, NOON, cutover=date(2026, 10, 7)) == []
