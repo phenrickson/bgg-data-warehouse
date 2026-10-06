@@ -28,6 +28,8 @@ STAGE_ONE_DUE = time(7, 0)
 HANDOFF = timedelta(minutes=30)
 
 Runs = dict[tuple[str, str], list[dict[str, Any]]]
+# ML Pipeline run id -> that run's jobs (``github.fetch_jobs``).
+Jobs = dict[int, list[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,8 @@ class StageStatus:
     event: str | None = None
     title: str | None = None
     note: str | None = None
+    # ML Pipeline only, when its jobs were fetched: the jobs grouped into steps.
+    steps: list[StepStatus] | None = None
 
 
 @dataclass
@@ -243,11 +247,25 @@ def _status(stage: Stage, run: dict[str, Any] | None, status: str,
     )
 
 
+def _ml_status(run: dict[str, Any], steps: list[StepStatus]) -> tuple[str, str | None]:
+    """ML Pipeline from its main-line steps; the run's own conclusion is ignored, since a
+    collection failure fails the run without blocking publish."""
+    main = [s for s in steps if s.branch == "main"]
+    failed = next((s for s in main if s.status == "fail"), None)
+    if failed:
+        return "fail", f"failed at {failed.label}"
+    if next(s for s in main if s.key == "ml_complete").status == "ok":
+        return "ok", None
+    if run.get("status") == "completed":
+        return "fail", "ml_complete not sent"
+    return "running", None
+
+
 def _handed_off(run: dict[str, Any], nxt: dict[str, Any] | None) -> bool:
     return nxt is not None and parse_ts(nxt["created_at"]) >= parse_ts(run["created_at"])
 
 
-def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
+def build_chain(runs: Runs, day: date, now: datetime, jobs: Jobs | None = None) -> Chain:
     by_key: dict[str, dict[str, Any] | None] = {}
     for s in STAGES:
         by_key[s.key] = _pick(s, runs, day, by_key)
@@ -256,6 +274,7 @@ def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
     blocked = False  # an upstream stage failed, stalled or never ran
     for i, (stage, run) in enumerate(zip(STAGES, picked)):
         note = None
+        steps = None
         if run is None:
             if i == 0:
                 due = datetime.combine(day, STAGE_ONE_DUE, tzinfo=UTC)
@@ -263,12 +282,18 @@ def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
             else:
                 status = "not_reached" if blocked else "pending"
         else:
-            status = _own_status(run)
+            if stage.key == "ml_pipeline" and jobs and run.get("id") in jobs:
+                steps = group_steps(jobs[run["id"]])
+                status, note = _ml_status(run, steps)
+            else:
+                status = _own_status(run)
             is_last = i == len(STAGES) - 1
             if status == "ok" and not is_last and not _handed_off(run, picked[i + 1]):
                 if now - parse_ts(run["updated_at"]) > HANDOFF:
                     status, note = "warn", "No hand-off: the next stage never started"
-        stages.append(_status(stage, run, status, note))
+        stage_status = _status(stage, run, status, note)
+        stage_status.steps = steps
+        stages.append(stage_status)
         blocked = blocked or status in ("fail", "warn", "not_reached")
 
     return Chain(day, stages, _off_chain(runs, day))
@@ -294,10 +319,13 @@ def verdict(c: Chain) -> dict[str, Any]:
     bad = next((s for s in c.stages if s.status != "ok"), None)
     if bad is None:
         first, last = c.stages[0], c.stages[-1]
+        ml = next((s for s in c.stages if s.key == "ml_pipeline"), None)
+        side = next((s for s in (ml.steps or []) if s.branch == "side" and s.status == "fail"),
+                    None) if ml else None
         return {
-            "status": "ok",
-            "stage": None,
-            "headline": "Chain completed",
+            "status": "warn" if side else "ok",
+            "stage": side.key if side else None,
+            "headline": f"Chain completed · {side.label} failed" if side else "Chain completed",
             "since": last.finished,
             "duration_minutes": _minutes(first.started, last.finished),
         }
@@ -308,7 +336,9 @@ def verdict(c: Chain) -> dict[str, Any]:
     elif bad.status == "warn":
         status, headline = "warn", f"Stalled after {bad.label}"
     elif bad.status == "fail":
-        status, headline = "fail", f"{bad.label} failed"
+        status = "fail"
+        headline = (f"{bad.label} {bad.note}" if bad.note and bad.note.startswith("failed at ")
+                    else f"{bad.label} failed")
     else:  # not_reached as the first non-ok stage: a skipped run
         status, headline = "warn", f"{bad.label} never ran"
     return {

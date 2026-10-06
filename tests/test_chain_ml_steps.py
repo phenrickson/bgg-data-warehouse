@@ -88,3 +88,85 @@ def test_unstarted_step_is_pending():
 def test_step_status_is_json_ready():
     from dataclasses import asdict
     json.dumps([asdict(s) for s in chain.group_steps(jobs())])
+
+
+from datetime import UTC, date, datetime
+
+DAY = date(2026, 10, 2)
+NOON = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+ML_ID = 4242
+
+
+def _runs():
+    """The 2026-10-02 chain fixture (shared with test_chain.py), with an id on its ML
+    Pipeline run."""
+    raw = json.loads((Path(__file__).parent / "fixtures/chain_runs_daily_2026-10-02.json").read_text())
+    runs = {tuple(k.rsplit("/", 1)): v for k, v in raw.items()}
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    for r in runs[ml.source]:
+        r["id"] = ML_ID
+    return runs
+
+
+def _stage(c, key):
+    return next(s for s in c.stages if s.key == key)
+
+
+def test_ml_stage_carries_steps_when_jobs_given():
+    c = chain.build_chain(_runs(), DAY, NOON, jobs={ML_ID: jobs()})
+    ml = _stage(c, "ml_pipeline")
+    assert ml.status == "ok"
+    assert [s.key for s in ml.steps][:2] == ["text_embeddings", "complexity"]
+
+
+def test_ml_stage_without_jobs_keeps_run_rule():
+    c = chain.build_chain(_runs(), DAY, NOON)
+    assert _stage(c, "ml_pipeline").steps is None
+    assert _stage(c, "ml_pipeline").status == "ok"
+
+
+def test_main_line_failure_names_the_step():
+    runs = _runs()
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    runs[ml.source][0]["conclusion"] = "failure"
+    js = _set(jobs(), "complexity / score-complexity", conclusion="failure")
+    for name in ("scoring / score-simulations", "game-embeddings / generate-embeddings",
+                 "game-embeddings / generate-coordinates", "notify-warehouse"):
+        js = _set(js, name, conclusion="skipped")
+    c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: js})
+    assert _stage(c, "ml_pipeline").status == "fail"
+    assert _stage(c, "ml_pipeline").note == "failed at Complexity"
+    assert chain.verdict(c)["headline"] == "ML Pipeline failed at Complexity"
+
+
+def test_collection_failure_is_a_side_warning_not_a_chain_failure():
+    runs = _runs()
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    runs[ml.source][0]["conclusion"] = "failure"  # GitHub fails the whole run
+    js = _set(jobs(), "collection-scoring / score-collections", conclusion="failure")
+    c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: js})
+    assert _stage(c, "ml_pipeline").status == "ok"
+    assert _stage(c, "dataform_publish").status == "ok"
+    v = chain.verdict(c)
+    assert v["status"] == "warn"
+    assert v["stage"] == "collection_scoring"
+    assert v["headline"] == "Chain completed · Collection scoring failed"
+    assert v["duration_minutes"] is not None
+
+
+def test_completed_run_without_ml_complete_is_fail():
+    runs = _runs()
+    js = [j for j in jobs() if j["name"] != "notify-warehouse"]
+    c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: js})
+    assert _stage(c, "ml_pipeline").status == "fail"
+    assert _stage(c, "ml_pipeline").note == "ml_complete not sent"
+
+
+def test_running_ml_pipeline_is_running():
+    runs = _runs()
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    runs[ml.source][0].update(status="in_progress", conclusion=None)
+    js = _set(jobs(), "notify-warehouse", status="waiting", conclusion=None,
+              started_at=None, completed_at=None)
+    c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: js})
+    assert _stage(c, "ml_pipeline").status == "running"

@@ -157,6 +157,7 @@ def test_to_dict_is_json_ready():
     assert d["day"] == "2026-10-02"
     assert set(d["stages"][0]) == {
         "key", "label", "lane", "status", "started", "finished", "url", "event", "title", "note",
+        "steps",
     }
 
 
