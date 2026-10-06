@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0](https://github.com/phenrickson/bgg-data-warehouse/compare/v0.6.7...v0.7.0) (2026-10-06)
+
+
+### Features
+
+* **ci:** core-only run after fetch, retire ML callbacks; monitor the new chain ([#147](https://github.com/phenrickson/bgg-data-warehouse/issues/147)) ([e63c498](https://github.com/phenrickson/bgg-data-warehouse/commit/e63c498226a0d25c328d055888cf49d35504975d))
+* **ci:** pipeline status replaces the scrape heartbeat ([#133](https://github.com/phenrickson/bgg-data-warehouse/issues/133)) ([ceb89c9](https://github.com/phenrickson/bgg-data-warehouse/commit/ceb89c908b2be18b547809ce4a2e63a0b503a9a0))
+* **dataform:** core/publish pieces, ml_complete handler and dev run ([#146](https://github.com/phenrickson/bgg-data-warehouse/issues/146)) ([51a16f5](https://github.com/phenrickson/bgg-data-warehouse/commit/51a16f54d9ec6b1fb754bca8c53fc5d4f400965d))
+* **dataform:** materialize the similarity profiles as a table ([#130](https://github.com/phenrickson/bgg-data-warehouse/issues/130)) ([650a176](https://github.com/phenrickson/bgg-data-warehouse/commit/650a17658aced3a2b0a00fc7b5713eb9b1accf55))
+* **deploy:** mount GH_TOKEN on the warehouse API ([#137](https://github.com/phenrickson/bgg-data-warehouse/issues/137)) ([6e16016](https://github.com/phenrickson/bgg-data-warehouse/commit/6e160161126063a99a60499cda4d18e8dcd92881))
+* **monitor:** Dataform lineage endpoints for the admin Lineage view ([#139](https://github.com/phenrickson/bgg-data-warehouse/issues/139)) ([e128b09](https://github.com/phenrickson/bgg-data-warehouse/commit/e128b0983b10ca13f1b7bcdc91b9c13d1af9f99c))
+* **monitor:** GET /monitoring/pipeline for the whole daily chain ([#135](https://github.com/phenrickson/bgg-data-warehouse/issues/135)) ([83e10cb](https://github.com/phenrickson/bgg-data-warehouse/commit/83e10cb0f9852f92754cb910e17412be296ae768))
+* **probe:** look below the ID frontier (daily 500, Sunday 5,000) ([#127](https://github.com/phenrickson/bgg-data-warehouse/issues/127)) ([82408f2](https://github.com/phenrickson/bgg-data-warehouse/commit/82408f27d5f34e4a237bcd5042972acdf8c71b94))
+* **release:** release-please for warehouse releases ([#148](https://github.com/phenrickson/bgg-data-warehouse/issues/148)) ([37a9158](https://github.com/phenrickson/bgg-data-warehouse/commit/37a9158775a349f65b939c5ae05535e2abbcbd2a))
+* **terraform:** secret for the warehouse API's GitHub token ([#136](https://github.com/phenrickson/bgg-data-warehouse/issues/136)) ([7f71673](https://github.com/phenrickson/bgg-data-warehouse/commit/7f71673115ef74cefe4b2feaa06b8065c6a0bcdc))
+
+
+### Bug Fixes
+
+* **api:** strip BGG_API_TOKEN so a pasted trailing newline doesn't break the header ([#121](https://github.com/phenrickson/bgg-data-warehouse/issues/121)) ([6afaa4d](https://github.com/phenrickson/bgg-data-warehouse/commit/6afaa4d5b1bb10294b73a192d89ac039b5c5bded))
+* **ci:** chain Refresh Old Games off Fetch New Games so Dataform cascades once a day ([#123](https://github.com/phenrickson/bgg-data-warehouse/issues/123)) ([a5919e1](https://github.com/phenrickson/bgg-data-warehouse/commit/a5919e1fcc4eb6b2d080b5e7ee8c080cefe6e0ab))
+* **ci:** heartbeat checks Fetch New Games, which every discovery path reaches ([#118](https://github.com/phenrickson/bgg-data-warehouse/issues/118)) ([2aafb40](https://github.com/phenrickson/bgg-data-warehouse/commit/2aafb40939dcb0f53d48cb466e7d891f4232b2da))
+* **ci:** let Fetch Games accept more than one game id ([#120](https://github.com/phenrickson/bgg-data-warehouse/issues/120)) ([fefdc21](https://github.com/phenrickson/bgg-data-warehouse/commit/fefdc21fa0f66bd75baa93dfa445e4d90a9ef14d))
+* **ci:** redeploy the warehouse API when any module it imports changes ([#150](https://github.com/phenrickson/bgg-data-warehouse/issues/150)) ([d15eba7](https://github.com/phenrickson/bgg-data-warehouse/commit/d15eba7b3428f313b15eee36b8b3ea07451102a7))
+* **ci:** take max run time over a window in the scrape heartbeat ([#128](https://github.com/phenrickson/bgg-data-warehouse/issues/128)) ([e4649ae](https://github.com/phenrickson/bgg-data-warehouse/commit/e4649ae4f89971de4352cc541b4c90ade669e21e))
+* **monitor:** measure ML table coverage against games with a year_published ([#138](https://github.com/phenrickson/bgg-data-warehouse/issues/138)) ([4b04de4](https://github.com/phenrickson/bgg-data-warehouse/commit/4b04de42f410cf6b2585adf0f4c3052e8de9a7d5))
+* **processor:** keep negative (BC) publication years instead of nulling them ([#119](https://github.com/phenrickson/bgg-data-warehouse/issues/119)) ([23b912e](https://github.com/phenrickson/bgg-data-warehouse/commit/23b912eee1fd3c768fabcec66f7eab2c8bebdc7a))
+
+
+### Performance
+
+* **api:** slim the image and compile bytecode to cut cold-start imports ([#132](https://github.com/phenrickson/bgg-data-warehouse/issues/132)) ([7489ba3](https://github.com/phenrickson/bgg-data-warehouse/commit/7489ba31c122206ab7ac468b57b64c81ed0fc63c))
+* **processor:** select the batch without response_data; batches of 1000 ([#140](https://github.com/phenrickson/bgg-data-warehouse/issues/140)) ([9a17cf1](https://github.com/phenrickson/bgg-data-warehouse/commit/9a17cf1ff86b8d1c25bdfc5c37fe993c4c23da28))
+
 ## [0.6.7] - 2026-09-14
 
 ### Added
