@@ -58,16 +58,20 @@ def test_table_status_universes():
     assert by_name["predictions.user_collection_predictions"].count_users
 
 
-def test_deployed_models_returns_every_live_version():
-    row = {"model_category": "prediction", "model_type": "hurdle", "model_name": "hurdle-v2026",
-           "model_version": "3", "experiment": "e", "algorithm": None, "games_count": 43564,
-           "last_updated": "2026-10-02T07:23:11Z"}
-    old = row | {"model_version": "1", "games_count": 4319, "last_updated": "2026-02-16T08:04:19Z"}
-    client = FakeClient([row, old])
-    assert pipeline.fetch_deployed_models(client=client) == [row, old]
+def test_deployed_models_is_one_row_per_step():
+    game = {"model_category": "game", "model_type": "hurdle", "username": None,
+            "model_name": "hurdle-v2026", "model_version": "3",
+            "last_scored": "2026-10-06T16:14:00Z", "games_scored": 512, "job_id": "j1"}
+    coll = {"model_category": "collection", "model_type": "own", "username": "phenrickson",
+            "model_name": "collection-own", "model_version": "2",
+            "last_scored": "2026-10-06T16:19:00Z", "games_scored": 40000, "job_id": "j2"}
+    client = FakeClient([coll, game])
+    assert pipeline.fetch_deployed_models(client=client) == [coll, game]
     sql, _ = client.calls[0]
     assert "monitoring.deployed_models" in sql
-    assert "QUALIFY" not in sql, "the table already holds only live versions; keep them all"
+    for col in ("username", "last_scored", "games_scored", "job_id"):
+        assert col in sql
+    assert "ORDER BY model_category, model_type, username" in sql
 
 
 def test_ml_tables_measure_coverage_against_games_with_a_year():

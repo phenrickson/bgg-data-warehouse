@@ -84,14 +84,14 @@ import requests  # noqa: E402 — appended section; only these tests need it
 
 TABLE_ROW = {"table": "raw.thing_ids", "last_updated": "2026-10-02T06:30:00Z", "games": 5,
              "covered": None, "universe": None, "users": None}
-MODEL_ROW = {"model_category": "prediction", "model_type": "hurdle", "model_name": "hurdle-v2026",
-             "model_version": "3", "experiment": "e", "algorithm": None, "games_count": 1,
-             "last_updated": "2026-10-02T07:23:11Z"}
+MODEL_ROW = {"model_category": "game", "model_type": "hurdle", "username": None,
+             "model_name": "hurdle-v2026", "model_version": "3",
+             "last_scored": "2026-10-06T16:14:00Z", "games_scored": 512, "job_id": "j1"}
 
 
 @pytest.fixture
 def pipeline_ok(monkeypatch):
-    calls = {"runs": 0, "tables": 0}
+    calls = {"runs": 0, "tables": 0, "jobs": []}
 
     def fake_runs(repo, workflow_file, start, end, token):
         calls["runs"] += 1
@@ -107,6 +107,12 @@ def pipeline_ok(monkeypatch):
     monkeypatch.setattr(monitoring_router.pipeline_reader, "fetch_table_status", fake_tables)
     monkeypatch.setattr(monitoring_router.pipeline_reader, "fetch_deployed_models",
                         lambda: [MODEL_ROW])
+
+    def fake_jobs(repo, run_id, token):
+        calls["jobs"].append((repo, run_id))
+        return []
+
+    monkeypatch.setattr(monitoring_router, "fetch_jobs", fake_jobs)
     return calls
 
 
@@ -154,6 +160,26 @@ def test_pipeline_upstream_error_is_502(pipeline_ok, monkeypatch):
 def test_pipeline_rejects_out_of_range_days(pipeline_ok):
     assert client.get("/monitoring/pipeline?days=0").status_code == 422
     assert client.get("/monitoring/pipeline?days=31").status_code == 422
+
+
+def test_pipeline_fetches_jobs_for_the_runs_chain_names(pipeline_ok, monkeypatch):
+    monkeypatch.setattr(monitoring_router.chain, "jobs_needed", lambda runs, days, now: [11, 12])
+    r = client.get("/monitoring/pipeline?days=3")
+    assert r.status_code == 200
+    assert sorted(pipeline_ok["jobs"]) == [
+        ("phenrickson/bgg-predictive-models", 11), ("phenrickson/bgg-predictive-models", 12),
+    ]
+
+
+def test_pipeline_job_fetch_error_is_502(pipeline_ok, monkeypatch):
+    monkeypatch.setattr(monitoring_router.chain, "jobs_needed", lambda runs, days, now: [11])
+
+    def boom(*args, **kwargs):
+        raise requests.HTTPError("404 Not Found")
+
+    monkeypatch.setattr(monitoring_router, "fetch_jobs", boom)
+    r = client.get("/monitoring/pipeline")
+    assert r.status_code == 502
 
 
 # --- /monitoring/lineage and /monitoring/tables/{id} ------------------------

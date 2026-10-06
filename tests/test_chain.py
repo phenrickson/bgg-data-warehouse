@@ -157,6 +157,7 @@ def test_to_dict_is_json_ready():
     assert d["day"] == "2026-10-02"
     assert set(d["stages"][0]) == {
         "key", "label", "lane", "status", "started", "finished", "url", "event", "title", "note",
+        "steps",
     }
 
 
@@ -205,13 +206,14 @@ def test_history_start_covers_the_requested_days():
 
 
 def test_build_report_shape():
-    report = chain.build_report(_fixture(), 3, NOON)
+    report = chain.build_report(_fixture(), 3, NOON, cutover=date(2026, 9, 1))
     assert set(report) == {"generated_at", "verdict", "today", "history"}
     assert report["generated_at"] == "2026-10-02T12:00:00Z"
     assert [h["day"] for h in report["history"]] == ["2026-09-30", "2026-10-01", "2026-10-02"]
     assert report["history"][-1]["stages"]["viewer_artifacts"]["status"] == "ok"
     assert report["history"][-1]["stages"]["viewer_artifacts"]["url"].startswith("https://github.com/")
     assert report["history"][0]["stages"]["fetch_thing_ids"] == {"status": "fail", "url": None}
+    assert all(h["era"] == "new" for h in report["history"])
     assert report["today"]["day"] == "2026-10-02"
     json.dumps(report)
 

@@ -27,7 +27,13 @@ STAGE_ONE_DUE = time(7, 0)
 # Real hand-offs take seconds to a few minutes.
 HANDOFF = timedelta(minutes=30)
 
+# The first chain day run by the new daily chain (core → ML Pipeline → publish). Earlier
+# days ran the twelve-stage chain and are shown as one "old chain" cell, not re-judged.
+CUTOVER = date(2026, 10, 7)
+
 Runs = dict[tuple[str, str], list[dict[str, Any]]]
+# ML Pipeline run id -> that run's jobs (``github.fetch_jobs``).
+Jobs = dict[int, list[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,10 @@ class Stage:
     # the window. Pass 1's trigger (`workflow_run`) also fires after a manual Run Fetch
     # Games, which would otherwise replace the chain's own pass 1.
     after: str | None = None
+    # Only runs of this branch (a run with no head_branch, as in older fixtures, matches).
+    # ML Pipeline sends ml_complete only from main, so a test dispatch from a feature
+    # branch isn't the chain's run.
+    branch: str | None = None
 
     @property
     def source(self) -> tuple[str, str]:
@@ -55,6 +65,8 @@ class Stage:
             return False
         if self.title and run.get("display_title") != self.title:
             return False
+        if self.branch and run.get("head_branch") not in (None, self.branch):
+            return False
         return True
 
 
@@ -66,7 +78,7 @@ STAGES = [
           event="workflow_run", after="refresh_old_games"),
     # Collection scoring and reports run as jobs inside this run. Their failure fails
     # the run (visible here) without blocking publish.
-    Stage("ml_pipeline", "ML Pipeline", MODELS, "ml-pipeline.yml", "models"),
+    Stage("ml_pipeline", "ML Pipeline", MODELS, "ml-pipeline.yml", "models", branch="main"),
     Stage("dataform_publish", "Dataform · publish", WAREHOUSE, "dataform.yml", "warehouse",
           title="ml_complete"),
     Stage("viewer_artifacts", "Viewer Artifacts", VIEWER, "viewer-artifacts.yml", "viewer"),
@@ -81,6 +93,84 @@ STAGE_BY_KEY = {s.key: s for s in STAGES}
 # Every (repo, workflow file) to list runs for. Dataform appears once.
 SOURCES = sorted({s.source for s in STAGES + OFF_CHAIN})
 
+# The old chain's last Dataform pass: its result is that day's result.
+OLD_FINAL = Stage("old_final", "Old chain", WAREHOUSE, "dataform.yml", "warehouse",
+                  title="embeddings_complete")
+
+
+@dataclass(frozen=True)
+class MLStep:
+    key: str
+    label: str
+    prefix: str
+    branch: str  # "main" gates publish; "side" is visible but never blocks it
+
+    def owns(self, job_name: str) -> bool:
+        return job_name == self.prefix or job_name.startswith(f"{self.prefix} / ")
+
+
+# The ML Pipeline run's jobs, grouped by their caller job (the text before " / ").
+ML_STEPS = [
+    MLStep("text_embeddings", "Text embeddings", "text-embeddings", "main"),
+    MLStep("complexity", "Complexity", "complexity", "main"),
+    MLStep("scoring", "Scoring", "scoring", "main"),
+    MLStep("game_embeddings", "Game embeddings", "game-embeddings", "main"),
+    MLStep("ml_complete", "ml_complete sent", "notify-warehouse", "main"),
+    MLStep("collection_scoring", "Collection scoring", "collection-scoring", "side"),
+    MLStep("collection_reports", "Collection reports", "collection-reports", "side"),
+]
+
+_FAILED = ("failure", "cancelled", "timed_out")
+_NOT_STARTED = ("queued", "waiting", "pending", "requested")
+
+
+@dataclass
+class StepStatus:
+    key: str
+    label: str
+    branch: str
+    status: str
+    started: str | None = None
+    finished: str | None = None
+    url: str | None = None
+    note: str | None = None
+
+
+def _step_status(js: list[dict[str, Any]]) -> tuple[str, str | None]:
+    """Rules top to bottom, first match wins (spec: Status rules → ML Pipeline steps)."""
+    if not js:
+        return "pending", None
+    if any(j.get("conclusion") in _FAILED for j in js):
+        return "fail", None
+    if any(j.get("status") == "in_progress" for j in js):
+        return "running", None
+    if all(j.get("status") in _NOT_STARTED for j in js):
+        return "pending", None
+    if any(j.get("status") != "completed" for j in js):
+        return "running", None
+    if all(j.get("conclusion") == "skipped" for j in js):
+        return "not_reached", None
+    skipped = [j["name"].split(" / ", 1)[-1] for j in js if j.get("conclusion") == "skipped"]
+    return "ok", ", ".join(f"{n} skipped" for n in skipped) or None
+
+
+def group_steps(jobs: list[dict[str, Any]]) -> list[StepStatus]:
+    """The ML Pipeline run's jobs as steps, in ``ML_STEPS`` order."""
+    out = []
+    for step in ML_STEPS:
+        js = [j for j in jobs if step.owns(j["name"])]
+        status, note = _step_status(js)
+        starts = [j["started_at"] for j in js if j.get("started_at")]
+        done = js and all(j.get("status") == "completed" for j in js)
+        out.append(StepStatus(
+            step.key, step.label, step.branch, status,
+            started=min(starts, key=parse_ts) if starts else None,
+            finished=max((j["completed_at"] for j in js), key=parse_ts) if done else None,
+            url=js[0].get("html_url") if js else None,
+            note=note,
+        ))
+    return out
+
 
 @dataclass
 class StageStatus:
@@ -94,6 +184,8 @@ class StageStatus:
     event: str | None = None
     title: str | None = None
     note: str | None = None
+    # ML Pipeline only, when its jobs were fetched: the jobs grouped into steps.
+    steps: list[StepStatus] | None = None
 
 
 @dataclass
@@ -169,11 +261,25 @@ def _status(stage: Stage, run: dict[str, Any] | None, status: str,
     )
 
 
+def _ml_status(run: dict[str, Any], steps: list[StepStatus]) -> tuple[str, str | None]:
+    """ML Pipeline from its main-line steps; the run's own conclusion is ignored, since a
+    collection failure fails the run without blocking publish."""
+    main = [s for s in steps if s.branch == "main"]
+    failed = next((s for s in main if s.status == "fail"), None)
+    if failed:
+        return "fail", f"failed at {failed.label}"
+    if next(s for s in main if s.key == "ml_complete").status == "ok":
+        return "ok", None
+    if run.get("status") == "completed":
+        return "fail", "ml_complete not sent"
+    return "running", None
+
+
 def _handed_off(run: dict[str, Any], nxt: dict[str, Any] | None) -> bool:
     return nxt is not None and parse_ts(nxt["created_at"]) >= parse_ts(run["created_at"])
 
 
-def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
+def build_chain(runs: Runs, day: date, now: datetime, jobs: Jobs | None = None) -> Chain:
     by_key: dict[str, dict[str, Any] | None] = {}
     for s in STAGES:
         by_key[s.key] = _pick(s, runs, day, by_key)
@@ -182,6 +288,7 @@ def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
     blocked = False  # an upstream stage failed, stalled or never ran
     for i, (stage, run) in enumerate(zip(STAGES, picked)):
         note = None
+        steps = None
         if run is None:
             if i == 0:
                 due = datetime.combine(day, STAGE_ONE_DUE, tzinfo=UTC)
@@ -189,12 +296,18 @@ def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
             else:
                 status = "not_reached" if blocked else "pending"
         else:
-            status = _own_status(run)
+            if stage.key == "ml_pipeline" and jobs and jobs.get(run.get("id")):
+                steps = group_steps(jobs[run["id"]])
+                status, note = _ml_status(run, steps)
+            else:
+                status = _own_status(run)
             is_last = i == len(STAGES) - 1
             if status == "ok" and not is_last and not _handed_off(run, picked[i + 1]):
                 if now - parse_ts(run["updated_at"]) > HANDOFF:
                     status, note = "warn", "No hand-off: the next stage never started"
-        stages.append(_status(stage, run, status, note))
+        stage_status = _status(stage, run, status, note)
+        stage_status.steps = steps
+        stages.append(stage_status)
         blocked = blocked or status in ("fail", "warn", "not_reached")
 
     return Chain(day, stages, _off_chain(runs, day))
@@ -220,10 +333,13 @@ def verdict(c: Chain) -> dict[str, Any]:
     bad = next((s for s in c.stages if s.status != "ok"), None)
     if bad is None:
         first, last = c.stages[0], c.stages[-1]
+        ml = next((s for s in c.stages if s.key == "ml_pipeline"), None)
+        side = next((s for s in (ml.steps or []) if s.branch == "side" and s.status == "fail"),
+                    None) if ml else None
         return {
-            "status": "ok",
-            "stage": None,
-            "headline": "Chain completed",
+            "status": "warn" if side else "ok",
+            "stage": side.key if side else None,
+            "headline": f"Chain completed · {side.label} failed" if side else "Chain completed",
             "since": last.finished,
             "duration_minutes": _minutes(first.started, last.finished),
         }
@@ -234,7 +350,9 @@ def verdict(c: Chain) -> dict[str, Any]:
     elif bad.status == "warn":
         status, headline = "warn", f"Stalled after {bad.label}"
     elif bad.status == "fail":
-        status, headline = "fail", f"{bad.label} failed"
+        status = "fail"
+        headline = (f"{bad.label} {bad.note}" if bad.note and bad.note.startswith("failed at ")
+                    else f"{bad.label} failed")
     else:  # not_reached as the first non-ok stage: a skipped run
         status, headline = "warn", f"{bad.label} never ran"
     return {
@@ -251,16 +369,50 @@ def history_start(now: datetime, days: int) -> datetime:
     return window(chain_day(now) - timedelta(days=days - 1))[0]
 
 
-def build_report(runs: Runs, days: int, now: datetime) -> dict[str, Any]:
+def _old_day(runs: Runs, day: date) -> dict[str, Any]:
+    run = _latest(OLD_FINAL, runs, day)
+    return {"day": day.isoformat(), "era": "old",
+            "status": _own_status(run) if run else "not_reached",
+            "url": run.get("html_url") if run else None}
+
+
+def _cell(s: StageStatus) -> dict[str, Any]:
+    cell: dict[str, Any] = {"status": s.status, "url": s.url}
+    if s.key == "ml_pipeline":
+        side = [x for x in (s.steps or []) if x.branch == "side"]
+        cell["side"] = ("fail" if any(x.status == "fail" for x in side) else "ok") if side else None
+    return cell
+
+
+def build_report(runs: Runs, days: int, now: datetime, jobs: Jobs | None = None,
+                 cutover: date = CUTOVER) -> dict[str, Any]:
     today = chain_day(now)
-    chains = [build_chain(runs, today - timedelta(days=d), now) for d in range(days - 1, -1, -1)]
+    chains = [build_chain(runs, today - timedelta(days=d), now, jobs)
+              for d in range(days - 1, -1, -1)]
     current = chains[-1]
     return {
         "generated_at": iso(now),
         "verdict": verdict(current),
         "today": current.to_dict(),
         "history": [
-            {"day": c.day.isoformat(), "stages": {s.key: {"status": s.status, "url": s.url} for s in c.stages}}
+            _old_day(runs, c.day) if c.day < cutover else
+            {"day": c.day.isoformat(), "era": "new", "stages": {s.key: _cell(s) for s in c.stages}}
             for c in chains
         ],
     }
+
+
+def jobs_needed(runs: Runs, days: int, now: datetime, cutover: date = CUTOVER) -> list[int]:
+    """ML Pipeline runs whose jobs can change the answer: today's, and any history run that
+    didn't succeed (a successful run means every step, side branch included, succeeded)."""
+    today = chain_day(now)
+    ml = STAGE_BY_KEY["ml_pipeline"]
+    ids = []
+    for d in range(days - 1, -1, -1):
+        day = today - timedelta(days=d)
+        run = _latest(ml, runs, day) if day >= cutover else None
+        if run is None or run.get("id") is None:
+            continue
+        if day == today or run.get("conclusion") != "success":
+            ids.append(run["id"])
+    return ids

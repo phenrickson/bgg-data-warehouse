@@ -113,13 +113,13 @@ def fetch_table_status(client: Optional[bigquery.Client] = None) -> list[dict[st
 
 
 def fetch_deployed_models(client: Optional[bigquery.Client] = None) -> list[dict[str, Any]]:
-    """Every model version still serving games, from the ``monitoring.deployed_models``
-    table (a dozen rows; Dataform rebuilds it on each pass from the serving tables)."""
+    """The model each scoring step used in its latest run (one row per step, per user and
+    outcome for collections), from ``monitoring.deployed_models``."""
     client = client or get_client()
     sql = f"""
-        SELECT model_category, model_type, model_name, model_version, experiment,
-               algorithm, games_count, last_updated
+        SELECT model_category, model_type, username, model_name, model_version,
+               last_scored, games_scored, job_id
         FROM `{dataset('monitoring')}.deployed_models`
-        ORDER BY model_category, model_type, last_updated DESC
+        ORDER BY model_category, model_type, username
     """
     return [dict(r) for r in client.query(sql).result()]
