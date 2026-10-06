@@ -1,5 +1,6 @@
 config {
   type: "incremental",
+  tags: ["publish"],
   schema: "predictions",
   name: "user_collection_predictions",
   uniqueKey: ["username", "game_id", "outcome"]

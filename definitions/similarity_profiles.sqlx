@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["publish"],
   schema: "analytics",
   name: "similarity_profiles",
   description: "One row per similarity profile, materialized from includes/similarity_profiles.js — the same parameters game_neighbors inlines. Lets the read API's live, pool-scoped similarity search join the profiles instead of copying them into Python, so the precomputed and live paths cannot drift."

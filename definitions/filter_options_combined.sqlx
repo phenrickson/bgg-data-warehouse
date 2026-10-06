@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["core"],
   name: "filter_options_combined"
 }
 
