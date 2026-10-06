@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["publish"],
   schema: "monitoring",
   name: "deployed_models",
   description: "Every model version still behind at least one current prediction or embedding, with how many games it serves. Built from the deduped serving tables (one row per game), not the raw landing history, so 'deployed' means 'serving'. More than one row per model_type = an older version still serves some games."

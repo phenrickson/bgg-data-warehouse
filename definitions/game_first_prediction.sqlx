@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["publish"],
   schema: "predictions",
   name: "game_first_prediction"
 }

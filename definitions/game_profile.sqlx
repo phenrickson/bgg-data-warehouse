@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["publish"],
   schema: "analytics",
   name: "game_profile",
   description: "One row per game holding everything the read API serves for a single game: features, per-player-count recommendations (nested), latest predictions, embedding coordinates and fetch provenance. Collapses a six-query fan-out (~361MB) into one clustered lookup (~10MB) — BigQuery bills a 10MB minimum PER TABLE referenced, so fewer tables matters more than fewer columns. Similar games are deliberately NOT here: neighbour semantics are source-relative and user-tunable (see game_neighbors).",
