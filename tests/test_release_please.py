@@ -23,7 +23,8 @@ def test_config():
     assert pkg["release-type"] == "python"
     assert pkg["package-name"] == "bgg-data-warehouse"
     assert pkg["include-component-in-tag"] is False
-    assert config["last-release-sha"] == "6079bd7e2cfe1ce1287da3412717b01f382c62c2"
+    # v0.7.0 is a GitHub Release, so release-please finds the last release itself.
+    assert "last-release-sha" not in config
 
 
 def test_uv_lock_is_bumped_by_the_toml_updater():
