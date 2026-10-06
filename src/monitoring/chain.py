@@ -49,6 +49,10 @@ class Stage:
     # the window. Pass 1's trigger (`workflow_run`) also fires after a manual Run Fetch
     # Games, which would otherwise replace the chain's own pass 1.
     after: str | None = None
+    # Only runs of this branch (a run with no head_branch, as in older fixtures, matches).
+    # ML Pipeline sends ml_complete only from main, so a test dispatch from a feature
+    # branch isn't the chain's run.
+    branch: str | None = None
 
     @property
     def source(self) -> tuple[str, str]:
@@ -61,6 +65,8 @@ class Stage:
             return False
         if self.title and run.get("display_title") != self.title:
             return False
+        if self.branch and run.get("head_branch") not in (None, self.branch):
+            return False
         return True
 
 
@@ -72,7 +78,7 @@ STAGES = [
           event="workflow_run", after="refresh_old_games"),
     # Collection scoring and reports run as jobs inside this run. Their failure fails
     # the run (visible here) without blocking publish.
-    Stage("ml_pipeline", "ML Pipeline", MODELS, "ml-pipeline.yml", "models"),
+    Stage("ml_pipeline", "ML Pipeline", MODELS, "ml-pipeline.yml", "models", branch="main"),
     Stage("dataform_publish", "Dataform · publish", WAREHOUSE, "dataform.yml", "warehouse",
           title="ml_complete"),
     Stage("viewer_artifacts", "Viewer Artifacts", VIEWER, "viewer-artifacts.yml", "viewer"),
@@ -290,7 +296,7 @@ def build_chain(runs: Runs, day: date, now: datetime, jobs: Jobs | None = None) 
             else:
                 status = "not_reached" if blocked else "pending"
         else:
-            if stage.key == "ml_pipeline" and jobs and run.get("id") in jobs:
+            if stage.key == "ml_pipeline" and jobs and jobs.get(run.get("id")):
                 steps = group_steps(jobs[run["id"]])
                 status, note = _ml_status(run, steps)
             else:

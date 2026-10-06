@@ -6,14 +6,16 @@ config {
   description: "The model each scoring step used in its latest run within 30 days: one row per step, and per user and outcome for collections. Read from the landing tables each service writes, so it shows what ran, not what is configured. A step with no rows in 30 days has no row."
 }
 
--- Each source is pruned to 30 days on its partition column, then cut to its newest job.
+-- Each source is pruned to 30 days on its partition column, then cut to its latest run:
+-- every row within 3 hours of its newest. A run spans many job_ids (the services mint one
+-- per batch request), so job_id is just one of the run's jobs, for tracing.
 WITH preds AS (
   SELECT * FROM ${ref("bgg-predictive-models", "raw", "ml_predictions_landing")}
   WHERE score_ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
 ),
 preds_latest AS (
   SELECT * FROM preds
-  WHERE job_id = (SELECT job_id FROM preds ORDER BY score_ts DESC LIMIT 1)
+  WHERE score_ts >= (SELECT MAX(score_ts) FROM preds) - INTERVAL 3 HOUR
 ),
 complexity AS (
   SELECT * FROM ${ref("bgg-predictive-models", "raw", "complexity_predictions")}
@@ -21,7 +23,7 @@ complexity AS (
 ),
 complexity_latest AS (
   SELECT * FROM complexity
-  WHERE job_id = (SELECT job_id FROM complexity ORDER BY score_ts DESC LIMIT 1)
+  WHERE score_ts >= (SELECT MAX(score_ts) FROM complexity) - INTERVAL 3 HOUR
 ),
 text_emb AS (
   SELECT job_id, embedding_model, embedding_version, created_ts
@@ -30,7 +32,7 @@ text_emb AS (
 ),
 text_emb_latest AS (
   SELECT * FROM text_emb
-  WHERE job_id = (SELECT job_id FROM text_emb ORDER BY created_ts DESC LIMIT 1)
+  WHERE created_ts >= (SELECT MAX(created_ts) FROM text_emb) - INTERVAL 3 HOUR
 ),
 game_emb AS (
   SELECT job_id, embedding_model, embedding_version, created_ts
@@ -39,17 +41,17 @@ game_emb AS (
 ),
 game_emb_latest AS (
   SELECT * FROM game_emb
-  WHERE job_id = (SELECT job_id FROM game_emb ORDER BY created_ts DESC LIMIT 1)
+  WHERE created_ts >= (SELECT MAX(created_ts) FROM game_emb) - INTERVAL 3 HOUR
 ),
 coll AS (
   SELECT job_id, username, outcome, model_name, model_version, score_ts
   FROM ${ref("bgg-predictive-models", "raw", "collection_predictions_landing")}
   WHERE score_ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
 ),
-coll_latest_job AS (
-  SELECT username, outcome, job_id FROM coll
+coll_latest AS (
+  SELECT * FROM coll
   WHERE TRUE
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY username, outcome ORDER BY score_ts DESC) = 1
+  QUALIFY score_ts >= MAX(score_ts) OVER (PARTITION BY username, outcome) - INTERVAL 3 HOUR
 )
 
 SELECT 'game' AS model_category, 'hurdle' AS model_type, CAST(NULL AS STRING) AS username,
@@ -81,7 +83,6 @@ SELECT 'game', 'game_embedding', NULL, embedding_model, CAST(embedding_version A
        MAX(created_ts), COUNT(*), ANY_VALUE(job_id)
 FROM game_emb_latest GROUP BY 4, 5
 UNION ALL
-SELECT 'collection', c.outcome, c.username, c.model_name, CAST(c.model_version AS STRING),
-       MAX(c.score_ts), COUNT(*), c.job_id
-FROM coll c JOIN coll_latest_job USING (username, outcome, job_id)
-GROUP BY c.outcome, c.username, c.model_name, c.model_version, c.job_id
+SELECT 'collection', outcome, username, model_name, CAST(model_version AS STRING),
+       MAX(score_ts), COUNT(*), ANY_VALUE(job_id)
+FROM coll_latest GROUP BY outcome, username, model_name, model_version

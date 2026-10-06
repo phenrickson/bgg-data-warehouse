@@ -20,6 +20,7 @@ RAW_RUN = {
     "conclusion": "success",
     "display_title": "complexity_complete",
     "html_url": "https://github.com/o/r/actions/runs/1",
+    "head_branch": "main",
 }
 
 
@@ -57,7 +58,7 @@ def test_fetch_runs_filters_by_created_range_and_keeps_run_fields():
     assert runs == [{k: RAW_RUN[k] for k in github.RUN_FIELDS}]
     assert set(github.RUN_FIELDS) == {
         "id", "created_at", "updated_at", "event", "status", "conclusion", "display_title",
-        "html_url",
+        "html_url", "head_branch",
     }
 
 

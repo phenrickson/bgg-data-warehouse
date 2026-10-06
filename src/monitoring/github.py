@@ -19,6 +19,7 @@ RUN_FIELDS = (
     "conclusion",
     "display_title",
     "html_url",
+    "head_branch",
 )
 
 

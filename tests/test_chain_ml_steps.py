@@ -228,3 +228,31 @@ def test_failed_history_run_needs_jobs():
 
 def test_no_jobs_needed_before_cutover():
     assert chain.jobs_needed(_runs(), 3, NOON, cutover=date(2026, 10, 7)) == []
+
+
+def test_branch_dispatched_ml_run_does_not_replace_the_chain_run():
+    """A test dispatch from a feature branch never sends ml_complete; it isn't the chain's."""
+    runs = _runs()
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    chain_run = runs[ml.source][0]
+    chain_run["head_branch"] = "main"
+    runs[ml.source].append(dict(chain_run, id=99, head_branch="feat/x",
+                                created_at="2026-10-02T11:00:00Z", conclusion="success"))
+    c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: jobs(), 99: []})
+    assert _stage(c, "ml_pipeline").status == "ok"
+    assert chain.jobs_needed(runs, 1, NOON, cutover=date(2026, 9, 1)) == [ML_ID]
+
+
+def test_completed_run_with_no_jobs_falls_back_to_run_rule():
+    runs = _runs()
+    c = chain.build_chain(runs, DAY, NOON, jobs={ML_ID: []})
+    assert _stage(c, "ml_pipeline").status == "ok"
+    assert _stage(c, "ml_pipeline").steps is None
+
+
+def test_deployed_models_counts_the_whole_run_not_its_last_batch():
+    """Services mint a job_id per batch request, so one run spans many job_ids."""
+    from pathlib import Path as _P
+    sql = (_P(__file__).parents[1] / "definitions/deployed_models.sqlx").read_text()
+    assert "LIMIT 1)" not in sql
+    assert sql.count("INTERVAL 3 HOUR") == 5
