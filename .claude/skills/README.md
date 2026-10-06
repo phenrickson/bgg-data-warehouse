@@ -31,7 +31,7 @@ and the residential-IP home-box scrape).
 | Skill | Use it when |
 |-------|-------------|
 | [`dataform-model`](dataform-model/SKILL.md) | Adding/modifying a Dataform model — source decl, config/incremental, `ref()` wiring, validation |
-| [`release`](release/SKILL.md) | Cutting a release — SemVer bump + Keep-a-Changelog entry → auto-tag via the Tag Release workflow |
+| [`release`](release/SKILL.md) | Cutting a release — review and merge release-please's release PR (version, changelog, tag) |
 
 > Built-in Claude Code skills (`/code-review`, `/simplify`, `/verify`, `/run`, …) are
 > intentionally not duplicated here.

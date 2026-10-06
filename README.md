@@ -83,7 +83,7 @@ Key workflows in `.github/workflows/`:
 | `pipeline_status.yml` | daily `0 12 * * *`, or manual (`window_hours` input) |
 | `deploy.yml` | push to `main` (builds & deploys the Cloud Run jobs) |
 | `terraform.yml` | push/PR to `terraform/**` |
-| `tag-release.yml` | push to `main` touching `pyproject.toml` |
+| `release-please.yml` | push to `main` (keeps the release PR open; merging it tags `vX.Y.Z`) |
 
 ### Data model (BigQuery)
 
@@ -182,9 +182,9 @@ diagram in [docs/architecture/diagrams/](docs/architecture/diagrams/).
 
 ## Versioning
 
-Semantic versioning. Bumping `version` in `pyproject.toml` on `main` triggers the
-`Tag Release` workflow to create the matching `vX.Y.Z` tag. See
-[CHANGELOG.md](CHANGELOG.md).
+Semantic versioning, cut by release-please from conventional commit subjects. Every
+push to `main` updates an open release PR; merging it bumps the version, writes the
+[CHANGELOG.md](CHANGELOG.md) section, and creates the `vX.Y.Z` tag and GitHub Release.
 
 ## License
 
