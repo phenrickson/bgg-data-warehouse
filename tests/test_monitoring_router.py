@@ -116,7 +116,7 @@ def test_pipeline_report_shape(pipeline_ok):
     body = r.json()
     assert set(body) == {"generated_at", "verdict", "today", "history", "tables", "models"}
     assert len(body["history"]) == 3
-    assert len(body["today"]["stages"]) == 12
+    assert len(body["today"]["stages"]) == len(monitoring_router.chain.STAGES) == 7
     assert body["tables"] == [TABLE_ROW]
     assert body["models"] == [MODEL_ROW]
     assert pipeline_ok["runs"] == len(monitoring_router.chain.SOURCES)

@@ -1,4 +1,10 @@
-"""Unit tests for the chain status rules (fixture of real runs + synthetic days)."""
+"""Unit tests for the chain status rules.
+
+The fixture is the real 2026-10-02 day re-shaped to the daily pipeline (one core
+Dataform run, one ML Pipeline run, one publish run): the core run is that day's
+`workflow_run` pass, ML Pipeline spans text embeddings to game embeddings, and
+publish is the old final pass retitled `ml_complete`.
+"""
 
 import copy
 import json
@@ -13,7 +19,7 @@ BY_KEY = {s.key: s for s in chain.STAGES + chain.OFF_CHAIN}
 
 
 def _fixture() -> chain.Runs:
-    raw = json.loads((Path(__file__).parent / "fixtures/chain_runs_2026-10-02.json").read_text())
+    raw = json.loads((Path(__file__).parent / "fixtures/chain_runs_daily_2026-10-02.json").read_text())
     return {tuple(k.rsplit("/", 1)): v for k, v in raw.items()}
 
 
@@ -38,43 +44,48 @@ def _statuses(c: chain.Chain) -> dict[str, str]:
 def test_fixture_day_is_all_ok():
     c = chain.build_chain(_fixture(), DAY, NOON)
     assert set(_statuses(c).values()) == {"ok"}
-    assert {s.key: s.status for s in c.off_chain} == {
-        "collection_scoring": "ok", "collection_reports": "ok", "pipeline_status": "ok",
-    }
+    assert [s.key for s in c.stages] == [
+        "fetch_thing_ids", "fetch_new_games", "refresh_old_games", "dataform_core",
+        "ml_pipeline", "dataform_publish", "viewer_artifacts",
+    ]
+    assert {s.key: s.status for s in c.off_chain} == {"pipeline_status": "ok"}
     first = c.stages[0]
     assert first.started and first.finished and first.url.startswith("https://github.com/")
 
 
-def test_four_dataform_passes_are_told_apart():
+def test_core_and_publish_runs_are_told_apart():
     c = chain.build_chain(_fixture(), DAY, NOON)
     titles = {s.key: s.title for s in c.stages if s.key.startswith("dataform_")}
-    assert titles == {
-        "dataform_1": "Run Dataform",
-        "dataform_2": "text_embeddings_complete",
-        "dataform_3": "complexity_complete",
-        "dataform_4": "embeddings_complete",
-    }
+    assert titles == {"dataform_core": "Run Dataform", "dataform_publish": "ml_complete"}
 
 
-def test_stall_after_pass_3():
-    runs = _drop(_fixture(), "score_games", "game_embeddings", "dataform_4", "viewer_artifacts")
+def test_stall_after_ml_pipeline():
+    runs = _drop(_fixture(), "dataform_publish", "viewer_artifacts")
     c = chain.build_chain(runs, DAY, NOON)
     s = _statuses(c)
-    assert s["dataform_3"] == "warn"
-    assert next(x for x in c.stages if x.key == "dataform_3").note.startswith("No hand-off")
-    assert [s[k] for k in ("score_games", "game_embeddings", "dataform_4", "viewer_artifacts")] == [
-        "not_reached"] * 4
-    assert next(x for x in c.off_chain if x.key == "collection_scoring").status == "warn"
+    assert s["ml_pipeline"] == "warn"
+    assert next(x for x in c.stages if x.key == "ml_pipeline").note.startswith("No hand-off")
+    assert [s[k] for k in ("dataform_publish", "viewer_artifacts")] == ["not_reached"] * 2
 
 
 def test_handoff_window_not_closed_is_pending():
-    runs = _drop(_fixture(), "score_games", "game_embeddings", "dataform_4", "viewer_artifacts")
-    finished = chain.parse_ts(_run_of(runs, "dataform_3")["updated_at"])
+    runs = _drop(_fixture(), "dataform_publish", "viewer_artifacts")
+    finished = chain.parse_ts(_run_of(runs, "ml_pipeline")["updated_at"])
     c = chain.build_chain(runs, DAY, finished.replace(second=0) + chain.HANDOFF / 3)
     s = _statuses(c)
-    assert s["dataform_3"] == "ok"
-    assert s["score_games"] == "pending"
+    assert s["ml_pipeline"] == "ok"
+    assert s["dataform_publish"] == "pending"
     assert s["viewer_artifacts"] == "pending"
+
+
+def test_ml_pipeline_failure_stays_visible_when_publish_ran():
+    # A collection-scoring failure fails the ML Pipeline run but does not block publish.
+    runs = copy.deepcopy(_fixture())
+    _run_of(runs, "ml_pipeline")["conclusion"] = "failure"
+    c = chain.build_chain(runs, DAY, NOON)
+    s = _statuses(c)
+    assert (s["ml_pipeline"], s["dataform_publish"], s["viewer_artifacts"]) == ("fail", "ok", "ok")
+    assert chain.verdict(c)["headline"] == "ML Pipeline failed"
 
 
 def test_in_progress_run_is_running():
@@ -122,21 +133,12 @@ def test_before_stage_one_due_is_pending():
 
 def test_next_run_before_this_one_is_not_a_handoff():
     runs = copy.deepcopy(_fixture())
-    p3 = _run_of(runs, "dataform_3")
-    scoring = _run_of(runs, "score_games")
-    scoring["created_at"] = "2026-10-02T05:10:00Z"  # an earlier, unrelated run
+    core = _run_of(runs, "dataform_core")
+    ml = _run_of(runs, "ml_pipeline")
+    ml["created_at"] = "2026-10-02T05:10:00Z"  # an earlier, unrelated run
     c = chain.build_chain(runs, DAY, NOON)
-    assert chain.parse_ts(scoring["created_at"]) < chain.parse_ts(p3["created_at"])
-    assert _statuses(c)["dataform_3"] == "warn"
-
-
-def test_collection_scoring_before_final_pass_is_warn():
-    runs = copy.deepcopy(_fixture())
-    _run_of(runs, "collection_scoring")["created_at"] = "2026-10-02T07:00:00Z"
-    c = chain.build_chain(runs, DAY, NOON)
-    scoring = next(s for s in c.off_chain if s.key == "collection_scoring")
-    assert scoring.status == "warn"
-    assert scoring.note == "Ran before today's predictions landed"
+    assert chain.parse_ts(ml["created_at"]) < chain.parse_ts(core["created_at"])
+    assert _statuses(c)["dataform_core"] == "warn"
 
 
 def test_runs_outside_the_window_are_ignored():
@@ -167,23 +169,23 @@ def test_verdict_ok_reports_duration():
 
 
 def test_verdict_names_the_stall():
-    runs = _drop(_fixture(), "score_games", "game_embeddings", "dataform_4", "viewer_artifacts")
+    runs = _drop(_fixture(), "dataform_publish", "viewer_artifacts")
     v = chain.verdict(chain.build_chain(runs, DAY, NOON))
     assert v == {
         "status": "warn",
-        "stage": "dataform_3",
-        "headline": "Stalled after Dataform · pass 3",
-        "since": _run_of(runs, "dataform_3")["updated_at"],
+        "stage": "ml_pipeline",
+        "headline": "Stalled after ML Pipeline",
+        "since": _run_of(runs, "ml_pipeline")["updated_at"],
         "duration_minutes": None,
     }
 
 
 def test_verdict_failed_stage():
     runs = copy.deepcopy(_fixture())
-    _run_of(runs, "score_complexity")["conclusion"] = "failure"
+    _run_of(runs, "dataform_core")["conclusion"] = "failure"
     v = chain.verdict(chain.build_chain(runs, DAY, NOON))
     assert (v["status"], v["stage"], v["headline"]) == (
-        "fail", "score_complexity", "Score Complexity failed")
+        "fail", "dataform_core", "Dataform · core failed")
 
 
 def test_verdict_waiting_before_the_chain_starts():
@@ -216,33 +218,24 @@ def test_build_report_shape():
 
 def _later_dataform_run(runs: chain.Runs, conclusion: str = "success", **overrides) -> None:
     """A `workflow_run` Dataform run after the chain, e.g. set off by a manual Run Fetch Games."""
-    src = BY_KEY["dataform_1"].source
-    runs[src].append(dict(_run_of(runs, "dataform_1"), created_at="2026-10-02T14:00:00Z",
+    src = BY_KEY["dataform_core"].source
+    runs[src].append(dict(_run_of(runs, "dataform_core"), created_at="2026-10-02T14:00:00Z",
                           updated_at="2026-10-02T14:02:00Z", conclusion=conclusion,
                           html_url="https://github.com/x/later", **overrides))
 
 
-def test_later_fetch_games_dataform_run_does_not_replace_pass_1():
+def test_later_fetch_games_dataform_run_does_not_replace_core():
     runs = copy.deepcopy(_fixture())
-    real = _run_of(runs, "dataform_1")["html_url"]
+    real = _run_of(runs, "dataform_core")["html_url"]
     _later_dataform_run(runs)
     c = chain.build_chain(runs, DAY, datetime(2026, 10, 2, 15, 0, tzinfo=UTC))
-    p1 = next(s for s in c.stages if s.key == "dataform_1")
-    assert (p1.status, p1.url) == ("ok", real)
+    core = next(s for s in c.stages if s.key == "dataform_core")
+    assert (core.status, core.url) == ("ok", real)
     assert chain.verdict(c)["status"] == "ok"
 
 
-def test_later_skipped_fetch_games_dataform_run_does_not_replace_pass_1():
+def test_later_skipped_fetch_games_dataform_run_does_not_replace_core():
     runs = copy.deepcopy(_fixture())
     _later_dataform_run(runs, conclusion="skipped")
     c = chain.build_chain(runs, DAY, datetime(2026, 10, 2, 15, 0, tzinfo=UTC))
-    assert _statuses(c)["dataform_1"] == "ok"
-
-
-def test_collection_scoring_compares_against_first_final_pass():
-    runs = copy.deepcopy(_fixture())
-    p4 = BY_KEY["dataform_4"]
-    runs[p4.source].append(dict(_run_of(runs, "dataform_4"), created_at="2026-10-02T14:30:00Z",
-                                updated_at="2026-10-02T14:32:00Z"))
-    c = chain.build_chain(runs, DAY, datetime(2026, 10, 2, 15, 0, tzinfo=UTC))
-    assert next(s for s in c.off_chain if s.key == "collection_scoring").status == "ok"
+    assert _statuses(c)["dataform_core"] == "ok"
