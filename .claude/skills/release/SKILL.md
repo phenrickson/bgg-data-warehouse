@@ -28,8 +28,10 @@ To force a version, add a `Release-As: X.Y.Z` footer to a commit on `main`.
 
 ## Steps
 
-1. **Check the release PR.** Read its changelog section. `docs` and `chore` commits are
-   hidden; `ci` commits appear under **Operations**.
+1. **Check the release PR.** Read its changelog section. Sections follow the commit
+   type, not the scope: `fix(ci):` lands under Bug Fixes, `feat(ci):` under Features.
+   Only a bare `ci:` commit lands under **Operations**. `docs` and `chore` commits are
+   hidden.
 2. **Edit the changelog if it needs it.** Entries are commit subjects, terser than the
    old hand-written ones. Push edits to the release PR's branch; release-please keeps
    them unless a new commit lands on `main` first, which regenerates the PR.
