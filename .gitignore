@@ -64,6 +64,8 @@ temp/
 !dataform.json
 !package.json
 !definitions/**/*.json
+!/release-please-config.json
+!/.release-please-manifest.json
 credentials/
 service-account-key.json
 .env.local
