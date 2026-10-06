@@ -27,3 +27,12 @@ def test_invocation_passes_included_tags():
 
 def test_catalog_refresh_follows_ml_complete():
     assert "github.event.action == 'ml_complete'" in TEXT
+def test_old_callbacks_retired():
+    assert ON["repository_dispatch"]["types"] == ["ml_complete"]
+    for event in ["text_embeddings_complete", "complexity_complete", "embeddings_complete",
+                  "dataform_complexity_ready", "dataform_text_embeddings_ready"]:
+        assert event not in TEXT, event
+
+
+def test_post_fetch_runs_core():
+    assert 'github.event_name }}" == "workflow_run" ]; then PIECE="core"' in TEXT
