@@ -82,6 +82,80 @@ STAGE_BY_KEY = {s.key: s for s in STAGES}
 SOURCES = sorted({s.source for s in STAGES + OFF_CHAIN})
 
 
+@dataclass(frozen=True)
+class MLStep:
+    key: str
+    label: str
+    prefix: str
+    branch: str  # "main" gates publish; "side" is visible but never blocks it
+
+    def owns(self, job_name: str) -> bool:
+        return job_name == self.prefix or job_name.startswith(f"{self.prefix} / ")
+
+
+# The ML Pipeline run's jobs, grouped by their caller job (the text before " / ").
+ML_STEPS = [
+    MLStep("text_embeddings", "Text embeddings", "text-embeddings", "main"),
+    MLStep("complexity", "Complexity", "complexity", "main"),
+    MLStep("scoring", "Scoring", "scoring", "main"),
+    MLStep("game_embeddings", "Game embeddings", "game-embeddings", "main"),
+    MLStep("ml_complete", "ml_complete sent", "notify-warehouse", "main"),
+    MLStep("collection_scoring", "Collection scoring", "collection-scoring", "side"),
+    MLStep("collection_reports", "Collection reports", "collection-reports", "side"),
+]
+
+_FAILED = ("failure", "cancelled", "timed_out")
+_NOT_STARTED = ("queued", "waiting", "pending", "requested")
+
+
+@dataclass
+class StepStatus:
+    key: str
+    label: str
+    branch: str
+    status: str
+    started: str | None = None
+    finished: str | None = None
+    url: str | None = None
+    note: str | None = None
+
+
+def _step_status(js: list[dict[str, Any]]) -> tuple[str, str | None]:
+    """Rules top to bottom, first match wins (spec: Status rules → ML Pipeline steps)."""
+    if not js:
+        return "pending", None
+    if any(j.get("conclusion") in _FAILED for j in js):
+        return "fail", None
+    if any(j.get("status") == "in_progress" for j in js):
+        return "running", None
+    if all(j.get("status") in _NOT_STARTED for j in js):
+        return "pending", None
+    if any(j.get("status") != "completed" for j in js):
+        return "running", None
+    if all(j.get("conclusion") == "skipped" for j in js):
+        return "not_reached", None
+    skipped = [j["name"].split(" / ", 1)[-1] for j in js if j.get("conclusion") == "skipped"]
+    return "ok", ", ".join(f"{n} skipped" for n in skipped) or None
+
+
+def group_steps(jobs: list[dict[str, Any]]) -> list[StepStatus]:
+    """The ML Pipeline run's jobs as steps, in ``ML_STEPS`` order."""
+    out = []
+    for step in ML_STEPS:
+        js = [j for j in jobs if step.owns(j["name"])]
+        status, note = _step_status(js)
+        starts = [j["started_at"] for j in js if j.get("started_at")]
+        done = js and all(j.get("status") == "completed" for j in js)
+        out.append(StepStatus(
+            step.key, step.label, step.branch, status,
+            started=min(starts, key=parse_ts) if starts else None,
+            finished=max((j["completed_at"] for j in js), key=parse_ts) if done else None,
+            url=js[0].get("html_url") if js else None,
+            note=note,
+        ))
+    return out
+
+
 @dataclass
 class StageStatus:
     key: str
