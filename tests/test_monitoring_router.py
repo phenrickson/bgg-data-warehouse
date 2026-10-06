@@ -84,9 +84,9 @@ import requests  # noqa: E402 — appended section; only these tests need it
 
 TABLE_ROW = {"table": "raw.thing_ids", "last_updated": "2026-10-02T06:30:00Z", "games": 5,
              "covered": None, "universe": None, "users": None}
-MODEL_ROW = {"model_category": "prediction", "model_type": "hurdle", "model_name": "hurdle-v2026",
-             "model_version": "3", "experiment": "e", "algorithm": None, "games_count": 1,
-             "last_updated": "2026-10-02T07:23:11Z"}
+MODEL_ROW = {"model_category": "game", "model_type": "hurdle", "username": None,
+             "model_name": "hurdle-v2026", "model_version": "3",
+             "last_scored": "2026-10-06T16:14:00Z", "games_scored": 512, "job_id": "j1"}
 
 
 @pytest.fixture
