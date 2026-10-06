@@ -1,5 +1,6 @@
 config {
   type: "view",
+  tags: ["core"],
   name: "player_count_recommendations"
 }
 

@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["core"],
   schema: "staging",
   name: "game_features_hash",
   description: "Tracks feature hashes for all games to enable change detection in the scoring service"

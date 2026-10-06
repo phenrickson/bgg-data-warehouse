@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["core"],
   schema: "analytics",
   name: "game_dropdown_options",
   description: "Pre-computed dropdown options for game selection UI. Top 25k games by geek rating with minimal columns for fast loading."

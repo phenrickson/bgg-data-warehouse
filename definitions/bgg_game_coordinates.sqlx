@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["publish"],
   schema: "predictions",
   name: "bgg_game_coordinates",
   description: "Game UMAP/PCA coordinates for embedding visualization, sourced from bgg-predictive-models. Only includes coordinates from the latest embedding version."

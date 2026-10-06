@@ -1,5 +1,6 @@
 config {
   type: "incremental",
+  tags: ["publish"],
   schema: "predictions",
   name: "bgg_complexity_predictions",
   uniqueKey: ["game_id"]

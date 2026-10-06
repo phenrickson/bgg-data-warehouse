@@ -1,5 +1,6 @@
 config {
   type: "incremental",
+  tags: ["core"],
   name: "games_features",
   uniqueKey: ["game_id"]
 }

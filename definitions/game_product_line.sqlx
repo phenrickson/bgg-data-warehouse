@@ -1,5 +1,6 @@
 config {
   type: "table",
+  tags: ["core"],
   schema: "analytics",
   name: "game_product_line",
   description: "One row per game that belongs to a product line — the BGG grouping the neighbour cap treats as 'the same product' (all the Unlock! boxes, every edition of Twilight Imperium, the Risk reskins). Consumed by game_neighbors's max_per_family cap. Ported from the bgg-viewer tuning bench (src/lib/server/similar-explorer/build.ts); keep the two in step.",

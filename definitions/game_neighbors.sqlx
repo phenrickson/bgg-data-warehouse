@@ -1,5 +1,6 @@
 config {
   type: "operations",
+  tags: ["publish"],
   hasOutput: true,
   schema: "analytics",
   name: "game_neighbors",

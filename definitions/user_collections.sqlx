@@ -1,5 +1,6 @@
 config {
   type: "view",
+  tags: ["core"],
   schema: "collections",
   name: "user_collections",
   description: "Raw per-account BGG collection membership, landed from bgg-predictive-models' BGGCollectionLoader. Not a model artifact — see user_collection_predictions for scored output over this data."
