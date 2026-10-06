@@ -80,11 +80,21 @@ it in one changelog and let the prefix do the work.
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "last-release-sha": "6079bd7e2cfe1ce1287da3412717b01f382c62c2",
   "packages": {
     ".": {
       "release-type": "python",
+      "package-name": "bgg-data-warehouse",
       "changelog-path": "CHANGELOG.md",
-      "extra-files": ["uv.lock"]
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='bgg-data-warehouse')].version"
+        }
+      ]
     }
   }
 }
@@ -96,25 +106,54 @@ Manifest seeded `{".": "0.6.7"}` so numbering continues rather than restarting.
   version-bump PR merges. This is the only removal required.
 - **`uv.lock` must be bumped with `pyproject.toml`.** The 0.6.6 release bumped one
   and not the other, which left the home box on a locally-modified lockfile that
-  aborted `git pull --ff-only` for two months. Do not repeat it; if `extra-files`
-  cannot patch the lock cleanly, add a `uv lock` step to the release PR instead.
+  aborted `git pull --ff-only` for two months. A bare `"uv.lock"` string in
+  `extra-files` uses the generic updater, which only rewrites lines marked
+  `x-release-please-version`, and a lockfile cannot carry that marker. The `toml`
+  updater with a JSONPath to the package's own entry does. Check the first release
+  PR's diff touches exactly that one line in `uv.lock`.
+- **`last-release-sha`.** `tag-release.yml` pushed tags but never created GitHub
+  Releases, and release-please finds the previous release through Releases. Without
+  this, the first release PR's changelog would cover the whole history. Remove it
+  once the first release exists.
+- **`include-component-in-tag: false`** keeps tags as `vX.Y.Z`, continuing `v0.6.7`.
+  bgg-viewer's tags carry the component (`bgg-viewer-v0.0.26`).
 - **`changelog-sections`** maps scopes to headings. `docs(spec):` commits are
   design records, not release content — hide them. `ci` gets its own
   `### Operations` heading so heartbeat tuning does not drown consumer-facing
   entries.
+- **Repo setting:** "Allow GitHub Actions to create and approve pull requests" is off
+  in this repo (on in bgg-viewer). release-please cannot open its PR without it.
+  Phil turns it on in Settings → Actions → General.
+- **The release PR runs no checks.** Pushes made with `GITHUB_TOKEN` do not trigger
+  workflows, so `dataform-compile.yml` does not run on it. Acceptable: it only
+  touches the version, the lockfile and the changelog.
+- **Update the `release` skill** (`.claude/skills/release/SKILL.md`, its line in
+  `.claude/skills/README.md`) and the README's release notes to the new flow:
+  merge the release PR, editing its changelog first if needed.
 
 ### Deploy gating, per surface
 
-- **Warehouse API** — port the bgg-viewer pattern exactly: `deploy` job with
+**First round: no deploy gating.** Changelog and versioning only. Every surface,
+the warehouse API included, keeps deploying exactly as it does today.
+
+Gating the API changes how work ships: an API fix would wait for a release PR
+merge instead of going live on merge, and the API is an admin-facing read
+service, so the rollback it buys is worth less than the friction for now. Later,
+if wanted:
+
+- **Warehouse API** — port the bgg-viewer pattern: `deploy` job with
   `if: needs.release-please.outputs.release_created == 'true'`, tag the outgoing
   revision `stable` before deploying, and a manual-dispatch `rollback.yml` that
-  shifts traffic `--to-tags stable=100`. This delivers goal (3) in full, for the
-  one surface where it is possible.
+  shifts traffic `--to-tags stable=100`. Stamp `VERSION` into the Cloud Run env
+  vars so the running service reports what it is. The deploy runs through Cloud
+  Build (`config/cloudbuild.warehouse-api.yaml`), so the version reaches it as a
+  substitution, not bgg-viewer's direct `docker build`.
 - **Data model** — not gated. Changelog only.
 - **Orchestration** — not gated, cannot be. Changelog only.
 
-Stamp `VERSION` into the Cloud Run env vars as bgg-viewer does, so the running
-service reports what it is.
+One interaction to know about now: the release PR changes `pyproject.toml` and
+`uv.lock`, both in `deploy-warehouse-api.yml`'s path filter, so merging a release
+PR redeploys the API. Same as today's hand-cut bumps; harmless.
 
 ## What this gives up
 
@@ -130,11 +169,8 @@ now.
 
 ## Open questions
 
-- Does `extra-files` patch `uv.lock`'s version field correctly, or does the
-  release PR need a `uv lock` step? **Validate before committing** — this is the
-  failure that already cost two months of stale home-box code.
 - Should the API deploy's path filter be dropped entirely once it is
-  release-gated, or kept as a second condition?
+  release-gated, or kept as a second condition? (Only matters when gating lands.)
 - release-please generates terser entries than the current hand-written
   changelog (the 0.6.7 home-box `uv.lock` explanation is the standard to beat).
   Accept terser, or keep editing the bot's PR before merging?
@@ -143,3 +179,6 @@ now.
 
 Branch `docs/release-please-design` → PR for this spec. Implementation lands on
 its own branch off `main` with its own PR; never on `main` directly.
+
+Lands before the daily-pipeline PRs (warehouse #146, #147), so they make up the
+first release-please release.
