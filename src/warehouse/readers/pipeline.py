@@ -118,7 +118,7 @@ def fetch_deployed_models(client: Optional[bigquery.Client] = None) -> list[dict
     client = client or get_client()
     sql = f"""
         SELECT model_category, model_type, username, model_name, model_version,
-               last_scored, games_scored, job_id
+               last_scored, games_served, games_total, job_id
         FROM `{dataset('monitoring')}.deployed_models`
         ORDER BY model_category, model_type, username
     """

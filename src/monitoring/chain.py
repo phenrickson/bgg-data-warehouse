@@ -410,7 +410,8 @@ def jobs_needed(runs: Runs, days: int, now: datetime, cutover: date = CUTOVER) -
     ids = []
     for d in range(days - 1, -1, -1):
         day = today - timedelta(days=d)
-        run = _latest(ml, runs, day) if day >= cutover else None
+        # Today always uses the new stages; history days before the cutover are old-chain cells.
+        run = _latest(ml, runs, day) if day >= cutover or day == today else None
         if run is None or run.get("id") is None:
             continue
         if day == today or run.get("conclusion") != "success":

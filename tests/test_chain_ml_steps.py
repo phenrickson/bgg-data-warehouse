@@ -226,8 +226,17 @@ def test_failed_history_run_needs_jobs():
     assert chain.jobs_needed(runs, 3, tomorrow, cutover=date(2026, 9, 1)) == [ML_ID]
 
 
-def test_no_jobs_needed_before_cutover():
-    assert chain.jobs_needed(_runs(), 3, NOON, cutover=date(2026, 10, 7)) == []
+def test_today_needs_jobs_even_before_cutover():
+    """Today always uses the new stages, so its run's steps are always fetched."""
+    assert chain.jobs_needed(_runs(), 3, NOON, cutover=date(2026, 10, 7)) == [ML_ID]
+
+
+def test_no_jobs_needed_for_history_before_cutover():
+    runs = _runs()
+    ml = chain.STAGE_BY_KEY["ml_pipeline"]
+    runs[ml.source][0]["conclusion"] = "failure"
+    tomorrow = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+    assert chain.jobs_needed(runs, 3, tomorrow, cutover=date(2026, 10, 7)) == []
 
 
 def test_branch_dispatched_ml_run_does_not_replace_the_chain_run():
@@ -256,3 +265,14 @@ def test_deployed_models_counts_the_whole_run_not_its_last_batch():
     sql = (_P(__file__).parents[1] / "definitions/deployed_models.sqlx").read_text()
     assert "LIMIT 1)" not in sql
     assert sql.count("INTERVAL 3 HOUR") == 5
+
+
+def test_deployed_models_counts_games_served_by_the_current_model():
+    """How far the current model has reached: games in each serving table on it, of all."""
+    from pathlib import Path as _P
+    sql = (_P(__file__).parents[1] / "definitions/deployed_models.sqlx").read_text()
+    assert "games_scored" not in sql
+    assert "games_served" in sql and "games_total" in sql
+    for table in ("bgg_predictions", "bgg_complexity_predictions", "bgg_description_embeddings",
+                  "bgg_game_embeddings", "user_collection_predictions"):
+        assert f'ref("{table}")' in sql, table
