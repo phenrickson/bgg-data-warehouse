@@ -52,37 +52,84 @@ coll_latest AS (
   SELECT * FROM coll
   WHERE TRUE
   QUALIFY score_ts >= MAX(score_ts) OVER (PARTITION BY username, outcome) - INTERVAL 3 HOUR
+),
+
+-- Each step's latest run: its model and when it last wrote.
+latest AS (
+  SELECT 'game' AS model_category, 'hurdle' AS model_type, CAST(NULL AS STRING) AS username,
+         hurdle_model_name AS model_name, CAST(hurdle_model_version AS STRING) AS model_version,
+         MAX(score_ts) AS last_scored, ANY_VALUE(job_id) AS job_id
+  FROM preds_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'rating', NULL, rating_model_name, CAST(rating_model_version AS STRING),
+         MAX(score_ts), ANY_VALUE(job_id)
+  FROM preds_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'users_rated', NULL, users_rated_model_name,
+         CAST(users_rated_model_version AS STRING), MAX(score_ts), ANY_VALUE(job_id)
+  FROM preds_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'geek_rating', NULL, geek_rating_model_name,
+         CAST(geek_rating_model_version AS STRING), MAX(score_ts), ANY_VALUE(job_id)
+  FROM preds_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'complexity', NULL, complexity_model_name,
+         CAST(complexity_model_version AS STRING), MAX(score_ts), ANY_VALUE(job_id)
+  FROM complexity_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'text_embedding', NULL, embedding_model, CAST(embedding_version AS STRING),
+         MAX(created_ts), ANY_VALUE(job_id)
+  FROM text_emb_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'game_embedding', NULL, embedding_model, CAST(embedding_version AS STRING),
+         MAX(created_ts), ANY_VALUE(job_id)
+  FROM game_emb_latest GROUP BY 4, 5
+  UNION ALL
+  SELECT 'collection', outcome, username, model_name, CAST(model_version AS STRING),
+         MAX(score_ts), ANY_VALUE(job_id)
+  FROM coll_latest GROUP BY outcome, username, model_name, model_version
+),
+
+-- Every game in each serving table, by the model and version behind its current row.
+served AS (
+  SELECT 'game' AS cat, 'hurdle' AS t, CAST(NULL AS STRING) AS username, hurdle_model_name AS n,
+         CAST(hurdle_model_version AS STRING) AS v, COUNT(*) AS c
+  FROM ${ref("bgg_predictions")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'rating', NULL, rating_model_name, CAST(rating_model_version AS STRING), COUNT(*)
+  FROM ${ref("bgg_predictions")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'users_rated', NULL, users_rated_model_name,
+         CAST(users_rated_model_version AS STRING), COUNT(*)
+  FROM ${ref("bgg_predictions")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'geek_rating', NULL, geek_rating_model_name,
+         CAST(geek_rating_model_version AS STRING), COUNT(*)
+  FROM ${ref("bgg_predictions")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'complexity', NULL, complexity_model_name,
+         CAST(complexity_model_version AS STRING), COUNT(*)
+  FROM ${ref("bgg_complexity_predictions")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'text_embedding', NULL, embedding_model, CAST(embedding_version AS STRING), COUNT(*)
+  FROM ${ref("bgg_description_embeddings")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'game', 'game_embedding', NULL, embedding_model, CAST(embedding_version AS STRING), COUNT(*)
+  FROM ${ref("bgg_game_embeddings")} GROUP BY 4, 5
+  UNION ALL
+  SELECT 'collection', outcome, username, model_name, CAST(model_version AS STRING), COUNT(*)
+  FROM ${ref("user_collection_predictions")} GROUP BY 2, 3, 4, 5
 )
 
-SELECT 'game' AS model_category, 'hurdle' AS model_type, CAST(NULL AS STRING) AS username,
-       hurdle_model_name AS model_name, CAST(hurdle_model_version AS STRING) AS model_version,
-       MAX(score_ts) AS last_scored, COUNT(*) AS games_scored, ANY_VALUE(job_id) AS job_id
-FROM preds_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'game', 'rating', NULL, rating_model_name, CAST(rating_model_version AS STRING),
-       MAX(score_ts), COUNT(*), ANY_VALUE(job_id)
-FROM preds_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'game', 'users_rated', NULL, users_rated_model_name,
-       CAST(users_rated_model_version AS STRING), MAX(score_ts), COUNT(*), ANY_VALUE(job_id)
-FROM preds_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'game', 'geek_rating', NULL, geek_rating_model_name,
-       CAST(geek_rating_model_version AS STRING), MAX(score_ts), COUNT(*), ANY_VALUE(job_id)
-FROM preds_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'game', 'complexity', NULL, complexity_model_name,
-       CAST(complexity_model_version AS STRING), MAX(score_ts), COUNT(*), ANY_VALUE(job_id)
-FROM complexity_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'game', 'text_embedding', NULL, embedding_model, CAST(embedding_version AS STRING),
-       MAX(created_ts), COUNT(*), ANY_VALUE(job_id)
-FROM text_emb_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'game', 'game_embedding', NULL, embedding_model, CAST(embedding_version AS STRING),
-       MAX(created_ts), COUNT(*), ANY_VALUE(job_id)
-FROM game_emb_latest GROUP BY 4, 5
-UNION ALL
-SELECT 'collection', outcome, username, model_name, CAST(model_version AS STRING),
-       MAX(score_ts), COUNT(*), ANY_VALUE(job_id)
-FROM coll_latest GROUP BY outcome, username, model_name, model_version
+-- games_served: games whose current row came from this step's latest model.
+-- games_total: every game in that serving table (per user and outcome for collections).
+SELECT l.model_category, l.model_type, l.username, l.model_name, l.model_version, l.last_scored,
+       COALESCE(SUM(IF(s.n = l.model_name AND s.v = l.model_version, s.c, 0)), 0) AS games_served,
+       COALESCE(SUM(s.c), 0) AS games_total,
+       l.job_id
+FROM latest l
+LEFT JOIN served s
+  ON s.cat = l.model_category AND s.t = l.model_type
+ AND s.username IS NOT DISTINCT FROM l.username
+GROUP BY l.model_category, l.model_type, l.username, l.model_name, l.model_version,
+         l.last_scored, l.job_id

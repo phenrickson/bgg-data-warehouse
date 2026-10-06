@@ -61,15 +61,15 @@ def test_table_status_universes():
 def test_deployed_models_is_one_row_per_step():
     game = {"model_category": "game", "model_type": "hurdle", "username": None,
             "model_name": "hurdle-v2026", "model_version": "3",
-            "last_scored": "2026-10-06T16:14:00Z", "games_scored": 512, "job_id": "j1"}
+            "last_scored": "2026-10-06T16:14:00Z", "games_served": 43623, "games_total": 47942, "job_id": "j1"}
     coll = {"model_category": "collection", "model_type": "own", "username": "phenrickson",
             "model_name": "collection-own", "model_version": "2",
-            "last_scored": "2026-10-06T16:19:00Z", "games_scored": 40000, "job_id": "j2"}
+            "last_scored": "2026-10-06T16:19:00Z", "games_served": 40000, "games_total": 40000, "job_id": "j2"}
     client = FakeClient([coll, game])
     assert pipeline.fetch_deployed_models(client=client) == [coll, game]
     sql, _ = client.calls[0]
     assert "monitoring.deployed_models" in sql
-    for col in ("username", "last_scored", "games_scored", "job_id"):
+    for col in ("username", "last_scored", "games_served", "games_total", "job_id"):
         assert col in sql
     assert "ORDER BY model_category, model_type, username" in sql
 
