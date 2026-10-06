@@ -1,7 +1,9 @@
 """The daily chain as data, and the rules that turn GitHub runs into stage statuses.
 
-Twelve stages across three repos, stitched together by ``workflow_run`` and
-``repository_dispatch``. A stage's status comes from its own latest run in the day's
+Seven stages across three repos, stitched together by ``workflow_run`` and
+``repository_dispatch``: the fetches, Dataform's ``core`` piece, the ML Pipeline
+(one orchestrating run whose jobs include collection scoring and reports),
+Dataform's ``publish`` piece, then the viewer. A stage's status comes from its own latest run in the day's
 window, plus whether the next stage picked it up. See
 docs/superpowers/specs/2026-10-02-pipeline-monitor-design.md.
 """
@@ -60,29 +62,17 @@ STAGES = [
     Stage("fetch_thing_ids", "Fetch Thing IDs", WAREHOUSE, "fetch_thing_ids.yml", "warehouse"),
     Stage("fetch_new_games", "Fetch New Games", WAREHOUSE, "fetch_new_games.yml", "warehouse"),
     Stage("refresh_old_games", "Refresh Old Games", WAREHOUSE, "refresh.yml", "warehouse"),
-    Stage("dataform_1", "Dataform · pass 1", WAREHOUSE, "dataform.yml", "warehouse",
+    Stage("dataform_core", "Dataform · core", WAREHOUSE, "dataform.yml", "warehouse",
           event="workflow_run", after="refresh_old_games"),
-    Stage("text_embeddings", "Text Embeddings", MODELS, "run-generate-text-embeddings.yml",
-          "models"),
-    Stage("dataform_2", "Dataform · pass 2", WAREHOUSE, "dataform.yml", "warehouse",
-          title="text_embeddings_complete"),
-    Stage("score_complexity", "Score Complexity", MODELS, "run-complexity-scoring.yml",
-          "models"),
-    Stage("dataform_3", "Dataform · pass 3", WAREHOUSE, "dataform.yml", "warehouse",
-          title="complexity_complete"),
-    Stage("score_games", "Score Games", MODELS, "run-scoring-service.yml", "models"),
-    Stage("game_embeddings", "Game Embeddings + Coords", MODELS,
-          "run-generate-embeddings.yml", "models"),
-    Stage("dataform_4", "Dataform · pass 4", WAREHOUSE, "dataform.yml", "warehouse",
-          title="embeddings_complete"),
+    # Collection scoring and reports run as jobs inside this run. Their failure fails
+    # the run (visible here) without blocking publish.
+    Stage("ml_pipeline", "ML Pipeline", MODELS, "ml-pipeline.yml", "models"),
+    Stage("dataform_publish", "Dataform · publish", WAREHOUSE, "dataform.yml", "warehouse",
+          title="ml_complete"),
     Stage("viewer_artifacts", "Viewer Artifacts", VIEWER, "viewer-artifacts.yml", "viewer"),
 ]
 
 OFF_CHAIN = [
-    Stage("collection_scoring", "Collection Scoring", MODELS, "run-collection-scoring.yml",
-          "models"),
-    Stage("collection_reports", "Collection Reports", MODELS, "build-collection-reports.yml",
-          "models"),
     Stage("pipeline_status", "Pipeline Status", WAREHOUSE, "pipeline_status.yml", "warehouse"),
 ]
 
@@ -207,27 +197,17 @@ def build_chain(runs: Runs, day: date, now: datetime) -> Chain:
         stages.append(_status(stage, run, status, note))
         blocked = blocked or status in ("fail", "warn", "not_reached")
 
-    # Predictions first land with the day's first successful pass 4; a later re-chain
-    # (a push to definitions/**) must not make the 08:00 collection scoring look early.
-    landed = [r for r in _in_window(STAGE_BY_KEY["dataform_4"], runs, day)
-              if _own_status(r) == "ok"]
-    final_pass = min(landed, key=lambda r: parse_ts(r["created_at"]), default=None)
-    return Chain(day, stages, _off_chain(runs, day, final_pass))
+    return Chain(day, stages, _off_chain(runs, day))
 
 
-def _off_chain(runs: Runs, day: date, final_pass: dict[str, Any] | None) -> list[StageStatus]:
+def _off_chain(runs: Runs, day: date) -> list[StageStatus]:
     out = []
     for stage in OFF_CHAIN:
         run = _latest(stage, runs, day)
         if run is None:
             out.append(_status(stage, None, "not_reached", "No run"))
             continue
-        status, note = _own_status(run), None
-        if stage.key == "collection_scoring" and status == "ok":
-            landed = final_pass is not None and _own_status(final_pass) == "ok"
-            if not landed or parse_ts(run["created_at"]) < parse_ts(final_pass["updated_at"]):
-                status, note = "warn", "Ran before today's predictions landed"
-        out.append(_status(stage, run, status, note))
+        out.append(_status(stage, run, _own_status(run)))
     return out
 
 
