@@ -9,7 +9,7 @@ on:
 
   # Triggered by ML pipeline
   repository_dispatch:
-    types: [complexity_complete, text_embeddings_complete, embeddings_complete]
+    types: [complexity_complete, text_embeddings_complete, embeddings_complete, ml_complete]
 
   push:
     branches:
@@ -21,6 +21,12 @@ on:
       - '.github/workflows/dataform.yml'
 
   workflow_dispatch:
+    inputs:
+      piece:
+        description: 'Which part of the graph to run'
+        type: choice
+        options: [full, core, publish]
+        default: full
 
 concurrency:
   group: dataform
@@ -69,16 +75,32 @@ jobs:
 
           echo "compilation_name=${COMPILATION_NAME}" >> $GITHUB_OUTPUT
 
+      - name: Choose piece
+        id: piece
+        run: |
+          PIECE="full"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then PIECE="${{ github.event.inputs.piece }}"; fi
+          if [ "${{ github.event.action }}" == "ml_complete" ]; then PIECE="publish"; fi
+          if [ "${PIECE}" == "full" ]; then echo "tag=" >> $GITHUB_OUTPUT; else echo "tag=${PIECE}" >> $GITHUB_OUTPUT; fi
+          echo "Running piece: ${PIECE}"
+
       - name: Execute Workflow
         id: execute
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
 
+          TAG="${{ steps.piece.outputs.tag }}"
+          if [ -n "${TAG}" ]; then
+            BODY=$(jq -n --arg c "${{ steps.compile.outputs.compilation_name }}" --arg t "${TAG}" \
+              '{compilationResult: $c, invocationConfig: {"includedTags": [$t], transitiveDependenciesIncluded: false, transitiveDependentsIncluded: false}}')
+          else
+            BODY=$(jq -n --arg c "${{ steps.compile.outputs.compilation_name }}" '{compilationResult: $c}')
+          fi
           EXECUTION=$(curl -s -X POST "${API_BASE}/workflowInvocations" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"compilationResult": "${{ steps.compile.outputs.compilation_name }}"}')
+            -d "${BODY}")
 
           echo "Response: ${EXECUTION}"
 
@@ -142,6 +164,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
         run: |
+          # A manual publish-only run has nothing for ML to pick up
+          if [ "${{ steps.piece.outputs.tag }}" == "publish" ] && [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual publish run. No ML dispatch."; exit 0
+          fi
           # Determine which event to dispatch based on trigger
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
             if [ "${{ github.event.action }}" == "complexity_complete" ]; then
@@ -151,6 +177,9 @@ jobs:
               # Text embeddings propagated to predictions.bgg_description_embeddings;
               # tell ML to continue with game embeddings
               EVENT_TYPE="dataform_text_embeddings_ready"
+            elif [ "${{ github.event.action }}" == "ml_complete" ]; then
+              echo "Publish complete. No further dispatch."
+              exit 0
             else
               # embeddings_complete - end of pipeline, no dispatch
               echo "Pipeline complete (embeddings_complete). No further dispatch needed."
@@ -193,7 +222,7 @@ jobs:
           steps.execute.outputs.invocation_state == 'SUCCEEDED' &&
           github.ref == 'refs/heads/main' &&
           github.event_name == 'repository_dispatch' &&
-          github.event.action == 'embeddings_complete'
+          (github.event.action == 'embeddings_complete' || github.event.action == 'ml_complete')
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
