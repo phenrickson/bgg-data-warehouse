@@ -1,6 +1,8 @@
 name: Run Dataform (dev)
 
 # Full graph into <dataset>_dev datasets. Never writes production datasets.
+# Fails (red) on compile errors, on any target outside a *_dev dataset, and on
+# an invocation that ends FAILED/CANCELLED, so it can gate Dataform changes.
 on:
   workflow_dispatch:
     inputs:
@@ -28,13 +30,17 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - name: Compile with dev suffix
         id: compile
+        env:
+          REF: ${{ github.event.inputs.ref }}
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
-          BODY=$(jq -n --arg r "${{ github.event.inputs.ref }}" '{gitCommitish: $r, codeCompilationConfig: {schemaSuffix: "dev"}}')
+          BODY=$(jq -n --arg r "${REF}" '{gitCommitish: $r, codeCompilationConfig: {schemaSuffix: "dev"}}')
           RESULT=$(curl -s -X POST "${API_BASE}/compilationResults" -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Type: application/json" -d "${BODY}")
           NAME=$(echo "${RESULT}" | jq -r '.name')
           [ -n "${NAME}" ] && [ "${NAME}" != "null" ] || { echo "${RESULT}"; exit 1; }
+          ERRORS=$(echo "${RESULT}" | jq -c '.compilationErrors // []')
+          if [ "${ERRORS}" != "[]" ]; then echo "Compilation errors: ${ERRORS}"; exit 1; fi
           echo "name=${NAME}" >> $GITHUB_OUTPUT
           # Guard: every non-declaration target must be in a *_dev dataset.
           ACTIONS=$(curl -s "https://dataform.googleapis.com/v1beta1/${NAME}:query?pageSize=1000" -H "Authorization: Bearer ${ACCESS_TOKEN}")
@@ -44,5 +50,25 @@ jobs:
         run: |
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
-          curl -s -X POST "${API_BASE}/workflowInvocations" -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Type: application/json" \
-            -d "$(jq -n --arg c "${{ steps.compile.outputs.name }}" '{compilationResult: $c}')"
+          EXECUTION=$(curl -s -X POST "${API_BASE}/workflowInvocations" -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg c "${{ steps.compile.outputs.name }}" '{compilationResult: $c}')")
+          INVOCATION_NAME=$(echo "${EXECUTION}" | jq -r '.name')
+          if [ -z "${INVOCATION_NAME}" ] || [ "${INVOCATION_NAME}" == "null" ]; then
+            echo "Failed to start workflow invocation: ${EXECUTION}"
+            exit 1
+          fi
+          # Poll to a terminal state; the dev run's result is the job's result.
+          for i in $(seq 1 240); do
+            sleep 10
+            ACCESS_TOKEN=$(gcloud auth print-access-token)
+            STATUS=$(curl -s "https://dataform.googleapis.com/v1beta1/${INVOCATION_NAME}" -H "Authorization: Bearer ${ACCESS_TOKEN}" | jq -r '.state')
+            echo "Poll $i: state=${STATUS}"
+            case "${STATUS}" in
+              SUCCEEDED) echo "Dev run succeeded"; exit 0 ;;
+              FAILED|CANCELLED) echo "Dev run ended with state=${STATUS} (${INVOCATION_NAME})"; exit 1 ;;
+              RUNNING|CANCELING) ;;
+              *) echo "Unexpected state: ${STATUS}"; exit 1 ;;
+            esac
+          done
+          echo "Dev run still running after 40 minutes (${INVOCATION_NAME})"
+          exit 1
