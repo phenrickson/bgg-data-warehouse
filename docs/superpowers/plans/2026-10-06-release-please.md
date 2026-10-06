@@ -29,7 +29,7 @@
 - **`uv.lock` not bumped, or the wrong line bumped.** Expected: the release PR changes exactly one line in `uv.lock`, the `version` under `name = "bgg-data-warehouse"`. Pinned by `test_versions_agree` (Task 1) on every future PR, and by the dry-run inspection in Task 3.
 - **The first release PR's changelog covers the whole history.** Expected: only commits after `6079bd7` (the 23 since `v0.6.7`, plus this branch). Pinned by the dry-run inspection in Task 3.
 - **The new CHANGELOG section lands in the wrong place**, e.g. above `# Changelog` or inside the Keep a Changelog intro. Expected: directly above `## [0.6.7] - 2026-09-14`. Pinned by the dry-run inspection in Task 3.
-- **Tag or release named `bgg-data-warehouse-v0.7.0`** instead of `v0.7.0`. Pinned by `test_config` (Task 1) and the dry-run's proposed PR title in Task 3.
+- **Tag or release named `bgg-data-warehouse-v0.7.0`** instead of `v0.7.0`. Pinned by `test_config` (Task 1) and the dry-run's compare link in Task 3.
 - **The release PR never opens** because Actions may not create PRs in this repo. Expected: Phil enables the setting before merging; the first `release-please` run after merge opens the PR. Pinned by the pre-merge step in Task 3 and the post-merge check.
 
 ---
@@ -143,7 +143,7 @@ def test_tag_release_retired():
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `uv run --extra test python -m pytest tests/test_release_please.py -q`
-Expected: 5 FAIL (`FileNotFoundError` for the config, manifest and workflow; `test_tag_release_retired` asserts). `test_versions_agree` fails on the missing manifest, not on the versions.
+Expected: 6 FAIL (`FileNotFoundError` for the config, manifest and workflow; `test_tag_release_retired` asserts). `test_versions_agree` fails on the missing manifest, not on the versions.
 
 - [ ] **Step 4: Write the config**
 
@@ -269,7 +269,7 @@ Body:
 # Release
 
 Releases are cut by **release-please** (`.github/workflows/release-please.yml`). Every
-push to `main` updates one open PR titled `chore(main): release X.Y.Z`. Merging it:
+push to `main` updates one open release PR (`chore(main): release …`). Merging it:
 
 - bumps `version` in `pyproject.toml`, the package entry in `uv.lock`, and
   `.release-please-manifest.json`;
@@ -372,7 +372,7 @@ npx --yes release-please@16 release-pr \
 
 (`$SCRATCH` is the session scratchpad.) Check the output against the Review Focus:
 
-- the proposed title is `chore(feat/release-please): release 0.7.0` (the branch name replaces `main` only in this dry run), and nothing names `bgg-data-warehouse-v0.7.0`;
+- the proposed version is `0.7.0`, and the changelog heading's compare link reads `v0.6.7...v0.7.0`, not `bgg-data-warehouse-v…` (the PR title may still name the component, as bgg-viewer's do; only the tag matters);
 - the `uv.lock` update targets the `bgg-data-warehouse` package's `version` and no other line;
 - the changelog lists only commits after `6079bd7`: for example `perf(processor): select the batch without response_data` (#140) is present, and nothing from 0.6.7 or earlier;
 - the new section sits directly above `## [0.6.7] - 2026-09-14`.
@@ -402,7 +402,7 @@ The body says: implements the spec in #129 (first round, no deploy gating); the 
 
 ## After merge (Phil's merge; checks only)
 
-- The `release-please` run on `main` succeeds and opens `chore(main): release 0.7.0`.
+- The `release-please` run on `main` succeeds and opens a release PR for `0.7.0`.
 - Its diff touches `pyproject.toml`, `uv.lock` (one line), `.release-please-manifest.json` and `CHANGELOG.md` only.
 - When that release PR merges: tag `v0.7.0` and a GitHub Release exist, and no `tag-release` run fires.
 - Follow-up PR: remove `last-release-sha` from `release-please-config.json` (and its assertion in `test_config`) once `v0.7.0` exists as a GitHub Release.
