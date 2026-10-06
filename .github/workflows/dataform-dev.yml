@@ -1,0 +1,48 @@
+name: Run Dataform (dev)
+
+# Full graph into <dataset>_dev datasets. Never writes production datasets.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git commitish to compile'
+        required: true
+        default: 'main'
+
+concurrency:
+  group: dataform-dev
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: bgg-data-warehouse
+  GCP_REGION: us-central1
+  DATAFORM_REPO: bgg-data-warehouse
+
+jobs:
+  dataform-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_BGG_DW }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Compile with dev suffix
+        id: compile
+        run: |
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
+          BODY=$(jq -n --arg r "${{ github.event.inputs.ref }}" '{gitCommitish: $r, codeCompilationConfig: {schemaSuffix: "dev"}}')
+          RESULT=$(curl -s -X POST "${API_BASE}/compilationResults" -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Type: application/json" -d "${BODY}")
+          NAME=$(echo "${RESULT}" | jq -r '.name')
+          [ -n "${NAME}" ] && [ "${NAME}" != "null" ] || { echo "${RESULT}"; exit 1; }
+          echo "name=${NAME}" >> $GITHUB_OUTPUT
+          # Guard: every non-declaration target must be in a *_dev dataset.
+          ACTIONS=$(curl -s "https://dataform.googleapis.com/v1beta1/${NAME}:query?pageSize=1000" -H "Authorization: Bearer ${ACCESS_TOKEN}")
+          BAD=$(echo "${ACTIONS}" | jq -r '.compilationResultActions[] | select(.declaration == null) | .target.schema | select(endswith("_dev") | not)')
+          if [ -n "${BAD}" ]; then echo "Refusing: non-dev targets: ${BAD}"; exit 1; fi
+      - name: Invoke full graph
+        run: |
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          API_BASE="https://dataform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${GCP_REGION}/repositories/${DATAFORM_REPO}"
+          curl -s -X POST "${API_BASE}/workflowInvocations" -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg c "${{ steps.compile.outputs.name }}" '{compilationResult: $c}')"
