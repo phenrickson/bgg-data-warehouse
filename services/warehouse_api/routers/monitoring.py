@@ -15,7 +15,7 @@ from google.api_core import exceptions as gexc
 
 from src.monitoring import chain
 from src.monitoring import lineage as lineage_mod
-from src.monitoring.github import fetch_runs, iso
+from src.monitoring.github import fetch_jobs, fetch_runs, iso
 from src.warehouse.readers import monitoring as reader
 from src.warehouse.readers import lineage as lineage_reader
 from src.warehouse.readers import pipeline as pipeline_reader
@@ -77,6 +77,15 @@ def _collect_runs(start: datetime, end: datetime, token: str) -> chain.Runs:
         return {source: f.result() for source, f in futures.items()}
 
 
+def _collect_jobs(run_ids: list[int], token: str) -> chain.Jobs:
+    """Jobs of the ML Pipeline runs ``chain.jobs_needed`` names (usually just today's)."""
+    if not run_ids:
+        return {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {rid: pool.submit(fetch_jobs, chain.MODELS, rid, token) for rid in run_ids}
+        return {rid: f.result() for rid, f in futures.items()}
+
+
 @router.get("/monitoring/pipeline")
 def get_pipeline(days: int = Query(14, ge=1, le=30)):
     """Today's chain, a ``days``-long history, table freshness and live models."""
@@ -91,12 +100,13 @@ def get_pipeline(days: int = Query(14, ge=1, le=30)):
     now = datetime.now(UTC)
     try:
         runs = _collect_runs(chain.history_start(now, days), now, token)
+        jobs = _collect_jobs(chain.jobs_needed(runs, days, now), token)
         tables = pipeline_reader.fetch_table_status()
         models = pipeline_reader.fetch_deployed_models()
     except Exception as exc:  # GitHub or BigQuery: report it, don't serve a partial status
         raise HTTPException(502, f"pipeline status unavailable: {exc}") from exc
 
-    result = chain.build_report(runs, days, now) | {"tables": tables, "models": models}
+    result = chain.build_report(runs, days, now, jobs) | {"tables": tables, "models": models}
     _pipeline_cache[days] = (time.time(), result)
     return result
 
