@@ -11,6 +11,7 @@ from typing import Any
 import requests
 
 RUN_FIELDS = (
+    "id",
     "created_at",
     "updated_at",
     "event",
@@ -51,3 +52,22 @@ def fetch_runs(
         url = resp.links.get("next", {}).get("url")
         params = None  # the next link already carries the query string
     return runs
+
+
+JOB_FIELDS = ("name", "status", "conclusion", "started_at", "completed_at", "html_url")
+
+
+def fetch_jobs(repo: str, run_id: int, token: str, session=requests) -> list[dict[str, Any]]:
+    """Jobs of one run's latest attempt, across all pages (the reports matrix adds a job
+    per user)."""
+    url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
+    params: dict[str, Any] | None = {"filter": "latest", "per_page": 100}
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    jobs: list[dict[str, Any]] = []
+    while url:
+        resp = session.get(url, params=params, headers=headers, timeout=30)
+        resp.raise_for_status()
+        jobs.extend({k: j.get(k) for k in JOB_FIELDS} for j in resp.json()["jobs"])
+        url = resp.links.get("next", {}).get("url")
+        params = None  # the next link already carries the query string
+    return jobs
