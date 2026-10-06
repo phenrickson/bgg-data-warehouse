@@ -37,8 +37,9 @@ Outside the chain:
 ```
 Fetch Thing IDs → Fetch New Games → Refresh Old Games        (unchanged)
   → Dataform: core        (includedTags: ["core"])
-  → text embeddings → complexity → scoring → game embeddings + coordinates
-      → collection scoring → collection reports              (ML chain, workflow_run on success)
+  → ML pipeline (one workflow, jobs in order):
+      text embeddings → complexity → scoring → game embeddings + coordinates
+      → collection scoring → collection reports
   → Dataform: publish     (includedTags: ["publish"])
   → notify bgg-viewer
 ```
@@ -88,14 +89,25 @@ chain.
 
 ### ML chain
 
-Each stage triggers the next with `workflow_run` (`types: [completed]`, branch `main`, run
-only on success). Game embeddings already follows scoring this way. Collection scoring
-moves from its 08:00 cron to follow game embeddings. Collection reports moves from its
-09:00 cron to follow collection scoring. The last stage dispatches the single
-end-of-ML event to `bgg-data-warehouse`.
+GitHub refuses to chain `workflow_run` more than three levels deep ("You can't use
+`workflow_run` to chain together more than three levels of workflows"), and this chain
+has six stages. So a single orchestrating workflow, `ml-pipeline.yml` in
+bgg-predictive-models, runs the stages instead:
 
-If any stage fails, the chain stops and `publish` does not run. That is the same outcome
-as today.
+- It is triggered by `repository_dispatch: [dataform_complete]`, plus `workflow_dispatch`
+  for manual runs.
+- Each existing stage workflow gains `on: workflow_call` and keeps its
+  `workflow_dispatch`. The orchestrator calls them as jobs, ordered with `needs:`, using
+  `secrets: inherit`: text embeddings → complexity → scoring → game embeddings and
+  coordinates → collection scoring → collection reports.
+- Its last job (after collection scoring) sends the end-of-ML event, `ml_complete`, to
+  bgg-data-warehouse. Collection reports run alongside `publish`, since they read
+  collection scoring's artifacts and not warehouse tables.
+- The stages lose their own cross-repo notify steps and their old triggers
+  (`repository_dispatch` events, `workflow_run`, the 08:00 and 09:00 crons).
+
+If any stage fails, the jobs after it do not run and `publish` does not run. That is the
+same outcome as today.
 
 ### Dev job
 
@@ -120,8 +132,9 @@ Each step is a PR that leaves the pipeline working.
    ones (a set comparison).
 3. **Warehouse accepts the new event:** `dataform.yml` gains the end-of-ML event, which
    runs `publish`. The old events keep working.
-4. **ML chain:** stages chain via `workflow_run`, collection scoring and reports join,
-   and the last stage sends the end-of-ML event. The three old events stop being sent.
+4. **ML pipeline:** `ml-pipeline.yml` orchestrates the stages through `workflow_call`,
+   and collection scoring and reports join. It sends `ml_complete`. The stages' old
+   triggers and notify steps are removed, so the three old events stop being sent.
 5. **Warehouse cleanup:** `dataform.yml` runs `core` after the refresh and drops the old
    callback handling.
 6. **Dev job.**
