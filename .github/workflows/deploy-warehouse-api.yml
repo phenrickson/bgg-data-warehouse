@@ -6,10 +6,13 @@ on:
     paths:
       - 'services/warehouse_api/**'
       - 'src/warehouse/**'
+      - 'src/monitoring/**'
+      - 'src/config.py'
       - 'config/cloudbuild.warehouse-api.yaml'
       - 'config/bigquery.yaml'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '.github/workflows/deploy-warehouse-api.yml'
   workflow_dispatch:
 
 env:
