@@ -112,3 +112,58 @@ def test_similar_rejects_bad_metric(monkeypatch):
     monkeypatch.setattr(games_router.reader, "get_similar", boom)
     r = client.get("/games/13/similar?metric=NOPE")
     assert r.status_code == 400, "invalid tuning params should be 400, not 500"
+
+
+def test_similar_pooled_routes_pool_params(monkeypatch):
+    seen = {}
+
+    def fake(game_id, **kw):
+        seen.update(kw)
+        return {"similar": [], "recommender": [], "sicko": []}
+
+    monkeypatch.setattr(games_router.reader, "get_similar_pooled", fake)
+    r = client.get("/games/13/similar?collection=phenrickson&year_min=2016&ids=1&ids=2")
+    assert r.status_code == 200
+    assert set(r.json()) == {"similar", "recommender", "sicko"}
+    assert seen == {"collection": "phenrickson", "exclude_collection": None,
+                    "year_min": 2016, "ids": [1, 2]}
+
+    seen.clear()
+    r = client.get("/games/13/similar?exclude_collection=phenrickson")
+    assert r.status_code == 200
+    assert seen["exclude_collection"] == "phenrickson" and seen["collection"] is None
+
+
+def test_similar_pool_and_tuning_is_400(monkeypatch):
+    monkeypatch.setattr(games_router.reader, "get_similar_pooled",
+                        _must_not_be_called)
+    r = client.get("/games/13/similar?collection=phenrickson&band=0.5")
+    assert r.status_code == 400
+
+
+def _must_not_be_called(*a, **k):
+    raise AssertionError("should not be called")
+
+
+def test_similar_pool_posted_in_the_body(monkeypatch):
+    seen = {}
+
+    def fake(game_id, **kw):
+        seen.update(kw, game_id=game_id)
+        return {"similar": [], "recommender": [], "sicko": []}
+
+    monkeypatch.setattr(games_router.reader, "get_similar_pooled", fake)
+    ids = list(range(1, 7001))  # past the old 5,000 cap, and far too long for a URL
+    r = client.post("/games/13/similar", json={"ids": ids, "exclude_collection": "phenrickson"})
+    assert r.status_code == 200
+    assert set(r.json()) == {"similar", "recommender", "sicko"}
+    assert seen == {"game_id": 13, "collection": None, "exclude_collection": "phenrickson",
+                    "year_min": None, "ids": ids}
+
+
+def test_similar_posted_empty_pool_is_400(monkeypatch):
+    def fake(game_id, **kw):
+        raise ValueError("a pool is required")
+
+    monkeypatch.setattr(games_router.reader, "get_similar_pooled", fake)
+    assert client.post("/games/13/similar", json={}).status_code == 400

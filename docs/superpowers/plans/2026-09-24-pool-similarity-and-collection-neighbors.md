@@ -96,6 +96,34 @@ before the API deploy — the live query needs the table to exist).
 - **Latency ~3 s.** Accepted for occasional pooled calls; collections don't use this path.
 - Rollback: revert the PR; no existing response shape changes.
 
+## Phase 1b — a posted id pool (added 2026-10-07)
+
+**Why:** bgg-viewer's "Help me find a game" asks questions (players, weight, playtime,
+kind) and its "More like this" should keep those answers. The viewer already computes the
+matching games in its in-browser catalog with the same rules that draw its list, so it
+sends them as the pool (`ids`) rather than the warehouse re-implementing the filters
+(which would also disagree on complexity: `game_similarity_search.complexity` is
+predicted, the viewer's chips filter on BGG weight). Diagram:
+https://claude.ai/artifact/NjP5viCfnKUXGvCNVfwgVh
+
+One answer can match more than 5,000 games (Wargame ~5,300; "up to 30 min" ~12,000), and
+a few thousand ids don't fit in a GET URL.
+
+### Step 5 — `feat(api): POST a pool to /games/{id}/similar`
+
+- `POST /games/{id}/similar` with a JSON body `{ids?, collection?, exclude_collection?,
+  year_min?}` → `get_similar_pooled`, same response as the pooled GET. An empty pool → 400.
+- `MAX_POOL_IDS` 5,000 → 50,000 (the viewer's catalog is ~35k games). Ids are an
+  `INT64` array parameter, so the query and its ~75 MB scan don't change.
+- The GET stays as it is.
+
+**Verify:** router tests (body pass-through, empty pool → 400, over the cap → 400);
+reader test that a pool above the old cap is accepted; `uv run pytest`.
+
+### Step 4 covers both
+
+The real-data check (Step 4) adds one POST with a few thousand ids to its calls.
+
 ## Phase 2 — collection neighbours artifact (outline)
 
 **Decide first:** where it's built and served — Dataform table keyed by username + a read

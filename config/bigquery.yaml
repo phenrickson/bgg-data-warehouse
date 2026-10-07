@@ -7,6 +7,7 @@ datasets:
   predictions: predictions
   analytics: analytics
   monitoring: monitoring
+  collections: collections
 
 refresh_policy:
   batch_size: 1000
