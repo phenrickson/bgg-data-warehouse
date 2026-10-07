@@ -7,6 +7,7 @@ body since a real game may simply not have that block yet.
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from src.warehouse.readers import games as reader
 
@@ -112,6 +113,33 @@ def get_similar(
             metric=metric, min_ratings=min_ratings, dims=dims,
         )
     except ValueError as exc:  # unknown profile / unsupported metric / dims — caller error
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class SimilarPool(BaseModel):
+    """A pool for :func:`similar_in_pool` — the pooled GET's parameters, as a body."""
+
+    ids: list[int] | None = None
+    collection: str | None = None
+    exclude_collection: str | None = None
+    year_min: int | None = None
+
+
+@router.post("/{game_id}/similar")
+def similar_in_pool(game_id: int, pool: SimilarPool):
+    """Similar games within a posted pool — the pooled mode of ``GET /{id}/similar``.
+
+    For pools too long for a URL: bgg-viewer's "Help me find a game" posts the ids of every
+    game matching the reader's answers (up to the whole catalog), so "More like this" keeps
+    those answers. Same logic, cost (~75 MB, ~3 s) and ``{profile: [rows]}`` response as
+    the GET; forms combine with AND. An empty pool is a 400.
+    """
+    try:
+        return reader.get_similar_pooled(
+            game_id, collection=pool.collection, exclude_collection=pool.exclude_collection,
+            year_min=pool.year_min, ids=pool.ids,
+        )
+    except ValueError as exc:  # no pool / too many ids — caller error
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

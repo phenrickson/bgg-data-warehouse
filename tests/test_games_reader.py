@@ -322,6 +322,13 @@ class TestSimilarPooled:
         sql = client.calls[-1][0]
         assert "user_collections" in sql and "owned = TRUE" in sql
 
+    def test_a_large_posted_pool_is_accepted(self):
+        """A single broad answer in the viewer can match ~12,000 games."""
+        client = self._client()
+        games.get_similar_pooled(13, ids=list(range(1, 12_001)), client=client)
+        sql, cfg = client.calls[-1]
+        assert "UNNEST(@ids)" in sql and "12000" not in sql
+
     def test_ids_are_capped(self):
         import pytest
         with pytest.raises(ValueError):

@@ -268,8 +268,10 @@ def _similar_live(
 
 
 # An explicit pool travels as an array parameter; cap it so a request can't ship an
-# unbounded list into the query.
-MAX_POOL_IDS = 5000
+# unbounded list into the query. Sized past the viewer's whole catalog (~35k games): its
+# "Help me find a game" posts every game matching the reader's answers, and one broad
+# answer can match ~12,000.
+MAX_POOL_IDS = 50_000
 
 
 def get_similar_pooled(
