@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0](https://github.com/phenrickson/bgg-data-warehouse/compare/v0.8.0...v0.9.0) (2026-10-07)
+
+
+### Features
+
+* **api:** pooled similarity on /games/{id}/similar, with a POST for id pools ([#158](https://github.com/phenrickson/bgg-data-warehouse/issues/158)) ([8a9b21b](https://github.com/phenrickson/bgg-data-warehouse/commit/8a9b21b7673a617ec0536264891d630b70ef491d))
+* **monitor:** games served by each step's current model; always fetch today's ML steps ([#156](https://github.com/phenrickson/bgg-data-warehouse/issues/156)) ([9bcdba2](https://github.com/phenrickson/bgg-data-warehouse/commit/9bcdba24944a1320bf3265d3129b639fd6bbaa95))
+
 ## [0.8.0](https://github.com/phenrickson/bgg-data-warehouse/compare/v0.7.0...v0.8.0) (2026-10-06)
 
 
