@@ -1,6 +1,7 @@
 """Module for fetching and storing raw BGG API responses."""
 
 import logging
+import uuid
 from datetime import datetime, UTC
 from typing import List, Dict, Optional
 
@@ -272,41 +273,32 @@ class ResponseFetcher:
 
         table_id = f"{self.project_id}.{RAW_DATASET}.{RAW_RESPONSES_TABLE}"
 
+        # record_id is generated here rather than by the column's GENERATE_UUID()
+        # default, so the tracking rows can carry it without reading it back.
+        for row in rows:
+            row["record_id"] = str(uuid.uuid4())
+
         try:
             # Use insert_rows_json for all environments
             errors = self.bq_client.insert_rows_json(table_id, rows)
             if errors:
                 logger.error(f"Failed to insert rows: {errors}")
+            rejected = {error["index"] for error in errors or []}
 
             logger.info(f"Successfully fetched responses for {len(rows)} games")
 
             # Insert into fetched_responses tracking table
             try:
-                fetched_tracking_rows = []
-                for row in rows:
-                    # Get fetch status from our tracking dictionary
-                    fetch_status = fetch_statuses.get(row["game_id"], "success")
-
-                    # Query to get the record_id that was just inserted
-                    # We match on game_id and fetch_timestamp since they're unique for this batch
-                    record_id_query = f"""
-                    SELECT record_id
-                    FROM `{table_id}`
-                    WHERE game_id = {row['game_id']}
-                        AND fetch_timestamp = TIMESTAMP('{row['fetch_timestamp']}')
-                    ORDER BY fetch_timestamp DESC
-                    LIMIT 1
-                    """
-                    result = self.bq_client.query(record_id_query).result()
-                    record_row = next(result, None)
-
-                    if record_row:
-                        fetched_tracking_rows.append({
-                            "record_id": record_row.record_id,
-                            "game_id": row["game_id"],
-                            "fetch_timestamp": row["fetch_timestamp"],
-                            "fetch_status": fetch_status
-                        })
+                fetched_tracking_rows = [
+                    {
+                        "record_id": row["record_id"],
+                        "game_id": row["game_id"],
+                        "fetch_timestamp": row["fetch_timestamp"],
+                        "fetch_status": fetch_statuses.get(row["game_id"], "success"),
+                    }
+                    for i, row in enumerate(rows)
+                    if i not in rejected
+                ]
 
                 if fetched_tracking_rows:
                     fetched_table_id = f"{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}"
