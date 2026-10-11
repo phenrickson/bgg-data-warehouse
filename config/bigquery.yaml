@@ -10,27 +10,40 @@ datasets:
   collections: collections
 
 refresh_policy:
-  batch_size: 1000
+  # Games per daily run; steady-state demand of the intervals below is ~3,500/day.
+  # New and upcoming games change most, so they get the shortest intervals; the
+  # overdue ordering then serves them first whenever the budget runs short.
+  batch_size: 5000
+  # Each game falls in the first interval it matches. Age = current year -
+  # year_published, matched half-open: min_age_years <= age < max_age_years; a
+  # missing bound is unbounded. Selection takes the most overdue games first
+  # (days since last fetch / refresh_days), so a short budget delays every
+  # bucket evenly instead of starving the oldest.
   intervals:
-    - name: recent
-      max_age_years: 2
+    - name: future
+      max_age_years: 0
       refresh_days: 7
-      description: "Games published in last 2 years - refresh weekly"
+      description: "Announced for a future year - refresh weekly"
+    - name: recent
+      min_age_years: 0
+      max_age_years: 3
+      refresh_days: 7
+      description: "Published this year or the 2 before - refresh weekly"
     - name: established
-      min_age_years: 2
-      max_age_years: 5
-      refresh_days: 30
-      description: "Games 2-5 years old - refresh monthly"
+      min_age_years: 3
+      max_age_years: 6
+      refresh_days: 60
+      description: "3-5 years old - refresh every 2 months"
     - name: classic
-      min_age_years: 5
-      max_age_years: 10
-      refresh_days: 90
-      description: "Games 5-10 years old - refresh quarterly"
-    - name: vintage
-      min_age_years: 10
+      min_age_years: 6
+      max_age_years: 11
       refresh_days: 180
-      description: "Games 10+ years old - refresh bi-annually"
+      description: "6-10 years old - refresh every 6 months"
+    - name: vintage
+      min_age_years: 11
+      refresh_days: 365
+      description: "11+ years old - refresh yearly"
     - name: unpublished
       year_published_null: true
-      refresh_days: 14
-      description: "Games with no publication year - refresh bi-weekly to catch releases"
+      refresh_days: 60
+      description: "No publication year - refresh every 2 months"

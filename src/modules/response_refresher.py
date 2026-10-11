@@ -24,6 +24,41 @@ FETCHED_RESPONSES_TABLE = "fetched_responses"
 FETCH_IN_PROGRESS_TABLE = "fetch_in_progress"
 
 
+def _year_bounds(interval: Dict, current_year: int) -> tuple:
+    """Inclusive (first, last) year_published for an age interval, None if unbounded.
+
+    Age is current_year - year_published, matched half-open:
+    min_age_years <= age < max_age_years.
+    """
+    max_age = interval.get("max_age_years")
+    min_age = interval.get("min_age_years")
+    first = current_year - max_age + 1 if max_age is not None else None
+    last = current_year - min_age if min_age is not None else None
+    return first, last
+
+
+def _year_condition(interval: Dict, current_year: int) -> str:
+    """SQL predicate on year_published for one refresh interval."""
+    if interval.get("year_published_null"):
+        return "year_published IS NULL"
+    first, last = _year_bounds(interval, current_year)
+    if first is not None and last is not None:
+        return f"year_published BETWEEN {first} AND {last}"
+    if first is not None:
+        return f"year_published >= {first}"
+    if last is not None:
+        return f"year_published <= {last}"
+    return "year_published IS NOT NULL"
+
+
+def _bucket_case_sql(intervals: List[Dict], current_year: int) -> str:
+    """refresh_category and refresh_days columns; each game takes its first matching interval."""
+    conditions = [(_year_condition(i, current_year), i) for i in intervals]
+    category = "\n".join(f"  WHEN {cond} THEN '{i['name']}'" for cond, i in conditions)
+    days = "\n".join(f"  WHEN {cond} THEN {int(i['refresh_days'])}" for cond, i in conditions)
+    return f"CASE\n{category}\nEND AS refresh_category,\nCASE\n{days}\nEND AS refresh_days"
+
+
 class ResponseRefresher:
     """Refreshes previously loaded games with priority for recently published games."""
 
@@ -57,70 +92,56 @@ class ResponseRefresher:
             logger.info("*** DRY RUN MODE - No data will be fetched or written ***")
         logger.info(f"Initialized refresher with batch size {self.batch_size}")
         logger.info("Refresh intervals:")
+        current_year = datetime.now(UTC).year
         for interval in self.refresh_intervals:
-            if interval.get('year_published_null'):
-                age_range = "NULL year"
-            elif interval.get('max_age_years') is None:
-                age_range = f"{interval.get('min_age_years', 0)}+ years"
-            elif interval.get('min_age_years', 0) == 0:
-                age_range = f"0-{interval.get('max_age_years')} years"
-            else:
-                age_range = f"{interval.get('min_age_years', 0)}-{interval.get('max_age_years', '∞')} years"
-            logger.info(f"  {interval['name']:12} | Age: {age_range:12} | Refresh every {interval['refresh_days']:3} days")
+            logger.info(
+                f"  {interval['name']:12} | {_year_condition(interval, current_year):40} "
+                f"| refresh every {interval['refresh_days']:3} days"
+            )
+
+    def _due_games_sql(self) -> str:
+        """Games past their bucket's refresh interval, with bucket and last fetch."""
+        current_year = datetime.now(UTC).year
+        return f"""
+        WITH bucketed AS (
+            SELECT
+                game_id,
+                year_published,
+                {_bucket_case_sql(self.refresh_intervals, current_year)}
+            FROM (
+                SELECT game_id, ANY_VALUE(year_published) AS year_published
+                FROM `{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}`
+                GROUP BY game_id
+            )
+        ),
+        last_fetch AS (
+            SELECT game_id, MAX(fetch_timestamp) AS last_fetch_timestamp
+            FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
+            GROUP BY game_id
+        )
+        SELECT b.*, last_fetch.last_fetch_timestamp
+        FROM bucketed b
+        LEFT JOIN last_fetch USING (game_id)
+        WHERE b.refresh_category IS NOT NULL
+            AND (last_fetch.last_fetch_timestamp IS NULL
+                 OR last_fetch.last_fetch_timestamp
+                    < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL b.refresh_days DAY))
+        """
 
     def count_games_needing_refresh(self) -> Dict[str, int]:
         """Count how many games need refresh by category without fetching data.
-
-        This is a lightweight query that only counts, minimizing BigQuery costs.
 
         Returns:
             Dictionary with counts by refresh category and total
         """
         try:
-            current_year = datetime.now(UTC).year
-            counts = {"total": 0}
-
-            for interval in self.refresh_intervals:
-                name = interval.get("name")
-                max_age = interval.get("max_age_years")
-                min_age = interval.get("min_age_years", 0)
-                refresh_days = interval.get("refresh_days")
-
-                # Calculate year thresholds
-                if interval.get("year_published_null"):
-                    year_filter = "year_published IS NULL"
-                elif max_age:
-                    min_year = current_year - max_age
-                    year_filter = f"year_published BETWEEN {min_year} AND {current_year - min_age}"
-                else:
-                    year_filter = f"year_published <= {current_year - min_age}"
-
-                # Count query - very cheap, only scans necessary partitions
-                count_query = f"""
-                SELECT COUNT(DISTINCT game_data.game_id) as count
-                FROM (
-                    SELECT game_id, year_published
-                    FROM `{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}`
-                    WHERE {year_filter}
-                    GROUP BY game_id, year_published
-                ) game_data
-                LEFT JOIN (
-                    SELECT
-                        game_id,
-                        MAX(fetch_timestamp) as last_fetch_timestamp
-                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
-                    GROUP BY game_id
-                ) last_fetch ON game_data.game_id = last_fetch.game_id
-                WHERE
-                    (last_fetch.last_fetch_timestamp IS NULL
-                     OR last_fetch.last_fetch_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {refresh_days} DAY))
-                """
-
-                result = self.bq_client.query(count_query).result()
-                count = next(result).count
-                counts[name] = count
-                counts["total"] += count
-
+            count_query = f"""
+            SELECT refresh_category, COUNT(*) AS games
+            FROM ({self._due_games_sql()})
+            GROUP BY refresh_category
+            """
+            counts = {row.refresh_category: row.games for row in self.bq_client.query(count_query).result()}
+            counts["total"] = sum(counts.values())
             return counts
 
         except Exception as e:
@@ -128,7 +149,7 @@ class ResponseRefresher:
             raise
 
     def get_games_to_refresh(self) -> List[Dict]:
-        """Get games that need to be refreshed based on publication year and last refresh time.
+        """Get the most overdue games, relative to their bucket's refresh interval.
 
         Returns:
             List of dictionaries containing game IDs and metadata for games to refresh
@@ -144,87 +165,30 @@ class ResponseRefresher:
             else:
                 logger.info(f"[DRY RUN] Would clean up old in-progress entries")
 
-            # Build a query that finds games due for refresh
-            # For each refresh interval, create a UNION query
-            current_year = datetime.now(UTC).year
-
-            interval_queries = []
-            for interval in self.refresh_intervals:
-                name = interval.get("name")
-                max_age = interval.get("max_age_years")
-                min_age = interval.get("min_age_years", 0)
-                refresh_days = interval.get("refresh_days")
-
-                # Build year filter
-                if interval.get("year_published_null"):
-                    year_filter = "year_published IS NULL"
-                elif max_age:
-                    min_year = current_year - max_age
-                    max_year = current_year - min_age
-                    year_filter = f"year_published BETWEEN {min_year} AND {max_year}"
-                else:
-                    max_year = current_year - min_age
-                    year_filter = f"year_published <= {max_year}"
-
-                # Create query for this interval
-                interval_query = f"""
-                SELECT
-                    game_data.game_id,
-                    game_data.year_published,
-                    last_fetch.last_fetch_timestamp,
-                    '{name}' as refresh_category,
-                    {refresh_days} as refresh_days
-                FROM (
-                    SELECT game_id, year_published
-                    FROM `{self.project_id}.{CORE_DATASET}.{GAMES_TABLE}`
-                    WHERE {year_filter}
-                    GROUP BY game_id, year_published
-                ) game_data
-                LEFT JOIN (
-                    SELECT
-                        game_id,
-                        MAX(fetch_timestamp) as last_fetch_timestamp
-                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
-                    GROUP BY game_id
-                ) last_fetch ON game_data.game_id = last_fetch.game_id
-                WHERE
-                    -- Include games never fetched or fetched more than refresh_days ago
-                    (last_fetch.last_fetch_timestamp IS NULL
-                     OR last_fetch.last_fetch_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {refresh_days} DAY))
-                    -- Exclude games currently being fetched
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` f
-                        WHERE game_data.game_id = f.game_id
-                    )
-                """
-                interval_queries.append(interval_query)
-
-            # Check if we have any intervals configured
-            if not interval_queries:
+            if not self.refresh_intervals:
                 logger.warning("No refresh intervals configured in refresh_policy")
                 return []
 
-            # Combine all interval queries with UNION ALL
-            combined_query = " UNION ALL ".join(interval_queries)
-
-            # Final query that prioritizes recent games
+            # Never-fetched games first, then by how many intervals overdue, so a
+            # short budget delays every bucket evenly instead of starving the oldest.
             final_query = f"""
-            WITH all_candidates AS (
-                {combined_query}
-            )
             SELECT
                 game_id,
                 year_published,
                 last_fetch_timestamp,
                 refresh_category,
-                refresh_days
-            FROM all_candidates
+                refresh_days,
+                TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), last_fetch_timestamp, HOUR)
+                    / (refresh_days * 24) AS overdue_ratio
+            FROM ({self._due_games_sql()}) due
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` f
+                WHERE due.game_id = f.game_id
+            )
             ORDER BY
-                -- Prioritize by publication year (newer games first)
-                year_published DESC,
-                -- Then by staleness (older fetch times first)
-                COALESCE(last_fetch_timestamp, TIMESTAMP('1970-01-01')) ASC
+                last_fetch_timestamp IS NULL DESC,
+                overdue_ratio DESC
             LIMIT {self.batch_size}
             """
 

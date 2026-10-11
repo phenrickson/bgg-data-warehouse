@@ -12,7 +12,11 @@ from dotenv import load_dotenv
 from google.cloud import bigquery
 
 from src.config import get_bigquery_config
-from src.modules.response_refresher import ResponseRefresher
+from src.modules.response_refresher import (
+    ResponseRefresher,
+    _bucket_case_sql,
+    _year_bounds,
+)
 
 # Load environment variables from .env file
 load_dotenv(override=True)
@@ -33,6 +37,17 @@ def check_credentials():
         pytest.skip(f"Credentials file not found: {creds_path}")
 
 
+# Mirrors config/bigquery.yaml: half-open [min_age_years, max_age_years).
+INTERVALS = [
+    {"name": "future", "max_age_years": 0, "refresh_days": 7},
+    {"name": "recent", "min_age_years": 0, "max_age_years": 3, "refresh_days": 7},
+    {"name": "established", "min_age_years": 3, "max_age_years": 6, "refresh_days": 60},
+    {"name": "classic", "min_age_years": 6, "max_age_years": 11, "refresh_days": 180},
+    {"name": "vintage", "min_age_years": 11, "refresh_days": 365},
+    {"name": "unpublished", "year_published_null": True, "refresh_days": 60},
+]
+
+
 @pytest.fixture
 def mock_config():
     """Get mock configuration."""
@@ -49,12 +64,7 @@ def mock_config():
         "tables": {"games": {"name": "games"}},
         "refresh_policy": {
             "batch_size": 1000,
-            "intervals": [
-                {"name": "recent", "min_age_years": 0, "max_age_years": 2, "refresh_days": 7},
-                {"name": "established", "min_age_years": 2, "max_age_years": 5, "refresh_days": 30},
-                {"name": "classic", "min_age_years": 5, "max_age_years": 10, "refresh_days": 90},
-                {"name": "vintage", "min_age_years": 10, "max_age_years": None, "refresh_days": 180},
-            ],
+            "intervals": INTERVALS,
         },
     }
 
@@ -74,10 +84,11 @@ def mock_bq_client():
     # Mock query job
     def mock_query(query):
         mock_job = Mock()
-        if "SELECT COUNT" in query:
-            result = Mock()
-            result.count = 3
-            mock_job.result.return_value = iter([result])
+        if "COUNT(*)" in query:
+            mock_job.result.return_value = iter([
+                Mock(refresh_category="vintage", games=1),
+                Mock(refresh_category="classic", games=2),
+            ])
         elif "DELETE FROM" in query or "INSERT INTO" in query:
             mock_job.result.return_value = iter([])
         else:
@@ -116,14 +127,7 @@ class TestResponseRefresherUnit:
                     refresher = ResponseRefresher(
                         chunk_size=5,
                     )
-                    assert len(refresher.refresh_intervals) == 4
-
-                    interval_names = [i["name"] for i in refresher.refresh_intervals]
-                    assert "recent" in interval_names
-                    assert "established" in interval_names
-                    assert "classic" in interval_names
-                    assert "vintage" in interval_names
-                    logger.info("Refresh intervals loaded correctly")
+                    assert refresher.refresh_intervals == INTERVALS
 
     def test_dry_run_mode(self, mock_config, mock_bq_client):
         """Test that dry run mode doesn't make changes."""
@@ -142,6 +146,79 @@ class TestResponseRefresherUnit:
                     # Should return games but not actually modify anything
                     assert isinstance(games, list)
                     logger.info("Dry run mode test passed")
+
+
+class TestBuckets:
+    """Bucket assignment by year_published (current year 2026)."""
+
+    def test_year_bounds_are_half_open_ages(self):
+        bounds = {i["name"]: _year_bounds(i, 2026) for i in INTERVALS if "year_published_null" not in i}
+        assert bounds == {
+            "future": (2027, None),
+            "recent": (2024, 2026),
+            "established": (2021, 2023),
+            "classic": (2016, 2020),
+            "vintage": (None, 2015),
+        }
+
+    @pytest.mark.parametrize("year, bucket", [
+        (2030, "future"), (2027, "future"),
+        (2026, "recent"), (2024, "recent"),
+        (2023, "established"), (2021, "established"),
+        (2020, "classic"), (2016, "classic"),
+        (2015, "vintage"), (-3000, "vintage"),
+        (None, "unpublished"),
+    ])
+    def test_every_year_lands_in_one_bucket(self, year, bucket):
+        def matches(interval):
+            if interval.get("year_published_null"):
+                return year is None
+            first, last = _year_bounds(interval, 2026)
+            return year is not None and (first is None or year >= first) and (last is None or year <= last)
+
+        assert [i["name"] for i in INTERVALS if matches(i)] == [bucket]
+
+    def test_case_sql_follows_config_order(self):
+        sql = _bucket_case_sql(INTERVALS, 2026)
+        whens = [line.strip() for line in sql.splitlines() if "THEN '" in line]
+        assert whens == [
+            "WHEN year_published >= 2027 THEN 'future'",
+            "WHEN year_published BETWEEN 2024 AND 2026 THEN 'recent'",
+            "WHEN year_published BETWEEN 2021 AND 2023 THEN 'established'",
+            "WHEN year_published BETWEEN 2016 AND 2020 THEN 'classic'",
+            "WHEN year_published <= 2015 THEN 'vintage'",
+            "WHEN year_published IS NULL THEN 'unpublished'",
+        ]
+        assert "WHEN year_published BETWEEN 2021 AND 2023 THEN 60" in sql
+
+
+class TestSelection:
+    """The selection and count queries the refresher sends."""
+
+    @pytest.fixture
+    def refresher(self, mock_config, mock_bq_client):
+        with patch("src.modules.response_refresher.get_bigquery_config", return_value=mock_config),              patch("src.modules.response_refresher.bigquery.Client"),              patch("src.modules.response_refresher.ResponseFetcher"):
+            r = ResponseRefresher(chunk_size=5, dry_run=True)
+        r.bq_client = Mock(wraps=mock_bq_client)
+        return r
+
+    def _queries(self, refresher):
+        return [c.args[0] for c in refresher.bq_client.query.call_args_list]
+
+    def test_selection_is_one_scan_ordered_by_overdue_ratio(self, refresher):
+        refresher.get_games_to_refresh()
+        (select,) = [q for q in self._queries(refresher) if "ORDER BY" in q]
+        assert "UNION ALL" not in select
+        assert select.count("core.games") == 1
+        order_by = select[select.index("ORDER BY"):]
+        assert order_by.index("last_fetch_timestamp IS NULL DESC") < order_by.index("overdue_ratio DESC")
+        assert "year_published DESC" not in select
+
+    def test_counts_are_grouped_by_bucket(self, refresher):
+        counts = refresher.count_games_needing_refresh()
+        (count,) = self._queries(refresher)
+        assert "GROUP BY refresh_category" in count
+        assert counts == {"vintage": 1, "classic": 2, "total": 3}
 
 
 class TestResponseRefresherIntegration:
@@ -167,15 +244,11 @@ class TestResponseRefresherIntegration:
 
     def test_config_loading(self, refresher):
         """Test that refresh policy configuration loads correctly."""
-        assert refresher.batch_size == 1000, "Batch size should be 1000"
-        assert len(refresher.refresh_intervals) == 4, "Should have 4 refresh intervals"
-
-        # Verify interval configuration
-        interval_names = [i["name"] for i in refresher.refresh_intervals]
-        assert "recent" in interval_names
-        assert "established" in interval_names
-        assert "classic" in interval_names
-        assert "vintage" in interval_names
+        assert refresher.batch_size == 5000
+        assert [
+            {k: v for k, v in i.items() if k != "description"}
+            for i in refresher.refresh_intervals
+        ] == INTERVALS
 
         logger.info(f"Config loaded: {len(refresher.refresh_intervals)} refresh intervals")
 
