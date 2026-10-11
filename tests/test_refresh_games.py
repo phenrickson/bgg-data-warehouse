@@ -39,8 +39,8 @@ def check_credentials():
 
 # Mirrors config/bigquery.yaml: half-open [min_age_years, max_age_years).
 INTERVALS = [
-    {"name": "future", "max_age_years": 0, "refresh_days": 14},
-    {"name": "recent", "min_age_years": 0, "max_age_years": 3, "refresh_days": 14},
+    {"name": "future", "max_age_years": 0, "refresh_days": 7},
+    {"name": "recent", "min_age_years": 0, "max_age_years": 3, "refresh_days": 7},
     {"name": "established", "min_age_years": 3, "max_age_years": 6, "refresh_days": 60},
     {"name": "classic", "min_age_years": 6, "max_age_years": 11, "refresh_days": 180},
     {"name": "vintage", "min_age_years": 11, "refresh_days": 365},

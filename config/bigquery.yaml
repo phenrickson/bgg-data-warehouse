@@ -10,7 +10,9 @@ datasets:
   collections: collections
 
 refresh_policy:
-  # Games per daily run; steady-state demand of the intervals below is ~2,100/day.
+  # Games per daily run; steady-state demand of the intervals below is ~3,500/day.
+  # New and upcoming games change most, so they get the shortest intervals; the
+  # overdue ordering then serves them first whenever the budget runs short.
   batch_size: 5000
   # Each game falls in the first interval it matches. Age = current year -
   # year_published, matched half-open: min_age_years <= age < max_age_years; a
@@ -20,13 +22,13 @@ refresh_policy:
   intervals:
     - name: future
       max_age_years: 0
-      refresh_days: 14
-      description: "Announced for a future year - refresh every 2 weeks"
+      refresh_days: 7
+      description: "Announced for a future year - refresh weekly"
     - name: recent
       min_age_years: 0
       max_age_years: 3
-      refresh_days: 14
-      description: "Published this year or the 2 before - refresh every 2 weeks"
+      refresh_days: 7
+      description: "Published this year or the 2 before - refresh weekly"
     - name: established
       min_age_years: 3
       max_age_years: 6

@@ -36,7 +36,7 @@ Staleness on 2026-10-11 (days since last fetch, median):
    *Verify:* unit test — same `record_id` in both inserts, no lookup query.
 1. **Config.** Ages are half-open `[min_age_years, max_age_years)`, age =
    `current_year - year_published`, a missing bound is unbounded, first match wins.
-   future <0 / 14d · recent 0–2 / 14d · established 3–5 / 60d · classic 6–10 / 180d ·
+   future <0 / 7d · recent 0–2 / 7d · established 3–5 / 60d · classic 6–10 / 180d ·
    vintage 11+ / 365d · unpublished NULL / 60d. `batch_size: 5000`.
 2. **Refresher.** One `CASE` (`_bucket_case_sql`) tags each game with a bucket; one
    scan replaces the per-interval `UNION ALL`. Order by
@@ -49,7 +49,12 @@ Staleness on 2026-10-11 (days since last fetch, median):
 
 ## Expected
 
-- Steady-state demand ≈ 2,130 games/day; 5,000 clears the ~125k backlog in ~5 weeks.
+- New and upcoming games are the priority: they get the shortest intervals, so their
+  overdue ratio grows fastest and they win whenever the budget is short.
+- Steady-state demand ≈ 3,500 games/day; the ~1,500/day headroom clears the ~125k
+  backlog in ~7–8 weeks.
+- The first batches go to ~8k recent games ~290 days stale (≈40× overdue); older
+  buckets follow in order unpublished → established → classic → vintage.
 - Job ≈ 12 min fetch + ~7 min processing at 5,000 (estimate until the first run).
 
 ## Risks / rollback
