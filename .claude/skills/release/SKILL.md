@@ -16,6 +16,9 @@ push to `main` updates one open release PR (`chore(main): release …`). Merging
 
 No version bump or changelog entry is written by hand, and there is no manual `git tag`.
 
+Releases are meant to gate production, but nothing is gated yet: see **Releases gate
+production** in `CLAUDE.md` for the rule and the current state.
+
 ## How the version is chosen
 
 From the commit types since the last release (pre-1.0, `bump-minor-pre-major`):
@@ -44,9 +47,8 @@ To force a version, add a `Release-As: X.Y.Z` footer to a commit on `main`.
   in `deploy-warehouse-api.yml`'s path filter. Harmless, as with the old hand bumps.
 - The release PR runs no checks. It is pushed with `GITHUB_TOKEN`, which does not
   trigger workflows.
-- Nothing deploys from a release. Every surface keeps its own trigger; see
-  `docs/superpowers/specs/2026-09-22-release-please-design.md` for why only the API
-  could be gated, and how.
+- Nothing deploys from a release yet, though gating production is the goal (see
+  `CLAUDE.md`). Every surface keeps its own trigger.
 - `test_versions_agree` fails any PR where `pyproject.toml`, `uv.lock` and the manifest
   disagree. The 0.6.6 release bumped `pyproject.toml` without `uv.lock`, which stalled
   the home box's `git pull` for two months.
