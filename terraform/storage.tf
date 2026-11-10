@@ -64,7 +64,13 @@ resource "google_storage_bucket" "bgg_viewer_artifacts" {
   # GCS returns 200 with the data even when it is blocked, so server logs look healthy
   # while the app is broken. Verify from a real page on the real origin.
   cors {
-    origin          = ["https://boardgame-viz.com", "https://www.boardgame-viz.com", "http://localhost:5173"]
+    # The Merry Meeple's site and its local servers (python on 3000, `wrangler pages dev`
+    # on 8788) download the vectors + catalog the same way; see merry_meeple.tf.
+    origin = [
+      "https://boardgame-viz.com", "https://www.boardgame-viz.com", "http://localhost:5173",
+      "https://themerrymeeple.com", "https://www.themerrymeeple.com",
+      "http://localhost:3000", "http://localhost:8788",
+    ]
     method          = ["GET", "HEAD"]
     response_header = ["Content-Type", "Content-Encoding", "Range"]
     max_age_seconds = 3600
