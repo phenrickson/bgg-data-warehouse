@@ -6,10 +6,10 @@
 # artifacts straight from the bucket (CORS for those origins is in storage.tf).
 # Design: docs/superpowers/specs/2026-11-10-merry-meeple-artifact-access-design.md
 #
-# THE KEY IS NOT IN TERRAFORM. It was made by hand in the Cloud Console so the private key
-# never sits in state, which means nothing here will remind anyone to rotate it.
-# Creating, handing over, ROTATING (every 12 months) and revoking it:
-#   docs/runbooks/merry-meeple-artifact-key.md
+# THE KEY IS NOT IN TERRAFORM. It is made with `gcloud iam service-accounts keys create`
+# so the private key never sits in state. It doesn't expire; it is replaced when it stops
+# working or may have leaked. Every command for creating, handing over, replacing, revoking
+# and diagnosing it: docs/runbooks/merry-meeple-artifact-key.md
 
 resource "google_service_account" "merry_meeple_artifacts" {
   account_id   = "merry-meeple-artifacts"
