@@ -142,6 +142,30 @@ steps:
             --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
+  # TEMPORARY (BGG.CON 2026): the convention library recorder, run once a minute by Cloud
+  # Scheduler (terraform/bggcon.tf). One task, no retries, a short timeout: a missed minute is
+  # a gap the next run closes. NTFY_TOPIC empty means no alerts. BGGCON_ALERT_USER is whose
+  # focus list (bgg-viewer user id) alerts follow.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        ACTION=create
+        if gcloud run jobs describe bgg-bggcon-recorder --region=us-central1 2>/dev/null; then ACTION=update; fi
+        echo "$$ACTION job: bgg-bggcon-recorder"
+        gcloud run jobs $$ACTION bgg-bggcon-recorder \
+          --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
+          --args=src.pipeline.bggcon_recorder \
+          --tasks=1 \
+          --max-retries=0 \
+          --task-timeout=60s \
+          --memory=512Mi \
+          --cpu=1 \
+          --region=us-central1 \
+          --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars=NTFY_TOPIC=$_NTFY_TOPIC,BGGCON_ALERT_USER=$_BGGCON_ALERT_USER
+
 # Images to push to Container Registry
 images:
   - 'gcr.io/$PROJECT_ID/bgg-processor:latest'

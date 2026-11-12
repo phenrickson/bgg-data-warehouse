@@ -9,6 +9,7 @@ on:
       - 'src/pipeline/**'
       - 'src/modules/**'
       - 'src/data_processor/**'
+      - 'src/bggcon/**'
   workflow_dispatch:
 
 env:
@@ -36,4 +37,4 @@ jobs:
         run: |
           gcloud builds submit --config config/cloudbuild.yaml \
             --project=${GCP_PROJECT_ID} \
-            --substitutions=_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
+            --substitutions=_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }},_NTFY_TOPIC=${{ secrets.NTFY_TOPIC_BGGCON }},_BGGCON_ALERT_USER=${{ vars.BGGCON_ALERT_USER }}
