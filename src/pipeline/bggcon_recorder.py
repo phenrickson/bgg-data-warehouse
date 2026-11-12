@@ -21,7 +21,7 @@ No borrower data is fetched or stored.
 
 Run: ``python -m src.pipeline.bggcon_recorder``. Env: ``BGGCON_BUCKET`` (default the viewer
 artifacts bucket), ``NTFY_TOPIC`` and ``BGGCON_ALERT_USER`` (both optional; no alerts
-without them).
+without them), ``BGGCON_TEST_RUN=1`` for a manual run outside the window (see ``run_once``).
 """
 
 from __future__ import annotations
@@ -46,6 +46,8 @@ PAUSE_S = 0.3
 TIMEOUT_S = 20
 
 STATE = "bggcon/recorder/state.json"
+#: A manual test run's own state, so the first scheduled run starts clean.
+TEST_STATE = "bggcon/recorder/state.test.json"
 LATEST = "bggcon/checked_out.json"
 LIBRARY = "bggcon/library.json"
 EVENTS_TABLE = "raw.bggcon_checkout_events"
@@ -83,12 +85,16 @@ def _heartbeat(now: datetime, n_out: int | None, ok: bool, note: str | None) -> 
     return {"observed_at": now.isoformat(), "n_out": n_out, "ok": ok, "note": note}
 
 
-def run_once(deps: Deps, alert_user: str | None = None) -> str:
+def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) -> str:
+    """One minute's recording. ``test_run`` (a manual run, ``BGGCON_TEST_RUN=1``) goes ahead
+    outside the window, keeps its own state file and notes "test run" on its heartbeat."""
     now = deps.now()
-    if not r.in_window(now):
+    if not test_run and not r.in_window(now):
         return "outside the window"
+    state_name = TEST_STATE if test_run else STATE
+    ok_note = "test run" if test_run else None
 
-    state, gen = deps.read_json(STATE)
+    state, gen = deps.read_json(state_name)
     state = state or {}
     if r.should_skip(now, state.get("next_allowed")):
         deps.insert_rows(RUNS_TABLE, [_heartbeat(now, None, False, "backing off")])
@@ -98,7 +104,7 @@ def run_once(deps: Deps, alert_user: str | None = None) -> str:
         rows = deps.fetch_checked_out()
     except FetchError as e:
         until = r.backoff_until(now, e.status)
-        deps.write_json(STATE, {**state, "next_allowed": until.isoformat() if until else None}, if_generation=gen or 0)
+        deps.write_json(state_name, {**state, "next_allowed": until.isoformat() if until else None}, if_generation=gen or 0)
         deps.insert_rows(RUNS_TABLE, [_heartbeat(now, None, False, f"fetch failed ({e.status})")])
         return f"fetch failed ({e.status})"
 
@@ -116,10 +122,10 @@ def run_once(deps: Deps, alert_user: str | None = None) -> str:
 
     if events:
         deps.insert_rows(EVENTS_TABLE, events)
-    deps.insert_rows(RUNS_TABLE, [_heartbeat(now, len(current), True, None)])
+    deps.insert_rows(RUNS_TABLE, [_heartbeat(now, len(current), True, ok_note)])
     deps.write_json(LATEST, {"as_of": now.isoformat(), "checked_out": {str(k): v for k, v in now_out.items()}})
     deps.write_json(
-        STATE,
+        state_name,
         {
             "at": now.isoformat(),
             "copies": {
@@ -232,8 +238,13 @@ def _real_deps() -> Deps:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    result = run_once(_real_deps(), alert_user=os.environ.get("BGGCON_ALERT_USER"))
-    logger.info("BGG.CON recorder: %s", result)
+    started = time.monotonic()
+    result = run_once(
+        _real_deps(),
+        alert_user=os.environ.get("BGGCON_ALERT_USER"),
+        test_run=os.environ.get("BGGCON_TEST_RUN") == "1",
+    )
+    logger.info("BGG.CON recorder: %s (%.1fs)", result, time.monotonic() - started)
     return 0
 
 

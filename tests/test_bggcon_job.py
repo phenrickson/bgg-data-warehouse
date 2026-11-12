@@ -149,3 +149,13 @@ def test_events_are_inserted_before_the_state_is_saved():
     with pytest.raises(job.Conflict):
         job.run_once(f.deps())
     assert len(f.inserted[job.EVENTS_TABLE]) == 1
+
+
+def test_a_test_run_goes_ahead_outside_the_window_without_touching_the_real_state():
+    f = Fakes(rows=[row("a")])
+    before = datetime(2026, 11, 13, 16, 0, tzinfo=UTC)
+    assert job.run_once(f.deps(now=before), test_run=True) == "recorded 1 events"
+    assert job.STATE not in f.files
+    assert f.files[job.TEST_STATE]["copies"]
+    [run] = f.inserted[job.RUNS_TABLE]
+    assert run["note"] == "test run"
