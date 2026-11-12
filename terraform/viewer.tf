@@ -145,12 +145,32 @@ resource "google_service_account_iam_member" "bgg_viewer_ci_act_as" {
 # bgg_viewer_artifacts) so a cold container no longer rebuilds it from BigQuery while a
 # user waits. Three grants make that work.
 
-# Read the pointer object and the artifact itself. Object-level read only — the app never
-# writes here; the Actions build does.
+# Read the pointer object and the artifact itself. Object-level read only: the app never
+# writes the artifacts; the Actions build does. (The one exception is bggcon/, below.)
 resource "google_storage_bucket_iam_member" "bgg_viewer_artifacts_reader" {
   bucket = google_storage_bucket.bgg_viewer_artifacts.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.bgg_viewer.email}"
+}
+
+# TEMPORARY, for BGG.CON 2026: the viewer's con-library feature saves two kinds of small JSON
+# files, a snapshot of the con library and each user's starred games, under bggcon/.
+# objectUser lets it create and overwrite them. The condition limits that to the bggcon/
+# prefix, so the app still can't touch the catalog artifacts or their pointers. Conditions
+# need uniform bucket-level access, which this bucket has (storage.tf).
+#
+# The bucket's 30-day lifecycle rule applies here too: a file is deleted 30 days after it
+# was last written. Remove this grant after the con.
+resource "google_storage_bucket_iam_member" "bgg_viewer_bggcon_writer" {
+  bucket = google_storage_bucket.bgg_viewer_artifacts.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.bgg_viewer.email}"
+
+  condition {
+    title       = "bggcon-prefix-only"
+    description = "Objects under bggcon/ only (BGG.CON 2026 library feature)"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.bgg_viewer_artifacts.name}/objects/bggcon/\")"
+  }
 }
 
 # Sign URLs as ITSELF. Cloud Run injects no service-account key file, so the client library
