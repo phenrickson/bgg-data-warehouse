@@ -33,8 +33,10 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      # The BGG_API_TOKEN secret ends in a newline, which ends the substitution list early:
+      # it has to stay LAST, or every key after it is dropped and the build is rejected.
       - name: Deploy
         run: |
           gcloud builds submit --config config/cloudbuild.yaml \
             --project=${GCP_PROJECT_ID} \
-            --substitutions=_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }},_NTFY_TOPIC=${{ secrets.NTFY_TOPIC_BGGCON }},_BGGCON_ALERT_USER=${{ vars.BGGCON_ALERT_USER }}
+            --substitutions=_NTFY_TOPIC=${{ secrets.NTFY_TOPIC_BGGCON }},_BGGCON_ALERT_USER=${{ vars.BGGCON_ALERT_USER }},_BGG_API_TOKEN=${{ secrets.BGG_API_TOKEN }}
