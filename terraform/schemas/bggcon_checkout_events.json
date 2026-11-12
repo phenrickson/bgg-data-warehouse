@@ -1,0 +1,44 @@
+[
+  {
+    "name": "copy_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Tabletop.Events library copy id"
+  },
+  {
+    "name": "bgg_id",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "BGG game id (null when the copy has none)"
+  },
+  {
+    "name": "name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "The copy's name in the library"
+  },
+  {
+    "name": "event",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "out (checked out) or in (returned)"
+  },
+  {
+    "name": "observed_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the recorder saw the change (once a minute)"
+  },
+  {
+    "name": "lastcheckout_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Tabletop.Events checkout id; with copy_id and event, the key for dropping duplicates"
+  },
+  {
+    "name": "tte_checkout_date",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Tabletop.Events' own checkout time, as sent (out events only)"
+  }
+]

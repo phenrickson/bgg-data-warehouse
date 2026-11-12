@@ -1,0 +1,26 @@
+[
+  {
+    "name": "observed_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the run happened"
+  },
+  {
+    "name": "n_out",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Copies checked out (null when the run failed or was skipped)"
+  },
+  {
+    "name": "ok",
+    "type": "BOOLEAN",
+    "mode": "REQUIRED",
+    "description": "Whether the run fetched and recorded"
+  },
+  {
+    "name": "note",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Why a run failed or was skipped"
+  }
+]
