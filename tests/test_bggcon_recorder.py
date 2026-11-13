@@ -100,3 +100,29 @@ class TestBackoff:
         assert r.should_skip(T, later)
         assert not r.should_skip(T, None)
         assert not r.should_skip(T + timedelta(minutes=3), later)
+
+
+class TestCheckoutCounts:
+    OPEN = datetime(2026, 11, 18, 15, 0, tzinfo=UTC)  # Wed 9:00 AM Chicago
+
+    def ev(self, bgg, kind="out", at=None):
+        return {"bgg_id": bgg, "event": kind, "observed_at": (at or self.OPEN + timedelta(hours=1)).isoformat()}
+
+    def test_counts_each_checkout_per_game(self):
+        events = [self.ev(13), self.ev(13), self.ev(822), self.ev(13, "in")]
+        assert r.add_checkouts({}, events) == {13: 2, 822: 1}
+
+    def test_adds_to_the_running_total(self):
+        assert r.add_checkouts({13: 5}, [self.ev(13)]) == {13: 6}
+
+    def test_only_from_the_con_opening(self):
+        before = self.OPEN - timedelta(minutes=1)
+        assert r.add_checkouts({}, [self.ev(13, at=before), self.ev(13, at=self.OPEN)]) == {13: 1}
+
+    def test_copies_without_a_game_are_left_out(self):
+        assert r.add_checkouts({}, [self.ev(None)]) == {}
+
+    def test_does_not_change_the_total_it_was_given(self):
+        total = {13: 1}
+        r.add_checkouts(total, [self.ev(13)])
+        assert total == {13: 1}

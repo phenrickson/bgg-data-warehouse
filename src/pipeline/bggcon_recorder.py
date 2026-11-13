@@ -9,7 +9,8 @@ docs/superpowers/specs/2026-11-12-bggcon-library-design.md). Each run:
 3. inserts one event per change (``raw.bggcon_checkout_events``) and one heartbeat row
    (``raw.bggcon_runs``), so gaps in coverage show in the report;
 4. writes the current per-game counts to ``bggcon/checked_out.json`` in the viewer bucket,
-   which the dashboard's availability endpoint reads;
+   which the dashboard's availability endpoint reads, with each game's checkouts since the
+   con opened (``checkouts``, a running total kept in the state);
 5. sends a phone push (ntfy) when a game in the alert user's focus list comes back on the
    shelf;
 6. saves its state (``bggcon/recorder/state.json``) for the next run to compare against.
@@ -89,6 +90,7 @@ def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) 
     """One minute's recording. ``test_run`` (a manual run, ``BGGCON_TEST_RUN=1``) goes ahead
     outside the window, keeps its own state file and notes "test run" on its heartbeat."""
     now = deps.now()
+    test_run = test_run or r.in_test_window(now)
     if not test_run and not r.in_window(now):
         return "outside the window"
     state_name = TEST_STATE if test_run else STATE
@@ -119,11 +121,19 @@ def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) 
     )
     now_out = r.checked_out_by_game(current)
     prev_out = {int(k): v for k, v in state.get("counts", {}).items()}
+    checkouts = r.add_checkouts({int(k): v for k, v in state.get("checkouts", {}).items()}, events)
 
     if events:
         deps.insert_rows(EVENTS_TABLE, events)
     deps.insert_rows(RUNS_TABLE, [_heartbeat(now, len(current), True, ok_note)])
-    deps.write_json(LATEST, {"as_of": now.isoformat(), "checked_out": {str(k): v for k, v in now_out.items()}})
+    deps.write_json(
+        LATEST,
+        {
+            "as_of": now.isoformat(),
+            "checked_out": {str(k): v for k, v in now_out.items()},
+            "checkouts": {str(k): v for k, v in checkouts.items()},
+        },
+    )
     deps.write_json(
         state_name,
         {
@@ -133,6 +143,7 @@ def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) 
                 for c in current
             },
             "counts": {str(k): v for k, v in now_out.items()},
+            "checkouts": {str(k): v for k, v in checkouts.items()},
             "next_allowed": None,
         },
         if_generation=gen or 0,

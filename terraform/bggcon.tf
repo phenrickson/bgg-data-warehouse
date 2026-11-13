@@ -75,3 +75,30 @@ resource "google_cloud_scheduler_job" "bggcon_recorder" {
 
   depends_on = [google_project_service.cloud_scheduler]
 }
+
+# TEMPORARY trial: the same job every minute, Fri 13 Nov 2:00–6:00 PM Chicago, to check the real
+# schedule end to end before the con. The job treats these as test runs. Remove after the trial.
+resource "google_cloud_scheduler_job" "bggcon_recorder_trial" {
+  name        = "bgg-bggcon-recorder-trial"
+  project     = var.project_id
+  region      = var.region
+  description = "Trial of the BGG.CON recorder's schedule, Fri 13 Nov 2-6 PM Chicago"
+  schedule    = "* 14-17 13 11 *"
+  time_zone   = "America/Chicago"
+
+  retry_config {
+    retry_count = 0
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/bgg-bggcon-recorder:run"
+
+    oauth_token {
+      service_account_email = google_service_account.bgg_pipeline.email
+      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+    }
+  }
+
+  depends_on = [google_project_service.cloud_scheduler]
+}
