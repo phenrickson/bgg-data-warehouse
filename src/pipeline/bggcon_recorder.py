@@ -90,6 +90,7 @@ def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) 
     """One minute's recording. ``test_run`` (a manual run, ``BGGCON_TEST_RUN=1``) goes ahead
     outside the window, keeps its own state file and notes "test run" on its heartbeat."""
     now = deps.now()
+    test_run = test_run or r.in_test_window(now)
     if not test_run and not r.in_window(now):
         return "outside the window"
     state_name = TEST_STATE if test_run else STATE

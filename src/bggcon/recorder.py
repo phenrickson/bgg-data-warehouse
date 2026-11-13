@@ -25,6 +25,11 @@ from datetime import UTC, datetime, timedelta
 WINDOW_START = datetime(2026, 11, 17, 6, 0, tzinfo=UTC)
 WINDOW_END = datetime(2026, 11, 22, 21, 0, tzinfo=UTC)
 
+#: A trial of the real schedule before the con: Fri 13 Nov 2:00–6:00 PM, Chicago. Runs in it are
+#: test runs (their own state file, "test run" on the heartbeat). Remove after the trial.
+TEST_WINDOW_START = datetime(2026, 11, 13, 20, 0, tzinfo=UTC)
+TEST_WINDOW_END = datetime(2026, 11, 14, 0, 0, tzinfo=UTC)
+
 #: The con opens Wed 18 Nov 9:00 AM, Chicago. Checkouts count from here (Tuesday is a test day).
 CON_OPEN = datetime(2026, 11, 18, 15, 0, tzinfo=UTC)
 
@@ -137,6 +142,10 @@ def back_on_shelf(
 
 def in_window(now: datetime) -> bool:
     return WINDOW_START <= now < WINDOW_END
+
+
+def in_test_window(now: datetime) -> bool:
+    return TEST_WINDOW_START <= now < TEST_WINDOW_END
 
 
 def backoff_until(now: datetime, status: int | None) -> datetime | None:
