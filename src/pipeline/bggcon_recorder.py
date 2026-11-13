@@ -88,7 +88,19 @@ def _heartbeat(now: datetime, n_out: int | None, ok: bool, note: str | None) -> 
 
 def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) -> str:
     """One minute's recording. ``test_run`` (a manual run, ``BGGCON_TEST_RUN=1``) goes ahead
-    outside the window, keeps its own state file and notes "test run" on its heartbeat."""
+    outside the window, keeps its own state file and notes "test run" on its heartbeat.
+
+    Runs a minute apart can overlap, since a Cloud Run job can take most of a minute to start.
+    Both read the same state; the one that saves second gets a ``Conflict`` and stops here,
+    cleanly. Its events and heartbeat are already in (duplicates, never lost minutes), and it
+    sends no alerts, since the run that won does."""
+    try:
+        return _record(deps, alert_user, test_run)
+    except Conflict:
+        return "another run saved first"
+
+
+def _record(deps: Deps, alert_user: str | None, test_run: bool) -> str:
     now = deps.now()
     test_run = test_run or r.in_test_window(now)
     if not test_run and not r.in_window(now):
