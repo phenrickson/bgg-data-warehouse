@@ -2,8 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from src.pipeline import bggcon_recorder as job
 
 T = datetime(2026, 11, 18, 16, 0, tzinfo=UTC)
@@ -146,13 +144,20 @@ def test_a_failing_push_does_not_fail_the_run():
     assert job.run_once(deps, alert_user="u1") == "recorded 1 events"
 
 
-def test_events_are_inserted_before_the_state_is_saved():
-    # If another run saved the state first, this run's events are already in: duplicates the
-    # report can drop (copy, event, checkout id), never lost minutes.
+def test_losing_the_race_to_save_the_state_ends_the_run_cleanly():
+    # Runs a minute apart can overlap (a Cloud Run job can take most of a minute to start).
+    # The one that saves second stops quietly: its events are already in, so they're duplicates
+    # the report can drop (copy, event, checkout id), never lost minutes. It sends no alerts;
+    # the run that won does.
     f = Fakes(rows=[row("a")], conflict=True)
-    with pytest.raises(job.Conflict):
-        job.run_once(f.deps())
+    assert job.run_once(f.deps(), alert_user="phil") == "another run saved first"
     assert len(f.inserted[job.EVENTS_TABLE]) == 1
+    assert f.pushes == []
+
+
+def test_losing_the_race_while_backing_off_ends_the_run_cleanly():
+    f = Fakes(fetch_error=job.FetchError(429), conflict=True)
+    assert job.run_once(f.deps()) == "another run saved first"
 
 
 def test_a_test_run_goes_ahead_outside_the_window_without_touching_the_real_state():
