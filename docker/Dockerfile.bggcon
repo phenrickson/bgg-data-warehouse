@@ -1,0 +1,22 @@
+# TEMPORARY (BGG.CON 2026): the convention library recorder's own image.
+#
+# It runs every minute during the con, and every run is a cold start, so it carries only what
+# the recorder imports (requests and the GCS and BigQuery clients) rather than the pipeline
+# image's full dependencies and Chromium. Versions match uv.lock.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN pip install \
+    requests==2.32.4 \
+    google-cloud-storage==3.1.0 \
+    google-cloud-bigquery==3.34.0
+
+WORKDIR /app
+COPY src/__init__.py src/__init__.py
+COPY src/bggcon/ src/bggcon/
+COPY src/pipeline/bggcon_recorder.py src/pipeline/bggcon_recorder.py
+
+# Same convention as the pipeline image: the job passes the module as its argument.
+ENTRYPOINT ["python", "-m"]
+CMD ["src.pipeline.bggcon_recorder"]

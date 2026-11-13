@@ -8,6 +8,13 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/bgg-processor:latest']
 
+  # TEMPORARY (BGG.CON 2026): the recorder's own small image (docker/Dockerfile.bggcon). It
+  # cold-starts every minute during the con, so it carries none of the pipeline's Chromium.
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'docker/Dockerfile.bggcon', '-t', 'gcr.io/$PROJECT_ID/bgg-bggcon-recorder:latest', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/bgg-bggcon-recorder:latest']
+
   # Deploy Fetch Thing IDs Cloud Run Job - Create if not exists, otherwise update
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
@@ -155,7 +162,7 @@ steps:
         if gcloud run jobs describe bgg-bggcon-recorder --region=us-central1 2>/dev/null; then ACTION=update; fi
         echo "$$ACTION job: bgg-bggcon-recorder"
         gcloud run jobs $$ACTION bgg-bggcon-recorder \
-          --image=gcr.io/$PROJECT_ID/bgg-processor:latest \
+          --image=gcr.io/$PROJECT_ID/bgg-bggcon-recorder:latest \
           --args=src.pipeline.bggcon_recorder \
           --tasks=1 \
           --max-retries=0 \
@@ -169,6 +176,7 @@ steps:
 # Images to push to Container Registry
 images:
   - 'gcr.io/$PROJECT_ID/bgg-processor:latest'
+  - 'gcr.io/$PROJECT_ID/bgg-bggcon-recorder:latest'
 
 # Timeout for the entire build
 timeout: '1800s'  # 30 minutes

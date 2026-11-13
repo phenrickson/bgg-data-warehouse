@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'docker/Dockerfile.pipeline'
+      - 'docker/Dockerfile.bggcon'
       - 'config/cloudbuild.yaml'
       - 'src/pipeline/**'
       - 'src/modules/**'
