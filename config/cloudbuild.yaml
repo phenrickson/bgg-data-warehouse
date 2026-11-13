@@ -149,10 +149,33 @@ steps:
             --set-env-vars=BGG_API_TOKEN=$_BGG_API_TOKEN
         fi
 
-  # TEMPORARY (BGG.CON 2026): the convention library recorder, run once a minute by Cloud
-  # Scheduler (terraform/bggcon.tf). One task, no retries, a short timeout: a missed minute is
-  # a gap the next run closes. NTFY_TOPIC empty means no alerts. BGGCON_ALERT_USER is whose
-  # focus list (bgg-viewer user id) alerts follow.
+  # TEMPORARY (BGG.CON 2026): the convention library recorder as a Cloud Run service, which
+  # Cloud Scheduler POSTs to once a minute (terraform/bggcon.tf). Gated: only the scheduler's
+  # service account (project-wide run.invoker) can call it. One instance taking one request at
+  # a time, so two minutes never overlap; a 60 s limit, since a missed minute is a gap the next
+  # run closes. NTFY_TOPIC empty means no alerts. BGGCON_ALERT_USER is whose focus list
+  # (bgg-viewer user id) alerts follow.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'bgg-bggcon-recorder-service'
+      - '--image=gcr.io/$PROJECT_ID/bgg-bggcon-recorder:latest'
+      - '--args=src.pipeline.bggcon_service'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--no-allow-unauthenticated'
+      - '--service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--min-instances=0'
+      - '--max-instances=1'
+      - '--concurrency=1'
+      - '--timeout=60s'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--port=8080'
+      - '--set-env-vars=NTFY_TOPIC=$_NTFY_TOPIC,BGGCON_ALERT_USER=$_BGGCON_ALERT_USER'
+
+  # The same recorder as a job, for one-off manual runs (BGGCON_TEST_RUN=1); nothing schedules it.
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
