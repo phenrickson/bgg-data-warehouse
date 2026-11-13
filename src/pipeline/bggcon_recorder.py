@@ -210,7 +210,7 @@ def _fetch_checked_out() -> list[dict]:
     return out
 
 
-def _real_deps() -> Deps:
+def real_deps() -> Deps:
     import requests
     from google.api_core.exceptions import NotFound, PreconditionFailed
     from google.cloud import bigquery, storage
@@ -263,7 +263,7 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     started = time.monotonic()
     result = run_once(
-        _real_deps(),
+        real_deps(),
         alert_user=os.environ.get("BGGCON_ALERT_USER"),
         test_run=os.environ.get("BGGCON_TEST_RUN") == "1",
     )
