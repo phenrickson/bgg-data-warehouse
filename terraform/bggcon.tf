@@ -1,14 +1,22 @@
 # TEMPORARY, for BGG.CON 2026: the convention library recorder (bgg-viewer spec §8).
 #
-# A Cloud Run job, `bgg-bggcon-recorder` (created by config/cloudbuild.yaml like the other
-# jobs), runs once a minute during the con. Each run records checkout events and a heartbeat
-# here, and writes the current counts to the viewer bucket's bggcon/ for the dashboard.
+# A Cloud Run service, `bgg-bggcon-recorder-service` (deployed by config/cloudbuild.yaml), which
+# the scheduler POSTs to once a minute during the con. Each call records checkout events and a
+# heartbeat here, and writes the current counts to the viewer bucket's bggcon/ for the dashboard.
+# (It was a Cloud Run job, but a job took 10-60 s to start, so minutes overlapped.)
 #
 # It runs as the pipeline service account, which already has BigQuery data editor, project-wide
-# object admin (so bggcon/ in the viewer bucket) and run.invoker, so no new grants.
+# object admin (so bggcon/ in the viewer bucket) and run.invoker, so no new grants: the scheduler
+# signs its calls (OIDC) as that account too.
 #
-# Remove this file, the two schemas and the job after the con; the tables can stay for the
-# end-of-con report.
+# Remove this file, the two schemas, the service and the job after the con; the tables can stay
+# for the end-of-con report.
+
+locals {
+  # A Cloud Run service's URL is fixed by its name, project number and region, so the scheduler
+  # doesn't depend on the deploy having run first.
+  bggcon_recorder_url = "https://bgg-bggcon-recorder-service-${data.google_project.current.number}.${var.region}.run.app/"
+}
 
 resource "google_project_service" "cloud_scheduler" {
   project            = var.project_id
@@ -48,8 +56,8 @@ resource "google_bigquery_table" "bggcon_runs" {
   schema = file("${path.module}/schemas/bggcon_runs.json")
 }
 
-# Every minute, Tue 17 Nov (test day) through Sun 22 Nov, Chicago time. The job itself stops at
-# Sunday 3:00 PM and does nothing outside its window, so a stray run costs no request.
+# Every minute, Tue 17 Nov (test day) through Sun 22 Nov, Chicago time. The recorder itself stops at
+# Sunday 3:00 PM and does nothing outside its window, so a stray call costs no request.
 resource "google_cloud_scheduler_job" "bggcon_recorder" {
   name        = "bgg-bggcon-recorder"
   project     = var.project_id
@@ -65,19 +73,19 @@ resource "google_cloud_scheduler_job" "bggcon_recorder" {
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/bgg-bggcon-recorder:run"
+    uri         = local.bggcon_recorder_url
 
-    oauth_token {
+    oidc_token {
       service_account_email = google_service_account.bgg_pipeline.email
-      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+      audience              = local.bggcon_recorder_url
     }
   }
 
   depends_on = [google_project_service.cloud_scheduler]
 }
 
-# TEMPORARY trial: the same job every minute, Fri 13 Nov 2:00–6:00 PM Chicago, to check the real
-# schedule end to end before the con. The job treats these as test runs. Remove after the trial.
+# TEMPORARY trial: the same recorder every minute, Fri 13 Nov 2:00–6:00 PM Chicago, to check the real
+# schedule end to end before the con. The recorder treats these as test runs. Remove after the trial.
 resource "google_cloud_scheduler_job" "bggcon_recorder_trial" {
   name        = "bgg-bggcon-recorder-trial"
   project     = var.project_id
@@ -92,11 +100,11 @@ resource "google_cloud_scheduler_job" "bggcon_recorder_trial" {
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/bgg-bggcon-recorder:run"
+    uri         = local.bggcon_recorder_url
 
-    oauth_token {
+    oidc_token {
       service_account_email = google_service_account.bgg_pipeline.email
-      scope                 = "https://www.googleapis.com/auth/cloud-platform"
+      audience              = local.bggcon_recorder_url
     }
   }
 
