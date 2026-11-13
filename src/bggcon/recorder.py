@@ -25,6 +25,9 @@ from datetime import UTC, datetime, timedelta
 WINDOW_START = datetime(2026, 11, 17, 6, 0, tzinfo=UTC)
 WINDOW_END = datetime(2026, 11, 22, 21, 0, tzinfo=UTC)
 
+#: The con opens Wed 18 Nov 9:00 AM, Chicago. Checkouts count from here (Tuesday is a test day).
+CON_OPEN = datetime(2026, 11, 18, 15, 0, tzinfo=UTC)
+
 BACKOFF = timedelta(minutes=5)
 
 
@@ -103,6 +106,18 @@ def checked_out_by_game(current: list[Copy]) -> dict[int, int]:
     for c in current:
         if c.bgg_id:
             out[c.bgg_id] = out.get(c.bgg_id, 0) + 1
+    return out
+
+
+def add_checkouts(total: dict[int, int], events: list[dict]) -> dict[int, int]:
+    """The running count of checkouts per game since the con opened, plus this run's ``out`` events.
+
+    A return and re-checkout between runs is its own ``out`` event, so it counts too.
+    """
+    out = dict(total)
+    for e in events:
+        if e["event"] == "out" and e["bgg_id"] and datetime.fromisoformat(e["observed_at"]) >= CON_OPEN:
+            out[e["bgg_id"]] = out.get(e["bgg_id"], 0) + 1
     return out
 
 

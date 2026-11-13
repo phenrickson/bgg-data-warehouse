@@ -70,7 +70,11 @@ def test_first_run_records_copies_out_and_saves_state_and_latest():
     assert [e["event"] for e in f.inserted[job.EVENTS_TABLE]] == ["out", "out"]
     [run] = f.inserted[job.RUNS_TABLE]
     assert run == {"observed_at": T.isoformat(), "n_out": 2, "ok": True, "note": None}
-    assert f.files[job.LATEST] == {"as_of": T.isoformat(), "checked_out": {"13": 1, "822": 1}}
+    assert f.files[job.LATEST] == {
+        "as_of": T.isoformat(),
+        "checked_out": {"13": 1, "822": 1},
+        "checkouts": {"13": 1, "822": 1},
+    }
     assert f.files[job.STATE]["copies"]["a"] == {"lastcheckout_id": "co-1", "bgg_id": 13, "name": "Catan"}
 
 
@@ -159,3 +163,14 @@ def test_a_test_run_goes_ahead_outside_the_window_without_touching_the_real_stat
     assert f.files[job.TEST_STATE]["copies"]
     [run] = f.inserted[job.RUNS_TABLE]
     assert run["note"] == "test run"
+
+
+def test_checkouts_build_up_across_runs_and_reach_the_snapshot():
+    f = Fakes(rows=[row("a", bgg=13)])
+    job.run_once(f.deps())
+    f.rows = []  # back in
+    job.run_once(f.deps(now=T + timedelta(minutes=1)))
+    f.rows = [row("a", bgg=13, last="co-2"), row("b", bgg=822, last="co-3")]  # out again, and another game
+    job.run_once(f.deps(now=T + timedelta(minutes=2)))
+    assert f.files[job.LATEST]["checkouts"] == {"13": 2, "822": 1}
+    assert f.files[job.STATE]["checkouts"] == {"13": 2, "822": 1}
