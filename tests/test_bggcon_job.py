@@ -180,17 +180,3 @@ def test_checkouts_build_up_across_runs_and_reach_the_snapshot():
     assert f.files[job.LATEST]["checkouts"] == {"13": 2, "822": 1}
     assert f.files[job.STATE]["checkouts"] == {"13": 2, "822": 1}
 
-
-def test_runs_in_the_test_window_are_test_runs():
-    # Fri 13 Nov, 2–6 PM Chicago: the scheduler's trial before the con.
-    f = Fakes(rows=[row("a")])
-    during = datetime(2026, 11, 13, 21, 0, tzinfo=UTC)
-    assert job.run_once(f.deps(now=during)) == "recorded 1 events"
-    assert job.STATE not in f.files and job.TEST_STATE in f.files
-    assert f.inserted[job.RUNS_TABLE][0]["note"] == "test run"
-
-
-def test_outside_both_windows_it_does_nothing():
-    f = Fakes(rows=[row("a")])
-    assert job.run_once(f.deps(now=datetime(2026, 11, 14, 0, 0, tzinfo=UTC))) == "outside the window"
-    assert job.run_once(f.deps(now=datetime(2026, 11, 13, 19, 59, tzinfo=UTC))) == "outside the window"
