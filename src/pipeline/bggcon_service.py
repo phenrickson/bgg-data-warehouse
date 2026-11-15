@@ -49,11 +49,10 @@ def make_handler(run: Callable[[], str]) -> type[BaseHTTPRequestHandler]:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     deps = job.real_deps()
-    alert_user = os.environ.get("BGGCON_ALERT_USER")
     test_run = os.environ.get("BGGCON_TEST_RUN") == "1"
 
     def run() -> str:
-        return job.run_once(deps, alert_user=alert_user, test_run=test_run)
+        return job.run_once(deps, test_run=test_run)
 
     port = int(os.environ.get("PORT", "8080"))
     HTTPServer(("", port), make_handler(run)).serve_forever()

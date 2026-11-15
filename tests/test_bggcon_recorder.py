@@ -77,6 +77,19 @@ class TestAlerts:
         assert r.back_on_shelf({999: 1}, {}, self.COPIES, starred={999}) == []
 
 
+class TestCameBack:
+    """The cheap check before any per-user reads: did any game's out-count fall?"""
+
+    def test_a_copy_returned(self):
+        assert r.came_back({822: 1}, {}) is True
+
+    def test_nothing_changed(self):
+        assert r.came_back({822: 1}, {822: 1}) is False
+
+    def test_only_checkouts(self):
+        assert r.came_back({}, {822: 1}) is False
+
+
 class TestWindow:
     # Tue 17 Nov 00:00 to Sun 22 Nov 15:00, America/Chicago (CST, UTC−6).
     def test_records_from_the_test_day_to_the_close(self):

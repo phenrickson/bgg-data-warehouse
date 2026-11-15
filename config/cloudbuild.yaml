@@ -153,8 +153,9 @@ steps:
   # Cloud Scheduler POSTs to once a minute (terraform/bggcon.tf). Gated: only the scheduler's
   # service account (project-wide run.invoker) can call it. One instance taking one request at
   # a time, so two minutes never overlap; a 60 s limit, since a missed minute is a gap the next
-  # run closes. NTFY_TOPIC empty means no alerts. BGGCON_ALERT_USER is whose focus list
-  # (bgg-viewer user id) alerts follow.
+  # run closes. Alerts need no settings: each user's ntfy topic is in the bucket
+  # (bggcon/alerts/). --set-env-vars replaces all env vars, so it also clears the old
+  # NTFY_TOPIC and BGGCON_ALERT_USER; BGGCON_BUCKET is the code's own default.
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
@@ -173,7 +174,7 @@ steps:
       - '--memory=512Mi'
       - '--cpu=1'
       - '--port=8080'
-      - '--set-env-vars=NTFY_TOPIC=$_NTFY_TOPIC,BGGCON_ALERT_USER=$_BGGCON_ALERT_USER'
+      - '--set-env-vars=BGGCON_BUCKET=bgg-data-warehouse-bgg-viewer-artifacts'
 
   # The same recorder as a job, for one-off manual runs (BGGCON_TEST_RUN=1); nothing schedules it.
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -194,7 +195,7 @@ steps:
           --cpu=1 \
           --region=us-central1 \
           --service-account=bgg-data-warehouse@$PROJECT_ID.iam.gserviceaccount.com \
-          --set-env-vars=NTFY_TOPIC=$_NTFY_TOPIC,BGGCON_ALERT_USER=$_BGGCON_ALERT_USER
+          --set-env-vars=BGGCON_BUCKET=bgg-data-warehouse-bgg-viewer-artifacts
 
 # Images to push to Container Registry
 images:
