@@ -227,3 +227,32 @@ def test_checkouts_build_up_across_runs_and_reach_the_snapshot():
     assert f.files[job.LATEST]["checkouts"] == {"13": 2, "822": 1}
     assert f.files[job.STATE]["checkouts"] == {"13": 2, "822": 1}
 
+
+
+def test_a_manual_test_run_sends_no_alerts():
+    # A test run compares against its own state, which can be days old: an alert from it
+    # would be stale, and it would go to every user's real topic.
+    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))})
+    job.run_once(f.deps(), test_run=True)
+    f.rows = []
+    assert job.run_once(f.deps(now=T + timedelta(minutes=1)), test_run=True) == "recorded 1 events"
+    assert f.pushes == []
+
+
+def test_one_failed_push_does_not_drop_that_users_other_games():
+    f = Fakes(
+        rows=[row("a", bgg=822, name="Carcassonne"), row("b", bgg=13)],
+        files={job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [13, 822]))},
+    )
+    job.run_once(f.deps())
+    f.rows = []
+    deps = f.deps(now=T + timedelta(minutes=1))
+
+    def flaky(topic, title, message):
+        if "Catan" in title:
+            raise RuntimeError("ntfy hiccup")
+        f.notify(topic, title, message)
+
+    deps.notify = flaky
+    job.run_once(deps)
+    assert f.pushes == [("t1", "BGG.CON: Carcassonne is back", "1/1 available")]

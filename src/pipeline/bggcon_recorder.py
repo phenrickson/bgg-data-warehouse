@@ -165,7 +165,9 @@ def _record(deps: Deps, test_run: bool) -> str:
         if_generation=gen or 0,
     )
 
-    if had_state and deps.notify and r.came_back(prev_out, now_out):
+    # Not on a test run: its state can be days old, so its alerts would be stale, and they'd go
+    # to every user's real topic.
+    if had_state and not test_run and deps.notify and r.came_back(prev_out, now_out):
         try:
             _alert(deps, prev_out, now_out)
         except Exception:  # an alert must never cost a recorded minute
@@ -192,12 +194,17 @@ def _alert(deps: Deps, prev_out: dict[int, int], now_out: dict[int, int]) -> Non
             starred, _ = deps.read_json(stars_name(user_id))
             if not topic or not starred:
                 continue
-            for bgg_id in r.back_on_shelf(prev_out, now_out, copies, set(starred)):
-                n = copies[bgg_id]
-                title = f"BGG.CON: {games[bgg_id]['name']} is back"
-                deps.notify(topic, title, f"{n - now_out.get(bgg_id, 0)}/{n} available")
+            back = r.back_on_shelf(prev_out, now_out, copies, set(starred))
         except Exception:
             logger.exception("BGG.CON alert failed for %s", user_id)
+            continue
+        for bgg_id in back:  # each push on its own, so one failure doesn't drop the rest
+            n = copies[bgg_id]
+            title = f"BGG.CON: {games[bgg_id]['name']} is back"
+            try:
+                deps.notify(topic, title, f"{n - now_out.get(bgg_id, 0)}/{n} available")
+            except Exception:
+                logger.exception("BGG.CON alert failed for %s (%s)", user_id, bgg_id)
 
 
 # --- the real services -----------------------------------------------------------------
