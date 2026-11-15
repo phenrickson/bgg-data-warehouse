@@ -179,7 +179,8 @@ def test_one_users_bad_file_or_failing_push_does_not_stop_the_others():
 
 
 def test_a_failing_push_does_not_fail_the_run():
-    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))})
+    files = {job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))}
+    f = Fakes(rows=[row("a", bgg=822)], files=files)
     job.run_once(f.deps())
     f.rows = []
 
@@ -232,7 +233,8 @@ def test_checkouts_build_up_across_runs_and_reach_the_snapshot():
 def test_a_manual_test_run_sends_no_alerts():
     # A test run compares against its own state, which can be days old: an alert from it
     # would be stale, and it would go to every user's real topic.
-    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))})
+    files = {job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))}
+    f = Fakes(rows=[row("a", bgg=822)], files=files)
     job.run_once(f.deps(), test_run=True)
     f.rows = []
     assert job.run_once(f.deps(now=T + timedelta(minutes=1)), test_run=True) == "recorded 1 events"
