@@ -121,6 +121,12 @@ def add_checkouts(total: dict[int, int], events: list[dict]) -> dict[int, int]:
     return out
 
 
+def came_back(prev_out: dict[int, int], now_out: dict[int, int]) -> bool:
+    """Whether any game has fewer copies out than last run: the cheap check that lets a quiet
+    minute skip reading every user's alert files."""
+    return any(now_out.get(bgg_id, 0) < n for bgg_id, n in prev_out.items())
+
+
 def back_on_shelf(
     prev_out: dict[int, int], now_out: dict[int, int], copies: dict[int, int], starred: set[int]
 ) -> list[int]:

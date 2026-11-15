@@ -11,8 +11,9 @@ docs/superpowers/specs/2026-11-12-bggcon-library-design.md). Each run:
 4. writes the current per-game counts to ``bggcon/checked_out.json`` in the viewer bucket,
    which the dashboard's availability endpoint reads, with each game's checkouts since the
    con opened (``checkouts``, a running total kept in the state);
-5. sends a phone push (ntfy) when a game in the alert user's focus list comes back on the
-   shelf;
+5. when a game came back on the shelf, sends each user with an alert topic
+   (``bggcon/alerts/{user_id}.json``, made by the dashboard) a phone push (ntfy) for the games
+   in their own focus list;
 6. saves its state (``bggcon/recorder/state.json``) for the next run to compare against.
 
 Events are inserted before the state is saved: if two runs ever overlap, the worst case is
@@ -21,8 +22,7 @@ duplicate rows (the report drops them by copy, event and checkout id), never los
 No borrower data is fetched or stored.
 
 Run: ``python -m src.pipeline.bggcon_recorder``. Env: ``BGGCON_BUCKET`` (default the viewer
-artifacts bucket), ``NTFY_TOPIC`` and ``BGGCON_ALERT_USER`` (both optional; no alerts
-without them), ``BGGCON_TEST_RUN=1`` for a manual run outside the window (see ``run_once``).
+artifacts bucket), ``BGGCON_TEST_RUN=1`` for a manual run outside the window (see ``run_once``).
 """
 
 from __future__ import annotations
@@ -51,6 +51,8 @@ STATE = "bggcon/recorder/state.json"
 TEST_STATE = "bggcon/recorder/state.test.json"
 LATEST = "bggcon/checked_out.json"
 LIBRARY = "bggcon/library.json"
+#: One file per user, ``{"topic": "..."}``, written by the dashboard (spec §8).
+ALERTS_PREFIX = "bggcon/alerts/"
 EVENTS_TABLE = "raw.bggcon_checkout_events"
 RUNS_TABLE = "raw.bggcon_runs"
 DASHBOARD_URL = "https://boardgame-viz.com/bggcon"
@@ -78,7 +80,10 @@ class Deps:
     #: ``if_generation`` 0 means "must not exist yet"; None means overwrite.
     write_json: Callable[..., None]
     insert_rows: Callable[[str, list[dict]], None]
-    notify: Callable[[str, str], None] | None
+    #: The object names under a prefix.
+    list_names: Callable[[str], list[str]]
+    #: (topic, title, message)
+    notify: Callable[[str, str, str], None] | None
     now: Callable[[], datetime]
 
 
@@ -86,7 +91,7 @@ def _heartbeat(now: datetime, n_out: int | None, ok: bool, note: str | None) -> 
     return {"observed_at": now.isoformat(), "n_out": n_out, "ok": ok, "note": note}
 
 
-def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) -> str:
+def run_once(deps: Deps, test_run: bool = False) -> str:
     """One minute's recording. ``test_run`` (a manual run, ``BGGCON_TEST_RUN=1``) goes ahead
     outside the window, keeps its own state file and notes "test run" on its heartbeat.
 
@@ -95,12 +100,12 @@ def run_once(deps: Deps, alert_user: str | None = None, test_run: bool = False) 
     cleanly. Its events and heartbeat are already in (duplicates, never lost minutes), and it
     sends no alerts, since the run that won does."""
     try:
-        return _record(deps, alert_user, test_run)
+        return _record(deps, test_run)
     except Conflict:
         return "another run saved first"
 
 
-def _record(deps: Deps, alert_user: str | None, test_run: bool) -> str:
+def _record(deps: Deps, test_run: bool) -> str:
     now = deps.now()
     if not test_run and not r.in_window(now):
         return "outside the window"
@@ -160,25 +165,39 @@ def _record(deps: Deps, alert_user: str | None, test_run: bool) -> str:
         if_generation=gen or 0,
     )
 
-    if had_state and alert_user and deps.notify:
+    if had_state and deps.notify and r.came_back(prev_out, now_out):
         try:
-            _alert(deps, alert_user, prev_out, now_out)
+            _alert(deps, prev_out, now_out)
         except Exception:  # an alert must never cost a recorded minute
             logger.exception("BGG.CON alert failed")
 
     return f"recorded {len(events)} events"
 
 
-def _alert(deps: Deps, user: str, prev_out: dict[int, int], now_out: dict[int, int]) -> None:
+def _alert(deps: Deps, prev_out: dict[int, int], now_out: dict[int, int]) -> None:
+    """Push each user with an alert topic the starred games that came back on the shelf. One
+    user's bad file or failed push is logged and never stops the others."""
     library, _ = deps.read_json(LIBRARY)
-    starred, _ = deps.read_json(stars_name(user))
-    if not library or not starred:
+    if not library:
         return
     games = {g["bgg_id"]: g for g in library["games"]}
     copies = {i: g["copies"] for i, g in games.items()}
-    for bgg_id in r.back_on_shelf(prev_out, now_out, copies, set(starred)):
-        n = copies[bgg_id]
-        deps.notify(f"BGG.CON: {games[bgg_id]['name']} is back", f"{n - now_out.get(bgg_id, 0)}/{n} available")
+    for name in deps.list_names(ALERTS_PREFIX):
+        if not name.endswith(".json"):
+            continue
+        user_id = name[len(ALERTS_PREFIX) : -len(".json")]
+        try:
+            alerts, _ = deps.read_json(name)
+            topic = (alerts or {}).get("topic")
+            starred, _ = deps.read_json(stars_name(user_id))
+            if not topic or not starred:
+                continue
+            for bgg_id in r.back_on_shelf(prev_out, now_out, copies, set(starred)):
+                n = copies[bgg_id]
+                title = f"BGG.CON: {games[bgg_id]['name']} is back"
+                deps.notify(topic, title, f"{n - now_out.get(bgg_id, 0)}/{n} available")
+        except Exception:
+            logger.exception("BGG.CON alert failed for %s", user_id)
 
 
 # --- the real services -----------------------------------------------------------------
@@ -216,7 +235,6 @@ def real_deps() -> Deps:
 
     bucket = storage.Client().bucket(os.environ.get("BGGCON_BUCKET", "bgg-data-warehouse-bgg-viewer-artifacts"))
     bq = bigquery.Client()
-    topic = os.environ.get("NTFY_TOPIC")
 
     def read_json(name: str):
         blob = bucket.blob(name)
@@ -240,7 +258,10 @@ def real_deps() -> Deps:
         if errors:
             raise RuntimeError(f"BigQuery insert into {table} failed: {errors}")
 
-    def notify(title: str, message: str):
+    def list_names(prefix: str) -> list[str]:
+        return [b.name for b in bucket.list_blobs(prefix=prefix)]
+
+    def notify(topic: str, title: str, message: str):
         requests.post(
             f"https://ntfy.sh/{topic}",
             data=message.encode(),
@@ -253,7 +274,8 @@ def real_deps() -> Deps:
         read_json=read_json,
         write_json=write_json,
         insert_rows=insert_rows,
-        notify=notify if topic else None,
+        list_names=list_names,
+        notify=notify,
         now=lambda: datetime.now(UTC),
     )
 
@@ -263,7 +285,6 @@ def main() -> int:
     started = time.monotonic()
     result = run_once(
         real_deps(),
-        alert_user=os.environ.get("BGGCON_ALERT_USER"),
         test_run=os.environ.get("BGGCON_TEST_RUN") == "1",
     )
     logger.info("BGG.CON recorder: %s (%.1fs)", result, time.monotonic() - started)

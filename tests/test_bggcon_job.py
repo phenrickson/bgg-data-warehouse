@@ -22,7 +22,8 @@ class Fakes:
         self.conflict = conflict
         self.fetches = 0
         self.inserted: dict[str, list[dict]] = {}
-        self.pushes: list[tuple[str, str]] = []
+        self.pushes: list[tuple[str, str, str]] = []
+        self.listings = 0
 
     def fetch(self):
         self.fetches += 1
@@ -42,8 +43,12 @@ class Fakes:
     def insert(self, table, rows):
         self.inserted.setdefault(table, []).extend(rows)
 
-    def notify(self, title, message):
-        self.pushes.append((title, message))
+    def list_names(self, prefix):
+        self.listings += 1
+        return sorted(k for k in self.files if k.startswith(prefix))
+
+    def notify(self, topic, title, message):
+        self.pushes.append((topic, title, message))
 
     def deps(self, now=T):
         return job.Deps(
@@ -51,6 +56,7 @@ class Fakes:
             read_json=self.read,
             write_json=self.write,
             insert_rows=self.insert,
+            list_names=self.list_names,
             notify=self.notify,
             now=lambda: now,
         )
@@ -108,40 +114,81 @@ def test_a_429_backs_off_records_a_failed_heartbeat_and_skips_the_next_run():
     assert job.run_once(f.deps(now=T + timedelta(minutes=7))) == "recorded 0 events"
 
 
-def test_alerts_when_a_starred_game_comes_back_on_the_shelf():
-    library = {"games": [{"bgg_id": 822, "name": "Carcassonne", "copies": 1, "play_to_win": False}]}
+CARCASSONNE = {"bgg_id": 822, "name": "Carcassonne", "copies": 1, "play_to_win": False}
+CATAN = {"bgg_id": 13, "name": "Catan", "copies": 1, "play_to_win": False}
+LIBRARY = {"games": [CARCASSONNE, CATAN]}
+
+
+def alert_files(**users):
+    """``u1=("t1", [822])`` -> that user's alerts file and stars file."""
+    files = {}
+    for uid, (topic, stars) in users.items():
+        files[f"{job.ALERTS_PREFIX}{uid}.json"] = {"topic": topic} if topic else {}
+        files[job.stars_name(uid)] = stars
+    return files
+
+
+def test_alerts_each_user_on_their_own_topic():
     f = Fakes(
-        rows=[row("a", bgg=822, name="Carcassonne")],
-        files={job.LIBRARY: library, job.stars_name("u1"): [822]},
+        rows=[row("a", bgg=822, name="Carcassonne"), row("b", bgg=13)],
+        files={job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]), u2=("t2", [13]))},
     )
-    job.run_once(f.deps(), alert_user="u1")
+    job.run_once(f.deps())
     assert f.pushes == []  # first run: nothing to compare against
-    f.rows = []
-    job.run_once(f.deps(now=T + timedelta(minutes=1)), alert_user="u1")
-    assert f.pushes == [("BGG.CON: Carcassonne is back", "1/1 available")]
+    f.rows = [row("b", bgg=13)]  # Carcassonne back; Catan still out
+    job.run_once(f.deps(now=T + timedelta(minutes=1)))
+    assert f.pushes == [("t1", "BGG.CON: Carcassonne is back", "1/1 available")]
 
 
-def test_no_alerts_without_a_user_to_alert():
-    library = {"games": [{"bgg_id": 822, "name": "Carcassonne", "copies": 1, "play_to_win": False}]}
-    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: library})
+def test_no_alerts_without_any_alert_files():
+    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: LIBRARY, job.stars_name("u1"): [822]})
     job.run_once(f.deps())
     f.rows = []
     job.run_once(f.deps(now=T + timedelta(minutes=1)))
     assert f.pushes == []
 
 
+def test_a_quiet_minute_lists_no_alert_files():
+    files = {job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))}
+    f = Fakes(rows=[row("a", bgg=822)], files=files)
+    job.run_once(f.deps())
+    job.run_once(f.deps(now=T + timedelta(minutes=1)))  # still out: nothing came back
+    assert f.listings == 0
+
+
+def test_one_users_bad_file_or_failing_push_does_not_stop_the_others():
+    f = Fakes(
+        rows=[row("a", bgg=822, name="Carcassonne")],
+        files={
+            job.LIBRARY: LIBRARY,
+            **alert_files(u1=(None, [822]), u2=("t2", [822]), u3=("t3", [822])),
+        },
+    )
+    job.run_once(f.deps())
+    f.rows = []
+    deps = f.deps(now=T + timedelta(minutes=1))
+
+    def flaky(topic, title, message):
+        if topic == "t2":
+            raise RuntimeError("ntfy down")
+        f.notify(topic, title, message)
+
+    deps.notify = flaky
+    assert job.run_once(deps) == "recorded 1 events"
+    assert f.pushes == [("t3", "BGG.CON: Carcassonne is back", "1/1 available")]
+
+
 def test_a_failing_push_does_not_fail_the_run():
-    library = {"games": [{"bgg_id": 822, "name": "Carcassonne", "copies": 1, "play_to_win": False}]}
-    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: library, job.stars_name("u1"): [822]})
-    job.run_once(f.deps(), alert_user="u1")
+    f = Fakes(rows=[row("a", bgg=822)], files={job.LIBRARY: LIBRARY, **alert_files(u1=("t1", [822]))})
+    job.run_once(f.deps())
     f.rows = []
 
-    def boom(title, message):
+    def boom(topic, title, message):
         raise RuntimeError("ntfy down")
 
     deps = f.deps(now=T + timedelta(minutes=1))
     deps.notify = boom
-    assert job.run_once(deps, alert_user="u1") == "recorded 1 events"
+    assert job.run_once(deps) == "recorded 1 events"
 
 
 def test_losing_the_race_to_save_the_state_ends_the_run_cleanly():
@@ -150,7 +197,7 @@ def test_losing_the_race_to_save_the_state_ends_the_run_cleanly():
     # the report can drop (copy, event, checkout id), never lost minutes. It sends no alerts;
     # the run that won does.
     f = Fakes(rows=[row("a")], conflict=True)
-    assert job.run_once(f.deps(), alert_user="phil") == "another run saved first"
+    assert job.run_once(f.deps()) == "another run saved first"
     assert len(f.inserted[job.EVENTS_TABLE]) == 1
     assert f.pushes == []
 
