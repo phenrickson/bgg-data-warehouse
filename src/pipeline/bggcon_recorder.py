@@ -207,6 +207,22 @@ def _alert(deps: Deps, prev_out: dict[int, int], now_out: dict[int, int]) -> Non
                 logger.exception("BGG.CON alert failed for %s (%s)", user_id, bgg_id)
 
 
+def send_push(topic: str, title: str, message: str, post: Callable[..., Any]) -> None:
+    """One ntfy push, published as JSON. Not as headers: a header must be latin-1, and game names
+    carry en dashes, curly quotes and accents."""
+    post(
+        "https://ntfy.sh/",
+        json={
+            "topic": topic,
+            "title": title,
+            "message": message,
+            "click": DASHBOARD_URL,
+            "tags": ["game_die"],
+        },
+        timeout=10,
+    ).raise_for_status()
+
+
 # --- the real services -----------------------------------------------------------------
 
 
@@ -269,12 +285,7 @@ def real_deps() -> Deps:
         return [b.name for b in bucket.list_blobs(prefix=prefix)]
 
     def notify(topic: str, title: str, message: str):
-        requests.post(
-            f"https://ntfy.sh/{topic}",
-            data=message.encode(),
-            headers={"Title": title, "Click": DASHBOARD_URL, "Tags": "game_die"},
-            timeout=10,
-        ).raise_for_status()
+        send_push(topic, title, message, post=requests.post)
 
     return Deps(
         fetch_checked_out=_fetch_checked_out,

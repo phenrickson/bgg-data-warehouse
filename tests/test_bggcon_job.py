@@ -258,3 +258,33 @@ def test_one_failed_push_does_not_drop_that_users_other_games():
     deps.notify = flaky
     job.run_once(deps)
     assert f.pushes == [("t1", "BGG.CON: Carcassonne is back", "1/1 available")]
+
+
+def test_push_carries_a_name_that_is_not_latin_1():
+    """A game name with an en dash went in the Title header, which must be latin-1, so the
+    push never left (2026-11-17, Night of the Goblin). Everything rides in a JSON body now."""
+    import json
+
+    import requests
+
+    sent = {}
+
+    def post(url, **kwargs):
+        sent.update(url=url, **kwargs)
+        return type("Ok", (), {"raise_for_status": lambda self: None})()
+
+    name = "Marvel: Crisis Protocol Alliances – Night of the Goblin (English edition)"  # noqa: RUF001
+    title = f"BGG.CON: {name} is back"
+    job.send_push("bggcon-2026-someone", title, "1/1 available", post=post)
+
+    prepared = requests.Request(
+        "POST", sent["url"], json=sent.get("json"), data=sent.get("data"), headers=sent.get("headers")
+    ).prepare()
+    for value in prepared.headers.values():
+        value.encode("latin-1")  # what http.client does to every header; it raised here
+    body = json.loads(prepared.body)
+    assert sent["url"] == "https://ntfy.sh/"
+    assert body["topic"] == "bggcon-2026-someone"
+    assert body["title"] == title
+    assert body["message"] == "1/1 available"
+    assert body["click"] == job.DASHBOARD_URL
