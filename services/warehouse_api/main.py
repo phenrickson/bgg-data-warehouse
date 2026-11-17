@@ -20,7 +20,7 @@ import logging  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 
-from services.warehouse_api.routers import games, monitoring  # noqa: E402
+from services.warehouse_api.routers import bggcon, games, monitoring  # noqa: E402
 
 print(f"[startup] main.py: app imports took {time.perf_counter() - _import_start:.2f}s", flush=True)
 
@@ -31,6 +31,7 @@ app = FastAPI(title="BGG Warehouse API", version="0.1.0")
 
 app.include_router(games.router)
 app.include_router(monitoring.router)
+app.include_router(bggcon.router)
 
 
 @app.get("/health")
