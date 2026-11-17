@@ -7,8 +7,8 @@ Events are dicts: ``copy_id, bgg_id, name, event ('out' | 'in'), observed_at (UT
 lastcheckout_id``.
 
 The recorder's first run wrote an ``out`` for every copy already out (the **baseline**). Those
-start the copies-out count but are never checkouts: they're the events at the earliest
-``observed_at``.
+start the copies-out count but are never checkouts. The caller passes the first run's time
+(from ``raw.bggcon_runs``); without it, the earliest event's time stands in.
 
 Spec: bgg-viewer docs/superpowers/specs/2026-11-17-bggcon-analytics-design.md.
 """
@@ -57,22 +57,27 @@ def dedupe(events: list[dict]) -> list[dict]:
     return sorted(best.values(), key=lambda e: e["observed_at"])
 
 
-def _checkouts(events: list[dict]) -> list[dict]:
+def _baseline(events: list[dict], baseline: datetime | None) -> datetime | None:
+    """The first run's time; events at or before it are the baseline, never checkouts."""
+    if baseline is not None:
+        return baseline
+    return events[0]["observed_at"] if events else None
+
+
+def _checkouts(events: list[dict], baseline: datetime | None) -> list[dict]:
     """The ``out`` events that are real checkouts: everything but the baseline."""
-    if not events:
-        return []
-    baseline = events[0]["observed_at"]
-    return [e for e in events if e["event"] == "out" and e["observed_at"] > baseline]
+    base = _baseline(events, baseline)
+    return [e for e in events if e["event"] == "out" and (base is None or e["observed_at"] > base)]
 
 
-def activity(events: list[dict], as_of: datetime | None) -> dict:
+def activity(events: list[dict], as_of: datetime | None, baseline: datetime | None = None) -> dict:
     """Checkouts per 15 minutes, from the window's start to the bucket holding ``as_of``."""
     hours = [{"open": o.isoformat(), "close": c.isoformat()} for o, c in LIBRARY_HOURS]
     if as_of is None or as_of < WINDOW_START:
         return {"as_of": _iso(as_of), "hours": hours, "buckets": []}
     n = int((as_of - WINDOW_START) / BUCKET) + 1
     counts = [0] * n
-    for e in _checkouts(dedupe(events)):
+    for e in _checkouts(dedupe(events), baseline):
         i = int((e["observed_at"] - WINDOW_START) / BUCKET)
         if 0 <= i < n:
             counts[i] += 1
@@ -122,7 +127,8 @@ def _end_of_play(start: datetime, end: datetime) -> datetime:
     previous close."""
     for i, (o, _) in enumerate(LIBRARY_HOURS):
         if i and o <= end < o + DROP_OFF and start < o:
-            return LIBRARY_HOURS[i - 1][1]
+            # Never before it went out: a checkout first seen after close counts as 0 min.
+            return max(LIBRARY_HOURS[i - 1][1], start)
     return end
 
 
@@ -151,12 +157,17 @@ def _quartiles(mins: list[float]) -> tuple[int | None, int | None, int | None]:
     return round(q1), round(med), round(q3)
 
 
-def games(events: list[dict], as_of: datetime | None, copies: dict[int, int]) -> dict:
+def games(
+    events: list[dict],
+    as_of: datetime | None,
+    copies: dict[int, int],
+    baseline: datetime | None = None,
+) -> dict:
     """Per-game checkouts, recent trend, availability and time out, by checkouts (most first)."""
     evs = dedupe(events)
     if as_of is None or not evs:
         return {"as_of": _iso(as_of), "games": []}
-    baseline = evs[0]["observed_at"]
+    baseline = _baseline(evs, baseline)
     windows = _open_windows(as_of)
     three_ago, six_ago = as_of - timedelta(hours=3), as_of - timedelta(hours=6)
     open_minutes = round(sum((c - o).total_seconds() / 60 for o, c in windows))

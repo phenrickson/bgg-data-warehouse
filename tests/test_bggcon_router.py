@@ -31,6 +31,7 @@ def fake_reader(monkeypatch):
     monkeypatch.setattr(bggcon_router.reader, "fetch_events", events)
     monkeypatch.setattr(bggcon_router.reader, "fetch_as_of", lambda: AS_OF)
     monkeypatch.setattr(bggcon_router.reader, "fetch_copies", lambda: {13: 2})
+    monkeypatch.setattr(bggcon_router.reader, "fetch_baseline", lambda: WINDOW_START)
     yield calls
     bggcon_router._reset_cache()
 
@@ -57,3 +58,9 @@ def test_results_are_cached_for_a_minute(fake_reader):
     client.get("/bggcon/games")
     client.get("/bggcon/games")
     assert fake_reader["events"] == 1
+
+
+def test_the_first_runs_time_is_the_baseline_even_with_no_events_then(monkeypatch):
+    # The first run found nothing out: the first event is a real checkout.
+    monkeypatch.setattr(bggcon_router.reader, "fetch_events", lambda: [ev("c1", "out", CON_OPEN)])
+    assert client.get("/bggcon/games").json()["games"][0]["checkouts"] == 1

@@ -109,3 +109,22 @@ def test_a_game_missing_from_the_library_has_no_copies_or_demand():
 def test_copies_without_a_bgg_id_are_left_out():
     events = [ev("c0", 99, "out", BASE), ev("c1", None, "out", T)]
     assert [r["bgg_id"] for r in games(events, T + timedelta(hours=1), {})["games"]] == [99]
+
+
+def test_a_checkout_seen_just_after_close_never_has_a_negative_time_out():
+    # First seen 5 min after close (late recorder, or the real hours differ), back at 8:20 AM.
+    events = [
+        ev("c0", 99, "out", BASE),
+        ev("c", 13, "out", datetime(2026, 11, 19, 6, 5, tzinfo=UTC), last="3"),
+        ev("c", 13, "in", datetime(2026, 11, 19, 14, 20, tzinfo=UTC), last="3"),
+    ]
+    g = row(games(events, datetime(2026, 11, 19, 15, 0, tzinfo=UTC), {13: 1}), 13)
+    assert g["time_out_median"] == 0
+
+
+def test_the_baseline_comes_from_the_first_run_not_the_first_event():
+    # The first run found nothing out, so it wrote no events: the first checkout is a checkout.
+    events = [ev("c1", 13, "out", T + timedelta(minutes=1))]
+    a = activity(events, T + timedelta(minutes=5), baseline=BASE)
+    assert sum(b["checkouts"] for b in a["buckets"]) == 1
+    assert row(games(events, T + timedelta(minutes=5), {13: 1}, baseline=BASE), 13)["checkouts"] == 1
