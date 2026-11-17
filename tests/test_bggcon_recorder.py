@@ -116,7 +116,7 @@ class TestBackoff:
 
 
 class TestCheckoutCounts:
-    OPEN = datetime(2026, 11, 18, 15, 0, tzinfo=UTC)  # Wed 9:00 AM Chicago
+    OPEN = datetime(2026, 11, 17, 6, 0, tzinfo=UTC)  # Tue 00:00 Chicago: the window's start
 
     def ev(self, bgg, kind="out", at=None):
         return {"bgg_id": bgg, "event": kind, "observed_at": (at or self.OPEN + timedelta(hours=1)).isoformat()}
@@ -128,7 +128,7 @@ class TestCheckoutCounts:
     def test_adds_to_the_running_total(self):
         assert r.add_checkouts({13: 5}, [self.ev(13)]) == {13: 6}
 
-    def test_only_from_the_con_opening(self):
+    def test_only_from_the_window_start(self):
         before = self.OPEN - timedelta(minutes=1)
         assert r.add_checkouts({}, [self.ev(13, at=before), self.ev(13, at=self.OPEN)]) == {13: 1}
 

@@ -10,7 +10,7 @@ docs/superpowers/specs/2026-11-12-bggcon-library-design.md). Each run:
    (``raw.bggcon_runs``), so gaps in coverage show in the report;
 4. writes the current per-game counts to ``bggcon/checked_out.json`` in the viewer bucket,
    which the dashboard's availability endpoint reads, with each game's checkouts since the
-   con opened (``checkouts``, a running total kept in the state);
+   window opened (``checkouts``, a running total kept in the state);
 5. when a game came back on the shelf, sends each user with an alert topic
    (``bggcon/alerts/{user_id}.json``, made by the dashboard) a phone push (ntfy) for the games
    in their own focus list;
