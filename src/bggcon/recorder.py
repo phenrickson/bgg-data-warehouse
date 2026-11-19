@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 # Tue 17 Nov 2026 00:00 (test day) to Sun 22 Nov 15:00, America/Chicago (CST, UTC−6).
 WINDOW_START = datetime(2026, 11, 17, 6, 0, tzinfo=UTC)
@@ -29,7 +30,14 @@ WINDOW_END = datetime(2026, 11, 22, 21, 0, tzinfo=UTC)
 #: change deployed mid-Tuesday, so the totals start from that deploy, not from Tuesday 00:00.
 COUNT_FROM = WINDOW_START
 
-BACKOFF = timedelta(minutes=5)
+#: After the n-th failure in a row, wait BACKOFF_MINUTES[n-1] (the last one from then on).
+BACKOFF_MINUTES = (2, 5, 10, 15)
+
+#: The library is closed overnight, so poll only every QUIET_EVERY_MIN minutes from midnight to
+#: 7 AM Chicago (counts sat flat through those hours on Wed and Thu).
+CHICAGO = ZoneInfo("America/Chicago")
+QUIET_HOURS = range(0, 7)
+QUIET_EVERY_MIN = 15
 
 
 @dataclass(frozen=True)
@@ -146,11 +154,17 @@ def in_window(now: datetime) -> bool:
     return WINDOW_START <= now < WINDOW_END
 
 
-def backoff_until(now: datetime, status: int | None) -> datetime | None:
-    """After a 429 or 5xx, wait before asking again; other failures don't back off."""
-    if status is not None and (status == 429 or status >= 500):
-        return now + BACKOFF
-    return None
+def backoff_until(now: datetime, failures: int) -> datetime:
+    """After any failed fetch (timeout, 404, 429, 5xx...), wait before asking again, longer each
+    failure in a row, so a struggling Tabletop.Events doesn't get a request every minute."""
+    i = min(max(failures, 1), len(BACKOFF_MINUTES)) - 1
+    return now + timedelta(minutes=BACKOFF_MINUTES[i])
+
+
+def quiet_skip(now: datetime) -> bool:
+    """True for a minute the recorder sits out: overnight, all but every QUIET_EVERY_MIN-th."""
+    local = now.astimezone(CHICAGO)
+    return local.hour in QUIET_HOURS and local.minute % QUIET_EVERY_MIN != 0
 
 
 def should_skip(now: datetime, next_allowed: str | None) -> bool:

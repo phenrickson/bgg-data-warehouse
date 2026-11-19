@@ -3,7 +3,8 @@
 Cloud Scheduler runs this Cloud Run job every minute during the con (spec §8 in bgg-viewer's
 docs/superpowers/specs/2026-11-12-bggcon-library-design.md). Each run:
 
-1. exits at once outside the recording window, or while backing off after a 429 or 5xx;
+1. exits at once outside the recording window, on an overnight minute it sits out, or while
+   backing off after a failed fetch (any failure; longer each failure in a row);
 2. fetches the copies checked out right now from Tabletop.Events (public API, a page or a
    few, one at a time);
 3. inserts one event per change (``raw.bggcon_checkout_events``) and one heartbeat row
@@ -63,9 +64,10 @@ def stars_name(user_id: str) -> str:
 
 
 class FetchError(Exception):
-    def __init__(self, status: int | None):
-        super().__init__(f"Tabletop.Events request failed ({status})")
+    def __init__(self, status: int | None, page: int | None = None):
+        super().__init__(f"Tabletop.Events request failed ({status}, page {page})")
         self.status = status
+        self.page = page
 
 
 class Conflict(Exception):
@@ -109,6 +111,8 @@ def _record(deps: Deps, test_run: bool) -> str:
     now = deps.now()
     if not test_run and not r.in_window(now):
         return "outside the window"
+    if not test_run and r.quiet_skip(now):
+        return "quiet hours"
     state_name = TEST_STATE if test_run else STATE
     ok_note = "test run" if test_run else None
 
@@ -121,10 +125,16 @@ def _record(deps: Deps, test_run: bool) -> str:
     try:
         rows = deps.fetch_checked_out()
     except FetchError as e:
-        until = r.backoff_until(now, e.status)
-        deps.write_json(state_name, {**state, "next_allowed": until.isoformat() if until else None}, if_generation=gen or 0)
-        deps.insert_rows(RUNS_TABLE, [_heartbeat(now, None, False, f"fetch failed ({e.status})")])
-        return f"fetch failed ({e.status})"
+        failures = int(state.get("failures", 0)) + 1
+        until = r.backoff_until(now, failures)
+        deps.write_json(
+            state_name,
+            {**state, "next_allowed": until.isoformat(), "failures": failures},
+            if_generation=gen or 0,
+        )
+        note = f"fetch failed ({e.status}, page {e.page})"
+        deps.insert_rows(RUNS_TABLE, [_heartbeat(now, None, False, note)])
+        return note
 
     current = [r.Copy.from_row(row) for row in rows]
     had_state = "copies" in state
@@ -241,9 +251,9 @@ def _fetch_checked_out() -> list[dict]:
                 timeout=TIMEOUT_S,
             )
         except requests.RequestException as e:
-            raise FetchError(None) from e
+            raise FetchError(None, page) from e
         if res.status_code != 200:
-            raise FetchError(res.status_code)
+            raise FetchError(res.status_code, page)
         result = res.json()["result"]
         out.extend(result["items"])
         total = int(result["paging"]["total_pages"]) or 1

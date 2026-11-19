@@ -100,18 +100,40 @@ def test_a_copy_coming_back_is_an_in_event_with_its_game():
     assert f.files[job.LATEST]["checked_out"] == {}
 
 
-def test_a_429_backs_off_records_a_failed_heartbeat_and_skips_the_next_run():
+def test_any_failure_backs_off_records_a_failed_heartbeat_and_skips_the_next_run():
     f = Fakes(rows=[row("a")])
     job.run_once(f.deps())
-    f.fetch_error = job.FetchError(429)
-    assert job.run_once(f.deps(now=T + timedelta(minutes=1))) == "fetch failed (429)"
+    f.fetch_error = job.FetchError(404, 3)
+    assert job.run_once(f.deps(now=T + timedelta(minutes=1))) == "fetch failed (404, page 3)"
     assert f.inserted[job.RUNS_TABLE][-1]["ok"] is False
     assert f.files[job.STATE]["copies"]  # the last good set is kept
     f.fetch_error = None
     fetches = f.fetches
     assert job.run_once(f.deps(now=T + timedelta(minutes=2))) == "backing off"
     assert f.fetches == fetches
-    assert job.run_once(f.deps(now=T + timedelta(minutes=7))) == "recorded 0 events"
+    assert job.run_once(f.deps(now=T + timedelta(minutes=3))) == "recorded 0 events"
+
+
+def test_failures_in_a_row_back_off_longer_and_a_success_resets():
+    f = Fakes(rows=[row("a")])
+    job.run_once(f.deps())
+    f.fetch_error = job.FetchError(None, 1)  # a timeout backs off too
+    job.run_once(f.deps(now=T + timedelta(minutes=1)))  # 1st: 2 min
+    job.run_once(f.deps(now=T + timedelta(minutes=3)))  # 2nd: 5 min
+    assert f.files[job.STATE]["failures"] == 2
+    assert job.run_once(f.deps(now=T + timedelta(minutes=7))) == "backing off"
+    f.fetch_error = None
+    assert job.run_once(f.deps(now=T + timedelta(minutes=8))) == "recorded 0 events"
+    assert "failures" not in f.files[job.STATE]
+
+
+def test_sits_out_overnight_minutes_without_fetching():
+    f = Fakes(rows=[row("a")])
+    two_am = datetime(2026, 11, 19, 8, 7, tzinfo=UTC)
+    assert job.run_once(f.deps(now=two_am)) == "quiet hours"
+    assert f.fetches == 0
+    assert job.run_once(f.deps(now=two_am.replace(minute=15))).startswith("recorded")
+    assert f.fetches == 1
 
 
 CARCASSONNE = {"bgg_id": 822, "name": "Carcassonne", "copies": 1, "play_to_win": False}
