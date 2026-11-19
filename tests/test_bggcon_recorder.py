@@ -100,13 +100,25 @@ class TestWindow:
 
 
 class TestBackoff:
-    def test_waits_five_minutes_after_a_429_or_5xx(self):
-        assert r.backoff_until(T, 429) == T + timedelta(minutes=5)
-        assert r.backoff_until(T, 503) == T + timedelta(minutes=5)
+    def test_any_failure_backs_off_longer_each_time_in_a_row(self):
+        assert r.backoff_until(T, 1) == T + timedelta(minutes=2)
+        assert r.backoff_until(T, 2) == T + timedelta(minutes=5)
+        assert r.backoff_until(T, 3) == T + timedelta(minutes=10)
+        assert r.backoff_until(T, 4) == T + timedelta(minutes=15)
+        assert r.backoff_until(T, 9) == T + timedelta(minutes=15)
 
-    def test_no_wait_after_other_failures(self):
-        assert r.backoff_until(T, 404) is None
-        assert r.backoff_until(T, None) is None
+
+class TestQuietHours:
+    def test_overnight_runs_only_every_fifteen_minutes(self):
+        # 2 AM Chicago (CST, UTC-6)
+        assert r.quiet_skip(datetime(2026, 11, 19, 8, 7, tzinfo=UTC))
+        assert not r.quiet_skip(datetime(2026, 11, 19, 8, 15, tzinfo=UTC))
+
+    def test_open_hours_run_every_minute(self):
+        # 6:59 AM is quiet; 7:00 AM and 11:59 PM are not
+        assert r.quiet_skip(datetime(2026, 11, 19, 12, 59, tzinfo=UTC))
+        assert not r.quiet_skip(datetime(2026, 11, 19, 13, 1, tzinfo=UTC))
+        assert not r.quiet_skip(datetime(2026, 11, 20, 5, 59, tzinfo=UTC))
 
     def test_skips_a_run_before_the_allowed_time(self):
         later = (T + timedelta(minutes=2)).isoformat()
