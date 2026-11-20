@@ -57,14 +57,15 @@ resource "google_bigquery_table" "bggcon_runs" {
 }
 
 # Every 2 minutes, Tue 17 Nov (test day) through Sun 22 Nov, Chicago time (was every minute;
-# halved on 19 Nov to go easier on Tabletop.Events). The recorder itself stops at
+# halved on 19 Nov to go easier on Tabletop.Events), 7 AM to midnight only: the library is
+# open 8 AM-midnight, and 7 AM catches the pre-opening returns. The recorder itself stops at
 # Sunday 3:00 PM and does nothing outside its window, so a stray call costs no request.
 resource "google_cloud_scheduler_job" "bggcon_recorder" {
   name        = "bgg-bggcon-recorder"
   project     = var.project_id
   region      = var.region
   description = "Runs the BGG.CON library recorder every 2 minutes during the con"
-  schedule    = "*/2 * 17-22 11 *"
+  schedule    = "*/2 7-23 17-22 11 *"
   time_zone   = "America/Chicago"
 
   # One attempt: a missed minute is just a gap, and the next run catches up.
