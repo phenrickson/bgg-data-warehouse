@@ -56,14 +56,15 @@ resource "google_bigquery_table" "bggcon_runs" {
   schema = file("${path.module}/schemas/bggcon_runs.json")
 }
 
-# Every minute, Tue 17 Nov (test day) through Sun 22 Nov, Chicago time. The recorder itself stops at
+# Every 2 minutes, Tue 17 Nov (test day) through Sun 22 Nov, Chicago time (was every minute;
+# halved on 19 Nov to go easier on Tabletop.Events). The recorder itself stops at
 # Sunday 3:00 PM and does nothing outside its window, so a stray call costs no request.
 resource "google_cloud_scheduler_job" "bggcon_recorder" {
   name        = "bgg-bggcon-recorder"
   project     = var.project_id
   region      = var.region
-  description = "Runs the BGG.CON library recorder once a minute during the con"
-  schedule    = "* * 17-22 11 *"
+  description = "Runs the BGG.CON library recorder every 2 minutes during the con"
+  schedule    = "*/2 * 17-22 11 *"
   time_zone   = "America/Chicago"
 
   # One attempt: a missed minute is just a gap, and the next run catches up.
