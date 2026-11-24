@@ -360,7 +360,7 @@ class ResponseProcessor:
                         "process_timestamp": datetime.now(UTC).isoformat(),
                         "process_status": "error",
                         "process_attempt": 1,
-                        "error_message": str(e)[:500]  # Limit error message length
+                        "error_message": f"{type(e).__name__}: {e}"[:500]  # Limit error message length
                     }]
                     errors = self.bq_client.insert_rows_json(processed_table_id, error_row)
                     if errors:

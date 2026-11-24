@@ -498,3 +498,26 @@ def test_process_game_zero_values(processor):
     assert result["min_players"] == 0
     assert result["max_players"] == 0
     assert result["playing_time"] == 0
+
+
+def test_process_game_with_empty_ranks(processor, sample_game_response):
+    """BGG sends <ranks/> (parsed as None) until it computes a new game's stats."""
+    item = sample_game_response["items"]["item"]
+    item = item[0] if isinstance(item, list) else item
+    item["statistics"]["ratings"]["ranks"] = None
+    game_id = int(item["@id"])
+
+    result = processor.process_game(game_id, sample_game_response, "boardgame")
+
+    assert result["game_id"] == game_id
+    assert result["rankings"] == []
+
+
+def test_process_game_raises_on_malformed_item(processor, sample_game_response):
+    """The caller records the exception text, so it must not be swallowed here."""
+    item = sample_game_response["items"]["item"]
+    item = item[0] if isinstance(item, list) else item
+    item["statistics"] = "not a dict"
+
+    with pytest.raises(AttributeError):
+        processor.process_game(int(item["@id"]), sample_game_response, "boardgame")

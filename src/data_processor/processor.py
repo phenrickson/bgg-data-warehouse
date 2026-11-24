@@ -83,7 +83,8 @@ class BGGDataProcessor:
         def __init__(self, stats: Dict[str, Any]):
             self.ranks = []
             ratings = stats.get("statistics", {}).get("ratings", {})
-            ranks = ratings.get("ranks", {}).get("rank", [])
+            # BGG sends <ranks/> (parsed as None) until it computes a new game's stats
+            ranks = (ratings.get("ranks") or {}).get("rank", [])
             if not isinstance(ranks, list):
                 ranks = [ranks]
 
@@ -315,7 +316,11 @@ class BGGDataProcessor:
             game_type: Type of the game (boardgame or boardgameexpansion)
 
         Returns:
-            Processed game data ready for BigQuery or None if processing fails
+            Processed game data ready for BigQuery or None if the response does
+            not contain the game
+
+        Raises:
+            Exception: If the game is in the response but can't be processed
         """
         try:
             items = api_response.get("items", {}).get("item", [])
@@ -397,8 +402,9 @@ class BGGDataProcessor:
             return processed
 
         except Exception as e:
+            # Re-raised so the caller records why, rather than a bare None
             logger.error("Failed to process game %d: %s", game_id, e)
-            return None
+            raise
 
     def prepare_for_bigquery(
         self, processed_games: List[Dict[str, Any]]

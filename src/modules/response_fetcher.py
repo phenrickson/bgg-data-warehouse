@@ -20,7 +20,11 @@ RAW_DATASET = "raw"
 THING_IDS_TABLE = "thing_ids"
 RAW_RESPONSES_TABLE = "raw_responses"
 FETCHED_RESPONSES_TABLE = "fetched_responses"
+PROCESSED_RESPONSES_TABLE = "processed_responses"
 FETCH_IN_PROGRESS_TABLE = "fetch_in_progress"
+
+# processed_responses.process_status values meaning the response wasn't usable
+FAILED_PROCESS_STATUSES = "'failed', 'error', 'parse_error', 'no_response'"
 
 
 class ResponseFetcher:
@@ -48,7 +52,7 @@ class ResponseFetcher:
         self.bq_client = bigquery.Client()
 
     def get_unfetched_ids(self, game_ids: Optional[List[int]] = None) -> List[Dict]:
-        """Get IDs that haven't had responses fetched yet.
+        """Get IDs with no usable response yet: never fetched, or failed and due a retry.
 
         Args:
             game_ids: Optional list of specific game IDs to fetch
@@ -63,6 +67,30 @@ class ResponseFetcher:
             WHERE fetch_start_timestamp < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
             """
             self.bq_client.query(cleanup_query).result()
+
+            # A fetch only counts as successful if its response was processed or is
+            # still waiting to be. Games whose responses all failed processing are
+            # refetched: they aren't in core.games, so the refresher never sees them.
+            history_ctes = f"""successful_fetches AS (
+                    SELECT DISTINCT f.game_id
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}` f
+                    LEFT JOIN `{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}` p
+                        ON f.record_id = p.record_id
+                    WHERE f.fetch_status = 'success'
+                        AND (p.record_id IS NULL OR p.process_status NOT IN ({FAILED_PROCESS_STATUSES}))
+                ),
+                failed_processing AS (
+                    SELECT
+                        f.game_id,
+                        COUNT(DISTINCT f.record_id) as attempt_count,
+                        MAX(f.fetch_timestamp) as last_attempt_time
+                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}` f
+                    INNER JOIN `{self.project_id}.{RAW_DATASET}.{PROCESSED_RESPONSES_TABLE}` p
+                        ON f.record_id = p.record_id
+                    WHERE f.fetch_status = 'success'
+                        AND p.process_status IN ({FAILED_PROCESS_STATUSES})
+                    GROUP BY f.game_id
+                )"""
 
             # Build the base query depending on whether specific game_ids were provided
             if game_ids:
@@ -80,25 +108,25 @@ class ResponseFetcher:
                     WHERE fetch_status IN ('no_response', 'parse_error')
                     GROUP BY game_id
                 ),
-                successful_fetches AS (
-                    SELECT DISTINCT game_id
-                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
-                    WHERE fetch_status = 'success'
-                ),
+                {history_ctes},
                 candidates AS (
                     SELECT i.game_id, 'boardgame' as type
                     FROM input_ids i
                     LEFT JOIN successful_fetches sf ON i.game_id = sf.game_id
                     LEFT JOIN retry_counts rc ON i.game_id = rc.game_id
+                    LEFT JOIN failed_processing fp ON i.game_id = fp.game_id
                     LEFT JOIN `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` p
                         ON i.game_id = p.game_id
                     WHERE
-                        -- Exclude successful fetches
+                        -- Exclude games with a processed (or pending) response
                         sf.game_id IS NULL
                         -- Exclude games that have been retried too many times
                         AND (rc.attempt_count IS NULL OR rc.attempt_count < 3)
                         -- Exclude games that were recently attempted (within 1 hour)
                         AND (rc.last_attempt_time IS NULL OR rc.last_attempt_time <= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                        -- Same for responses that couldn't be processed
+                        AND (fp.attempt_count IS NULL OR fp.attempt_count < 3)
+                        AND (fp.last_attempt_time IS NULL OR fp.last_attempt_time <= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))
                         -- Exclude games currently being fetched
                         AND p.game_id IS NULL
                     LIMIT {self.batch_size}
@@ -115,26 +143,26 @@ class ResponseFetcher:
                     WHERE fetch_status IN ('no_response', 'parse_error')
                     GROUP BY game_id
                 ),
-                successful_fetches AS (
-                    SELECT DISTINCT game_id
-                    FROM `{self.project_id}.{RAW_DATASET}.{FETCHED_RESPONSES_TABLE}`
-                    WHERE fetch_status = 'success'
-                ),
+                {history_ctes},
                 candidates AS (
                     SELECT t.game_id, t.type
                     FROM `{self.project_id}.{RAW_DATASET}.{THING_IDS_TABLE}` t
                     LEFT JOIN successful_fetches sf ON t.game_id = sf.game_id
                     LEFT JOIN retry_counts rc ON t.game_id = rc.game_id
+                    LEFT JOIN failed_processing fp ON t.game_id = fp.game_id
                     LEFT JOIN `{self.project_id}.{RAW_DATASET}.{FETCH_IN_PROGRESS_TABLE}` p
                         ON t.game_id = p.game_id
                     WHERE
                         t.type = 'boardgame'
-                        -- Exclude successful fetches
+                        -- Exclude games with a processed (or pending) response
                         AND sf.game_id IS NULL
                         -- Exclude games that have been retried too many times
                         AND (rc.attempt_count IS NULL OR rc.attempt_count < 3)
                         -- Exclude games that were recently attempted (within 1 hour)
                         AND (rc.last_attempt_time IS NULL OR rc.last_attempt_time <= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+                        -- Same for responses that couldn't be processed
+                        AND (fp.attempt_count IS NULL OR fp.attempt_count < 3)
+                        AND (fp.last_attempt_time IS NULL OR fp.last_attempt_time <= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY))
                         -- Exclude games currently being fetched
                         AND p.game_id IS NULL
                     ORDER BY t.game_id
