@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0](https://github.com/phenrickson/bgg-data-warehouse/compare/v0.8.0...v0.9.0) (2026-11-24)
+
+
+### Features
+
+* **api:** pooled similarity on /games/{id}/similar, with a POST for id pools ([#158](https://github.com/phenrickson/bgg-data-warehouse/issues/158)) ([8a9b21b](https://github.com/phenrickson/bgg-data-warehouse/commit/8a9b21b7673a617ec0536264891d630b70ef491d))
+* **bggcon:** /bggcon/activity and /bggcon/games on the warehouse API ([b1aec16](https://github.com/phenrickson/bgg-data-warehouse/commit/b1aec16f48db5e8ce86fd4e70c2a10cd830e0879))
+* **bggcon:** a manual test run, outside the window, on its own state ([8d04492](https://github.com/phenrickson/bgg-data-warehouse/commit/8d0449257e86d9d61a8c551cd237d299da34dae3))
+* **bggcon:** a trial of the recorder's schedule, Fri 13 Nov 2-6 PM Chicago ([3020327](https://github.com/phenrickson/bgg-data-warehouse/commit/3020327bd618a9456d00d4a61e2f692008820672))
+* **bggcon:** alert every user on their own ntfy topic ([8f18cef](https://github.com/phenrickson/bgg-data-warehouse/commit/8f18cefadf1a59f88e08763674953a037239e963))
+* **bggcon:** BGG.CON library recorder ([7548d4f](https://github.com/phenrickson/bgg-data-warehouse/commit/7548d4f2d26dbdba1db57bc890e1afff806461f3))
+* **bggcon:** count each game's checkouts since the con opened ([33ab4e9](https://github.com/phenrickson/bgg-data-warehouse/commit/33ab4e958571ee6f3940e866bbd728f88c6522bb))
+* **bggcon:** deploy the recorder as a Cloud Run job ([aef192b](https://github.com/phenrickson/bgg-data-warehouse/commit/aef192b8688fcc06385c9d98fe1e85ef329fdb02))
+* **bggcon:** deploy the recorder as a service and schedule calls to it ([add10be](https://github.com/phenrickson/bgg-data-warehouse/commit/add10be04856da87eb6854994512d8aaa17b95ef))
+* **bggcon:** library analytics endpoints ([8f6ea39](https://github.com/phenrickson/bgg-data-warehouse/commit/8f6ea3995fb725427ba6d94a5738805954609ba1))
+* **bggcon:** library analytics from the recorder's events ([e70bc0e](https://github.com/phenrickson/bgg-data-warehouse/commit/e70bc0e9841d3fe40f85b91092d83d33e9489650))
+* **bggcon:** phone alerts for every user with a topic ([4d628c2](https://github.com/phenrickson/bgg-data-warehouse/commit/4d628c271ce1f353983c9e2bae70df35acc03f17))
+* **bggcon:** recorder job: fetch, record events and heartbeat, latest counts, alerts ([3520e6c](https://github.com/phenrickson/bgg-data-warehouse/commit/3520e6cf78ff0a3dff05b8388e36f291c831b813))
+* **bggcon:** recorder logic: checkout events, alerts, window and backoff ([6e27b98](https://github.com/phenrickson/bgg-data-warehouse/commit/6e27b98852e8d9af31e2ad6f1aa797b08e372b5a))
+* **bggcon:** run the recorder as a Cloud Run service ([4719ffa](https://github.com/phenrickson/bgg-data-warehouse/commit/4719ffa4147cf0e3171fb0085415122b6fab4ab7))
+* **bggcon:** the recorder as a small HTTP service ([b85c3ba](https://github.com/phenrickson/bgg-data-warehouse/commit/b85c3ba861743de0b924412d195e8c89dcedf303))
+* **bggcon:** trial the recorder's schedule today, 2-6 PM Chicago ([e7745d4](https://github.com/phenrickson/bgg-data-warehouse/commit/e7745d41514db8d6b837e08bde966f5e1e3dc9a0))
+* **monitor:** games served by each step's current model; always fetch today's ML steps ([#156](https://github.com/phenrickson/bgg-data-warehouse/issues/156)) ([9bcdba2](https://github.com/phenrickson/bgg-data-warehouse/commit/9bcdba24944a1320bf3265d3129b639fd6bbaa95))
+* **refresh:** fair-share refresh across age buckets, 5,000 games/day ([#159](https://github.com/phenrickson/bgg-data-warehouse/issues/159)) ([ba24773](https://github.com/phenrickson/bgg-data-warehouse/commit/ba24773af856ebfab4c3524ce507b887d37b196f))
+* **terraform:** BGG.CON recorder tables and once-a-minute schedule ([5503369](https://github.com/phenrickson/bgg-data-warehouse/commit/550336916c6c5c4f3b9725cbf8107cd7a845bbd6))
+* **terraform:** let bgg-viewer write under bggcon/ in its artifacts bucket ([d32f028](https://github.com/phenrickson/bgg-data-warehouse/commit/d32f028084bb428ee5977d4cf3c2664c615cc401))
+* **terraform:** let bgg-viewer write under bggcon/ in its artifacts bucket ([4134231](https://github.com/phenrickson/bgg-data-warehouse/commit/4134231d277c61bdbf0f12c32b44fb0e6ee0355d))
+* **terraform:** read-only artifact access for The Merry Meeple site ([#162](https://github.com/phenrickson/bgg-data-warehouse/issues/162)) ([35c0951](https://github.com/phenrickson/bgg-data-warehouse/commit/35c09517c70a20cc85fc089f65d7f50e4e5a51a1))
+
+
+### Bug Fixes
+
+* **bggcon:** a run that loses the race to save the state ends cleanly ([5c19acd](https://github.com/phenrickson/bgg-data-warehouse/commit/5c19acda088fbd905633dd32d68784125cce296c))
+* **bggcon:** a run that loses the race to save the state ends cleanly ([b37205e](https://github.com/phenrickson/bgg-data-warehouse/commit/b37205e6ab32ec29250b9c32d8a63c6fbf052c7a))
+* **bggcon:** back off on any failed fetch; poll every 15 min overnight ([d455438](https://github.com/phenrickson/bgg-data-warehouse/commit/d455438958acf2b3dbd05a654de3be6f0bfc4cc0))
+* **bggcon:** back off on any failed fetch; poll every 15 min overnight ([f5b6d0c](https://github.com/phenrickson/bgg-data-warehouse/commit/f5b6d0cdcccb6ecb62feef99f78127d78b3b6e34))
+* **bggcon:** baseline from the first run, no test-run events, no negative times out ([a92a7b8](https://github.com/phenrickson/bgg-data-warehouse/commit/a92a7b8589f7f26b4815fb24dfd6c8ec147f3899))
+* **bggcon:** count checkouts from the window start, not Wednesday's opening ([6539359](https://github.com/phenrickson/bgg-data-warehouse/commit/6539359c11389808e98e53d6dd46876810c8317a))
+* **bggcon:** count checkouts from the window start, not Wednesday's opening ([332e586](https://github.com/phenrickson/bgg-data-warehouse/commit/332e5868630a02921053d0570cd6f9479cfcc9ee))
+* **bggcon:** keep the API token last in Cloud Build substitutions ([81e1bfe](https://github.com/phenrickson/bgg-data-warehouse/commit/81e1bfe158d694f4296ca5c30cef5c1fac6ca6f1))
+* **bggcon:** keep the API token last in Cloud Build substitutions ([f0dfb2d](https://github.com/phenrickson/bgg-data-warehouse/commit/f0dfb2d85f5dff5705af67a898c560c6c82c5c34))
+* **bggcon:** no alerts from a manual test run; one failed push drops nothing else ([7132671](https://github.com/phenrickson/bgg-data-warehouse/commit/7132671849e0d5352379cee503a22c24347b7489))
+* **bggcon:** send phone alerts as JSON so any game name gets through ([1b941b3](https://github.com/phenrickson/bgg-data-warehouse/commit/1b941b353cc4b43a20efc39617f8f30923d09c44))
+* **bggcon:** send phone alerts as JSON so any game name gets through ([8383ed8](https://github.com/phenrickson/bgg-data-warehouse/commit/8383ed8838cc4c008b552a2c79c3014f011942ff))
+* **processor:** load new games with empty ranks and retry failed processing ([8a6fba1](https://github.com/phenrickson/bgg-data-warehouse/commit/8a6fba1bf225830bfbf073566719ab120e78e68d))
+* **processor:** load new games with empty ranks and retry failed processing ([2c0581b](https://github.com/phenrickson/bgg-data-warehouse/commit/2c0581b0e0fc381ddc32954c18cbeb72d065b9f0))
+
+
+### Performance
+
+* **bggcon:** a small image of its own for the recorder ([e987c16](https://github.com/phenrickson/bgg-data-warehouse/commit/e987c16667317d8ae09b2bc3cd1d5aa4c102a1c1))
+* **bggcon:** a small image of its own for the recorder ([cbe2003](https://github.com/phenrickson/bgg-data-warehouse/commit/cbe20031a47a5023c67892b83ea52db967e45f7c))
+
 ## [0.8.0](https://github.com/phenrickson/bgg-data-warehouse/compare/v0.7.0...v0.8.0) (2026-10-06)
 
 
