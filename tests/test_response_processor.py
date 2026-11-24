@@ -10,6 +10,7 @@ from unittest import mock
 
 import pytest
 
+from src.data_processor.processor import BGGDataProcessor
 from src.modules.response_processor import ResponseProcessor
 
 
@@ -114,3 +115,18 @@ def test_empty_response_data_is_marked_no_response(processor):
     row = processor.bq_client.insert_rows_json.call_args.args[1][0]
     assert row["record_id"] == "r-old"
     assert row["process_status"] == "no_response"
+
+
+def test_exception_text_is_recorded_when_processing_fails(processor):
+    processor.bq_client.query.side_effect = [_job(SELECTED[:1]), _job(FETCHED[1:])]
+    processor.bq_client.insert_rows_json.return_value = []
+    processor.processor = BGGDataProcessor()
+    with mock.patch.object(
+        BGGDataProcessor, "_extract_names", side_effect=ValueError("bad sortindex")
+    ):
+        processor.process_batch()
+
+    (row,) = processor.bq_client.insert_rows_json.call_args.args[1]
+    assert row["record_id"] == "r-old"
+    assert row["process_status"] == "error"
+    assert row["error_message"] == "ValueError: bad sortindex"
