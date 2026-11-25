@@ -266,29 +266,5 @@ const R = (() => {
     });
   }
 
-  // Pairs of days: what was seen against the range chance gives.
-  function pairs(el, { items }) {
-    legend(el, [['var(--lit)', 'Seen'], ['var(--bandc)', 'Range from chance alone']]);
-    fit(el, w => {
-      const RH = 38, T = 4, L = w < 520 ? 98 : 110, n = items.length, lo = .18, hi = .30, x = v => L + (w - L - 20) * (v - lo) / (hi - lo), h = T + n * RH + 26;
-      let o = [.18, .20, .22, .24, .26, .28, .30].filter((_, i) => w >= 520 || i % 2 === 0).map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${T + n * RH}" stroke="var(--border)"/><text x="${x(t)}" y="${h - 6}" text-anchor="middle">${pc(t)}</text>`).join('');
-      items.forEach((d, i) => { const y = T + (i + .5) * RH; o += `<text class="nm" x="0" y="${y + 5}">${d.a} and ${d.b}</text><rect x="${x(d.lo)}" width="${x(d.hi) - x(d.lo)}" y="${y - 8}" height="16" rx="3" fill="var(--bandc)"/><circle cx="${x(d.v)}" cy="${y}" r="6" fill="var(--lit)"/><rect data-i="${i}" x="0" y="${y - RH / 2}" width="${w}" height="${RH}" fill="transparent"/>`; });
-      el.innerHTML = svg(w, h, o); const s = el.firstChild;
-      s.onpointermove = e => { const d = items[e.target.dataset.i]; if (d) show(e, `${d.a} and ${d.b}`, [row('Games on both days', (100 * d.v).toFixed(1) + '%'), row('Chance', `${(100 * d.lo).toFixed(1)}% to ${(100 * d.hi).toFixed(1)}%`), row('p', d.p.toFixed(3))]); else hide(); };
-      s.onpointerleave = hide;
-    });
-  }
-
-  // Small charts side by side, one per kind of game, a bar per day.
-  function days(el, { items }) {
-    el.classList.add('small');
-    for (const d of items) {
-      const num = d.name === 'Average complexity', f = v => num ? two(v) : (100 * v).toFixed(v < .1 ? 1 : 0) + '%', c = make('div', '', el); c.innerHTML = `<h4>${esc(d.name)}</h4>`; const p = make('div', '', c);
-      fit(p, w => {
-        const h = 130, T = 20, B = h - 22, b = w / 4, max = num ? 3 : Math.max(...d.v), y = v => B - (B - T) * v / max;
-        p.innerHTML = svg(w, h, d.v.map((v, i) => `<rect x="${i * b + b * .12}" width="${b * .76}" y="${y(v)}" height="${B - y(v)}" rx="3" fill="var(--lit)"/><text class="v" x="${(i + .5) * b}" y="${y(v) - 6}" text-anchor="middle">${f(v)}</text><text x="${(i + .5) * b}" y="${h - 6}" text-anchor="middle">${DN[i]}</text>`).join(''));
-      });
-    }
-  }
-  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, facets, trends, eachDay, stack, pairs, days };
+  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, facets, trends, eachDay, stack };
 })();
