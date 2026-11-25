@@ -1,8 +1,17 @@
 # BGG.CON 2026 library checkouts
 
-Analysis of the checkouts recorded by `src/bggcon` at BGG.CON 2026 (Nov 18–22). Each page is a standalone HTML file, built from local flat files; the pages feed one report, which isn't assembled yet. Titles and labels in the charts are placeholders.
+Analysis of the checkouts recorded by `src/bggcon` at BGG.CON 2026 (Nov 18–22). Everything is built from local flat files into one standalone HTML report, `report.qmd`. Titles, labels and bracketed text are placeholders.
 
-## Run
+## Report
+
+From this folder, with Quarto installed and `QUARTO_PYTHON` pointing at the repo's `.venv` (`uv sync --group analysis`):
+
+    python -X utf8 build_playback.py   # once, for the map
+    quarto render report.qmd
+
+`stats_*.py` hold the statistics, `availability.py` and `report_data.py` the descriptive numbers, `report_charts.py`, `report.js`, `report_map.*` and `report.css` the drawing.
+
+## Earlier standalone pages
 
 From the repo root (`-X utf8` is needed on Windows):
 

@@ -1,13 +1,13 @@
 ---
+# All titles, descriptions, notes and bracketed text are placeholders. Phil writes the copy.
 title: "Placeholder title"
+subtitle: "Placeholder subtitle"
 format:
   html:
     minimal: true
     theme: none
     embed-resources: true
-    code-fold: true
-    code-summary: "Show the statistics"
-    css: [charts.css, report.css]
+    css: report.css
 execute:
   echo: false
   warning: false
@@ -17,37 +17,144 @@ execute:
 import numpy as np
 
 import report_charts as charts
+import report_data as data
 import stats_complexity_by_hour as hours
+import stats_days
+import stats_patterns
 
-charts.setup()
+rng = np.random.default_rng(1)
+charts.setup(data.GAMES_TABLE)
 ```
 
-[Placeholder: opening.]
+[Opening.]
+
+## How the data was collected
+
+[How we collected it, the API rules, and the outage.]
+
+```{python}
+charts.exhibit("timeline", data.timeline(), "Checkouts through the con", "Library hours only", note="Placeholder note.")
+```
+
+[The map.]
+
+```{python}
+charts.game_map("Every game in the library", "Games near each other are similar. Press Play to watch the con.", note="* Some games, mostly expansions, aren't shown on the map.")
+```
+
+## The most in-demand games
+
+[Hot Games, and the hottest games that weren't on the list.]
+
+```{python}
+charts.exhibit("games", dict(sort=True, search=True, views=[
+    ["All", data.ranked()], ["Hot Games list", data.ranked(lambda g: g["hot"])], ["Not on the list", data.ranked(lambda g: not g["hot"])]]),
+    "Most in demand", "Share of the con when every copy was out", note="Placeholder note.")
+```
+
+[By year.]
+
+```{python}
+charts.exhibit("games", dict(sort=True, views=[[str(y), data.ranked(lambda g: g["y"] == y)] for y in range(2026, 2021, -1)]),
+               "Most in demand, by year published", "Share of the con when every copy was out")
+```
+
+```{python}
+dots, rate = data.by_year()
+charts.exhibit("dots", dict(games=dots, names=data.YEAR_NAMES, ticks=data.YEAR_TICKS, what="Published"), "Every game in the library, by year published")
+```
+
+```{python}
+charts.exhibit("share", dict(rate=rate, names=data.YEAR_NAMES, ticks=data.YEAR_TICKS, what="Published", max=1), "Share of library games checked out, by year published")
+```
+
+[Older games.]
+
+```{python}
+charts.exhibit("games", dict(sort=True, views=[["1990–2015", data.ranked(lambda g: g["y"] and 1990 <= g["y"] <= 2015)],
+    *[[n, data.ranked(lambda g, a=a, b=b: g["y"] and a <= g["y"] <= b)] for n, a, b in (("1990s", 1990, 1999), ("2000s", 2000, 2009), ("2010–15", 2010, 2015))]]),
+    "Most in demand, older games", "Share of the con when every copy was out")
+```
+
+## Games checked out once
+
+[Games checked out only once.]
+
+```{python}
+charts.exhibit("barChart", dict(items=data.checkouts_per_game(), what="Games", muted=1), "Games by number of checkouts", "Every library game, plus games checked out that aren't in the library list")
+```
+
+```{python}
+charts.exhibit("games", dict(search=True, views=[["Once", data.ranked(lambda g: g["c"] == 1)]]), "Checked out once")
+```
+
+## Look up a game
+
+[One game's availability over the con.]
+
+```{python}
+charts.exhibit("lookup", "964", "One game's availability", "Each cell is 15 minutes")
+```
+
+## Day to day
+
+[Whether the same games went out each day.]
+
+```{python}
+overlaps = stats_days.overlaps(rng)
+charts.exhibit("pairs", dict(items=overlaps), "Games checked out on both days", "Share of the games checked out on either day, at hours all four days were observed")
+```
+
+```{python}
+charts.exhibit("days", dict(items=stats_days.mix(rng)), "What was checked out each day", "Share of checkouts, and average complexity, at hours all four days were observed")
+```
+
+## Complexity
+
+[Complexity of what was checked out.]
+
+```{python}
+dots, rate = data.by_complexity()
+charts.exhibit("dots", dict(games=dots, names=data.COMPLEXITY_NAMES, ticks=data.COMPLEXITY_TICKS, what="Complexity"), "Every game in the library, by complexity")
+```
+
+```{python}
+charts.exhibit("share", dict(rate=rate, names=data.COMPLEXITY_NAMES, ticks=data.COMPLEXITY_TICKS, what="Complexity", max=.6), "Share of library games checked out, by complexity")
+```
 
 ## Complexity by time of day
 
-[Placeholder: writing that sets up the question.]
+[Complexity and time of day.]
 
 ```{python}
-#| echo: true
-rng = np.random.default_rng(1)
-checkouts = hours.load()               # one row per checkout: day, hour, complexity
-result = hours.test(checkouts, rng)    # is the hour-to-hour change more than chance?
+checkouts = hours.load()                 # one row per checkout: day, hour, complexity
+result = hours.test(checkouts, rng)      # is the hour-to-hour change more than chance?
 by_hour = hours.summary(checkouts, rng)  # averages, and the range chance alone would give
+party = hours.summary(hours.load(hours.in_category("Party Game")), rng)
 ```
 
 ```{python}
-charts.hour_chart("Average complexity by time of day", by_hour, [1.8, 2, 2.2, 2.4, 2.6, 2.8])
+charts.exhibit("hourly", dict(S=by_hour, ticks=[1.8, 2, 2.2, 2.4, 2.6, 2.8]), "Average complexity by time of day")
 ```
 
-[Placeholder: what it shows. Numbers come from the code: `{python} f"{result['n']:,}"` checkouts, from `{python} f"{by_hour['m'][0]:.2f}"` at 8 AM to `{python} f"{by_hour['m'][-1]:.2f}"` at 11 PM. Hour explains `{python} f"{result['share_explained']:.0%}"` of the variation (p = `{python} f"{result['p_hours_shuffle']:.4f}"`).]
-
-## Map
-
-[Placeholder: writing about the map.]
+[Numbers come from the code: `{python} f"{result['n']:,}"` checkouts, from `{python} f"{by_hour['m'][0]:.2f}"` at 8 AM to `{python} f"{by_hour['m'][-1]:.2f}"` at 11 PM. Hour explains `{python} f"{result['share_explained']:.0%}"` of the variation (p = `{python} f"{result['p_hours_shuffle']:.4f}"`).[^method]]
 
 ```{python}
-charts.page_frame("playback")
+charts.exhibit("stack", dict(H=by_hour["H"], n=by_hour["n"], mix=data.complexity_mix(checkouts), names=data.BAND_NAMES), "Mix of complexity by time of day")
 ```
 
-[Placeholder: closing.]
+```{python}
+charts.exhibit("hourly", dict(S=party, ticks=[0, .05, .1, .15, .2], percent=True), "Share of checkouts that were party games")
+```
+
+## Patterns over the con
+
+[Games that gained steam, cooled off, or went out mostly by night or by day.]
+
+```{python}
+charts.exhibit("games", dict(views=list(map(list, stats_patterns.groups().items()))), "How availability changed", "When every copy was out")
+```
+
+[Closing.]
+
+[^method]: [Method note.]

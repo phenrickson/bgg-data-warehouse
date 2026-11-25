@@ -104,6 +104,7 @@ on_map = {g["b"] for g in rows}
 OFF = [dict(iv=[[m(k["o"]), m(k["i"] or END)] for k in g["ks"]]) for b, g in GAMES.items() if b not in on_map and g["ks"]]  # counted, but nowhere to draw them
 data = dict(N=len(set(LIB) | set(GAMES)), OFF=OFF, R=REG, topNA=round(float(np.percentile([g["p"] for g in GAMES.values() if g["k"]], 95)) / 100, 2), top=25, L=LABELS, W=[[m(a), m(b)] for a, b in W], O=[[m(a), m(b)] for a, b in OPEN], U=[[m(a), m(b)] for a, b in UNK], G=rows)
 s = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+open(DATA / "playback.json", "w", encoding="utf-8").write(s)  # for the report
 open(DATA / "playback.html", "w", encoding="utf-8").write(open(HERE / "playback.template.html", encoding="utf-8").read().replace("/*DATA*/", s))
 print(len(rows), "games on the map;", sum(len(g["iv"]) for g in rows), "checkouts")
 print("category counts", collections.Counter(g["c"] for g in rows), "| no weight", sum(not g["w"] for g in rows), "| no year", sum(not g["y4"] for g in rows), "| not in catalog", sum(g["b"] not in CAT for g in rows))
