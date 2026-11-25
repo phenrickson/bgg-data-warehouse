@@ -158,8 +158,8 @@ const R = (() => {
 
   // Top games as bars, one panel per group, all on the same scale. by: 'c' checkouts, 'p' share of the con with every copy out
   function facets(el, { by, panels, height = 440 }) {
-    const val = g => by === 'c' ? g.c : g.p, lab = g => by === 'c' ? g.c : g.p.toFixed(0) + '%', fill = by === 'c' ? 'var(--lit)' : 'var(--hot)', mark = g => by === 'p' && g.hot ? ' hotname' : ''; // in demand: names of Hot Games room games are bold
-    if (by === 'p') legend(el, []).innerHTML = '<span><b class="hotname">Bold</b> = in the Hot Games room</span>';
+    const val = g => by === 'c' ? g.c : g.p, lab = g => by === 'c' ? g.c : g.p.toFixed(0) + '%', fill = by === 'c' ? 'var(--lit)' : 'var(--hot)', mark = g => g.hot ? ' hotname' : ''; // names of Hot Games room games are bold
+    legend(el, []).innerHTML = '<span><b class="hotname">Bold</b> = in the Hot Games room</span>';
     const all = panels.map(([t, ids]) => [t, ids.map(b => byId.get(b))]), max = Math.max(...all.flatMap(([, g]) => g.map(val))), one = all.length === 1, RH = 24;
     const longest = () => { const c = facets.ctx = facets.ctx || document.createElement('canvas').getContext('2d'); c.font = '13px ' + getComputedStyle(el).fontFamily; return Math.max(...all.flatMap(([, l]) => l.map(g => c.measureText(g.n).width))); };
     el.classList.add('facets'); if (one) el.classList.add('one');
