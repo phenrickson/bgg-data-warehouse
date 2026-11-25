@@ -1,4 +1,5 @@
-const M = document.getElementById('m'), tip = document.getElementById('tip');
+let M = document.getElementById('m'); // where charts are added
+const tip = document.getElementById('tip');
 const hr = h => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'), pc = x => Math.round(100 * x) + '%', two = v => v.toFixed(2);
 const W = 960, X0 = 48, X1 = 940;
 const panel = (title, key, h, body) => M.insertAdjacentHTML('beforeend', `<h2>${title}</h2><div class="key">${key}</div><svg viewBox="0 0 ${W} ${h}">${body(h)}</svg>`);
@@ -53,6 +54,22 @@ function shareChart(title, what, rate, names, max) {
       o += `<text x="${X0 + (i + .5) * b}" y="${h - 20}" text-anchor="middle">${names[i]}</text>`;
     });
     return o + `<line x1="${X0}" x2="${X1}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--fg)" stroke-width="2" stroke-dasharray="5 4" pointer-events="none"/>`;
+  });
+}
+// Value by clock hour: all days, each day, and the range chance alone would give.
+// S: {H hours, n checkouts, m all-days values, days per-day values, band [low, high]}
+function hourChart(title, S, ticks, f) {
+  const DN = ['Wed', 'Thu', 'Fri', 'Sat'], s = (X1 - X0) / S.H.length, x = i => X0 + (i + .5) * s;
+  const xax = h => S.H.map((v, i) => i % 2 ? '' : `<text x="${x(i)}" y="${h - 12}" text-anchor="middle">${hr(v)}</text>`).join('');
+  panel(title, ln('var(--lit)', 3, 'All days') + ln('var(--day)', 1, 'Each day') + sw('var(--bandc)', 'Range from chance alone'), 300, h => {
+    const lo = ticks[0], hi = ticks[ticks.length - 1], y = v => h - 36 - (h - 52) * (v - lo) / (hi - lo);
+    let o = yaxis(ticks, y, f) + xax(h);
+    o += `<path d="${line(S.band[0], x, y)}${S.band[1].map((v, i) => [v, i]).reverse().map(([v, i]) => 'L' + x(i) + ',' + y(v)).join('')}Z" fill="var(--bandc)"/>`;
+    S.days.forEach(r => o += `<path d="${line(r, x, y)}" fill="none" stroke="var(--day)"/>`);
+    o += `<path d="${line(S.m, x, y)}" fill="none" stroke="var(--lit)" stroke-width="2.5"/>`;
+    S.m.forEach((v, i) => o += `<circle cx="${x(i)}" cy="${y(v)}" r="4.5" fill="var(--lit)" stroke="var(--bg)" stroke-width="2"/>`);
+    S.m.forEach((v, i) => o += hit(x(i) - s / 2, s, h - 36, `${hr(S.H[i])} · ${S.n[i].toLocaleString()} checkouts\nAll days  ${f(v)}\n` + DN.map((d, k) => S.days[k][i] == null ? '' : d + '  ' + f(S.days[k][i]) + '\n').join('') + `Chance  ${f(S.band[0][i])} to ${f(S.band[1][i])}`));
+    return o;
   });
 }
 document.addEventListener('pointermove', e => {

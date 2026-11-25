@@ -1,0 +1,16 @@
+/* Page styles for report.qmd; charts.css supplies the colors and chart styles. */
+body{font:17px/1.6 system-ui,sans-serif;max-width:1000px;margin:0 auto;padding:24px 16px}
+body>h1,body>h2,body>header,body section>h2,section>h3,p,ul,ol,details,div.sourceCode{max-width:700px;margin-left:auto;margin-right:auto}
+body>h2{font-size:24px;margin-top:48px;margin-bottom:8px}
+h1{font-size:34px;line-height:1.2;margin:32px 0 8px}
+a{color:var(--lit)}
+.chart,.frame,.cell-output-display{margin:20px 0}
+.chart h2{font:600 17px/1.3 system-ui,sans-serif;margin:0 0 4px;max-width:none}
+.chart .key{font-size:12px;line-height:1.4}
+#tip{line-height:1.4}
+.frame{display:block;width:100%;border:0;height:700px}
+pre{overflow-x:auto;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;line-height:1.5}
+pre code a{color:inherit;text-decoration:none}
+pre code .co{color:var(--muted)}
+details>summary{cursor:pointer;color:var(--muted);font-size:13px}
+table{border-collapse:collapse;font-size:14px;margin:12px auto}td,th{padding:4px 10px;border-bottom:1px solid var(--border);text-align:right}td:first-child,th:first-child{text-align:left}

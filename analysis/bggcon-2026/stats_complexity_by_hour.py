@@ -5,7 +5,7 @@ Data       Every checkout, Wed-Sat, 8 AM to midnight, of a game with a BGG compl
 Compared   Average complexity by clock hour, after removing differences between days.
 Chance     If time of day didn't matter, the complexities could be dealt out to that day's
            checkouts in any order. Two versions of "any order" (see below).
-Output     Prints only. No chart code here.
+Output     Numbers only, printed or handed to the report. No chart code here.
 """
 from collections import namedtuple
 
@@ -16,6 +16,7 @@ from checkouts import CAT, K, X, _t, ct
 DAYS = {18: "Wed", 19: "Thu", 20: "Fri", 21: "Sat"}  # day of November
 HOURS = np.arange(8, 24)
 N_SHUFFLES = 5000
+MIN_IN_CHART = 20  # fewest checkouts for drawing one day's average in one hour
 MIN_CHECKOUTS = 10  # fewest checkouts for showing one day's average in one hour
 
 Checkouts = namedtuple("Checkouts", "day hour value")  # three arrays, in time order
@@ -148,6 +149,16 @@ def chance_band(c, rng, n=2000):
     """
     sims = [hour_means(c.hour, shuffle_within_days(c.day, c.value, rng)) for _ in range(n)]
     return np.percentile(sims, [2.5, 97.5], axis=0)
+
+
+def summary(c, rng):
+    """Everything the hourly chart draws: checkouts, averages for all days and each day, chance range."""
+    def average(h, d):
+        v = c.value[(c.hour == h) & (c.day == d)]
+        return float(v.mean()) if len(v) >= MIN_IN_CHART else None
+
+    return dict(H=HOURS.tolist(), n=[int((c.hour == h).sum()) for h in HOURS], m=hour_means(c.hour, c.value).tolist(),
+                days=[[average(h, d) for h in HOURS] for d in DAYS], band=chance_band(c, rng).tolist())
 
 
 # ---------------------------------------------------------------- report

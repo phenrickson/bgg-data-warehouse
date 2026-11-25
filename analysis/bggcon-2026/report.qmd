@@ -1,0 +1,53 @@
+---
+title: "Placeholder title"
+format:
+  html:
+    minimal: true
+    theme: none
+    embed-resources: true
+    code-fold: true
+    code-summary: "Show the statistics"
+    css: [charts.css, report.css]
+execute:
+  echo: false
+  warning: false
+---
+
+```{python}
+import numpy as np
+
+import report_charts as charts
+import stats_complexity_by_hour as hours
+
+charts.setup()
+```
+
+[Placeholder: opening.]
+
+## Complexity by time of day
+
+[Placeholder: writing that sets up the question.]
+
+```{python}
+#| echo: true
+rng = np.random.default_rng(1)
+checkouts = hours.load()               # one row per checkout: day, hour, complexity
+result = hours.test(checkouts, rng)    # is the hour-to-hour change more than chance?
+by_hour = hours.summary(checkouts, rng)  # averages, and the range chance alone would give
+```
+
+```{python}
+charts.hour_chart("Average complexity by time of day", by_hour, [1.8, 2, 2.2, 2.4, 2.6, 2.8])
+```
+
+[Placeholder: what it shows. Numbers come from the code: `{python} f"{result['n']:,}"` checkouts, from `{python} f"{by_hour['m'][0]:.2f}"` at 8 AM to `{python} f"{by_hour['m'][-1]:.2f}"` at 11 PM. Hour explains `{python} f"{result['share_explained']:.0%}"` of the variation (p = `{python} f"{result['p_hours_shuffle']:.4f}"`).]
+
+## Map
+
+[Placeholder: writing about the map.]
+
+```{python}
+charts.page_frame("playback")
+```
+
+[Placeholder: closing.]
