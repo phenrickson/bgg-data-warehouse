@@ -100,7 +100,7 @@ def area(rates):
 def end_labels(library, fitted):
     """Names at the right: the two lines where they end, moved apart if they'd overlap, and the bars at their base."""
     last = lambda v: v[np.isfinite(v)][-1]
-    labels = sorted([[at(last(library)), "lib", "library"], [at(last(fitted)), "tr", "trend"]])
+    labels = sorted([[at(last(library)), "lib", "library"], [at(last(fitted)), "tr", "demand"]])
     bars = H - 4
     labels[0][0] = max(labels[0][0], 12)
     labels[1][0] = min(max(labels[1][0], labels[0][0] + 11), bars - 11)
