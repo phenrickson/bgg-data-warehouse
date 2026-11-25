@@ -1,9 +1,11 @@
+// scatter: complexity by average rating in place of the map; only games that have both.
 // top: share of the con, all copies out, that gets the hottest in-demand color.
 // The map of every library game. still: the whole con at once, with no playback or controls; color: weight, category or unavailable.
-R.map = (root, DATA, { still = false, color = 'weight', top = DATA.topNA } = {}) => {
+const RMIN = 4; // the scatter's lowest rating
+R.map = (root, DATA, { still = false, color = 'weight', top = DATA.topNA, scatter = false } = {}) => {
 // Times: minutes since Wed 18 Nov 00:00 Chicago. O = library hours, U = not-observed windows.
 // Playback time p runs over open hours only (nights are skipped): total length = sum of O.
-const $ = i => root.querySelector(`[data-m="${i}"]`), G = DATA.G.map(g => ({ ...g })), DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const $ = i => root.querySelector(`[data-m="${i}"]`), G = DATA.G.filter(g => !scatter || (g.w && g.r >= RMIN)).map(g => ({ ...g })), DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 let total = 0; const SEG = DATA.O.map(([a, b]) => { const s = { a, b, p: total }; total += b - a; return s; });
 const toT = p => { const s = SEG.findLast(s => p >= s.p); return s.a + (p - s.p); };
 const clock = t => { const d = Math.floor(t / 1440), m = Math.floor(t) % 1440, h = Math.floor(m / 60); return `${DAYS[d]} ${(h + 11) % 12 + 1}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
@@ -20,7 +22,7 @@ for (const g of G) { // observed parts of the time every copy was out
 const unavailable = (g, t) => { let n = 0; for (const [a, b] of g.na) if (t > a) n += Math.min(t, b) - a; return n / OPEN_MIN; };
 const NOWFAINT = .3;
 // A dot's area is checkouts so far to the power 0.7 (1 = raw count, 0.5 = square root), up to the most checked out game, fixed for the whole con so dots grow to their end size.
-const TOP = Math.max(...G.map(g => g.iv.length)), radius = n => 8 * Math.sqrt((n / TOP) ** .7);
+const TOP = Math.max(...DATA.G.map(g => g.iv.length)), radius = n => 8 * Math.sqrt((n / TOP) ** .7);
 const soFar = (g, t) => { let n = 0; for (const [a] of g.iv) if (a <= t) n += Math.min(1, (t - a) / FADE); return n; };
 const OUT = G.filter(g => g.iv.length).sort((a, b) => a.iv.length - b.iv.length); // most checked out drawn last, on top
 if (still && color === 'unavailable') { const d = new Map(OUT.map(g => [g, unavailable(g, 1e9)])); OUT.sort((a, b) => d.get(a) - d.get(b)); } // hottest on top
@@ -69,8 +71,11 @@ const css = n => { probe.style.color = `var(${n})`; return getComputedStyle(prob
 const map = $('map'), mx = map.getContext('2d'), line = $('line'), lx = line.getContext('2d');
 let base, W, H, dpr, cols, p = -1, hold = 0, playing = false, last = 0; // p: open minutes played, -1 = whole con
 let X, Y, x0, x1, y0, y1; // which pair of coordinates, and their extent
-function layout() { [X, Y] = $('proj').value === 'pca' ? ['a', 'b2'] : ['x', 'y']; const xs = G.map(g => g[X]), ys = G.map(g => g[Y]); x0 = Math.min(...xs); x1 = Math.max(...xs); y0 = Math.min(...ys); y1 = Math.max(...ys); }
-function place(g) { const m = X === 'a' ? EDGE : 0, w = W - m, h = H - m, s = Math.min((w - 32) / (x1 - x0), (h - 32) / (y1 - y0)); return [m + w / 2 + (g[X] - (x0 + x1) / 2) * s, h / 2 - (g[Y] - (y0 + y1) / 2) * s]; }
+function layout() { if (scatter) return; [X, Y] = $('proj').value === 'pca' ? ['a', 'b2'] : ['x', 'y']; const xs = G.map(g => g[X]), ys = G.map(g => g[Y]); x0 = Math.min(...xs); x1 = Math.max(...xs); y0 = Math.min(...ys); y1 = Math.max(...ys); }
+// Games with few complexity votes pile up on round values, so each dot moves sideways by up to .06, always the same for a game.
+const jitter = g => { if (!g.b) return 0; let h = Math.imul(+g.b, 2654435761) >>> 0; h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; return .12 * (((h ^ (h >>> 13)) >>> 0) / 4294967296 - .5); };
+function place(g) { if (scatter) return [52 + (W - 70) * (g.w + jitter(g) - 1) / 4, H - 46 - (H - 58) * (g.r - RMIN) / (9.2 - RMIN)];
+  const m = X === 'a' ? EDGE : 0, w = W - m, h = H - m, s = Math.min((w - 32) / (x1 - x0), (h - 32) / (y1 - y0)); return [m + w / 2 + (g[X] - (x0 + x1) / 2) * s, h / 2 - (g[Y] - (y0 + y1) / 2) * s]; }
 function size() {
   layout();
   dpr = devicePixelRatio || 1; W = $('wrap').clientWidth; H = Math.round(Math.min(W * (W < 560 ? 1.1 : .9), 640));
@@ -81,7 +86,7 @@ function size() {
   base = document.createElement('canvas'); base.width = map.width; base.height = map.height;
   const b = base.getContext('2d'); b.scale(dpr, dpr); b.fillStyle = cols['--context'];
   for (const g of G) { [g.px, g.py] = place(g); b.beginPath(); b.arc(g.px, g.py, 1.6, 0, 7); b.fill(); }
-  placeLabels();
+  if (!scatter) placeLabels();
   key(); draw();
 }
 const pos = () => Math.max(0, p);
@@ -132,6 +137,15 @@ function axes() {
   mx.save(); mx.translate(at('px', 0) - 16, b); mx.rotate(-Math.PI / 2); axis(b - t, AXES[1]); mx.restore();
   mx.globalAlpha = 1;
 }
+// The scatter's axes: numbers and a faint line at each whole value.
+function scale() {
+  mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = '12px system-ui, sans-serif'; mx.textBaseline = 'middle'; mx.lineWidth = 1; mx.strokeStyle = cols['--border']; mx.fillStyle = cols['--muted'];
+  const [x0, yb] = place({ w: 1, r: RMIN }), [x1, yt] = place({ w: 5, r: 9.2 });
+  mx.globalAlpha = .55; mx.beginPath(); for (let v = 1; v <= 5; v++) { const x = place({ w: v, r: RMIN })[0]; mx.moveTo(x, yt); mx.lineTo(x, yb); } for (let v = RMIN; v <= 9; v++) { const y = place({ w: 1, r: v })[1]; mx.moveTo(x0, y); mx.lineTo(x1, y); } mx.stroke(); mx.globalAlpha = 1;
+  mx.textAlign = 'center'; for (let v = 1; v <= 5; v++) mx.fillText(v, place({ w: v, r: RMIN })[0], yb + 14); mx.fillText('complexity', (x0 + x1) / 2, yb + 34);
+  mx.textAlign = 'right'; for (let v = RMIN; v <= 9; v++) mx.fillText(v, x0 - 20, place({ w: 1, r: v })[1]);
+  mx.save(); mx.translate(8, (yt + yb) / 2); mx.rotate(-Math.PI / 2); mx.textAlign = 'center'; mx.fillText('average rating', 0, 0); mx.restore();
+}
 function labels() {
   if (placedFor !== $('lab').value) placeLabels();
   mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = LABEL_FONT; mx.textBaseline = 'middle'; mx.textAlign = 'center'; mx.lineJoin = 'round';
@@ -148,6 +162,7 @@ let shown = [], mouse = null; // dots in the order drawn, with their size; where
 function draw() {
   const whole = p < 0, build = $('mode').value === 'build', t = toT(pos()), un = !whole && unk(t), u = un && !build, now = !whole && !build, na = $('by').value === 'unavailable'; let ng = 0; shown = [];
   mx.setTransform(1, 0, 0, 1, 0, 0); mx.clearRect(0, 0, map.width, map.height);
+  if (scatter) { scale(); mx.setTransform(1, 0, 0, 1, 0, 0); }
   mx.globalAlpha = u ? .5 : 1; mx.drawImage(base, 0, 0); mx.globalAlpha = 1; mx.scale(dpr, dpr);
   if (!u) {
     for (const g of OUT) {
@@ -161,8 +176,8 @@ function draw() {
     for (const g of DATA.OFF) if (whole || (build ? g.iv.some(([a]) => a <= t) : outCount(g, t))) ng++;
     mx.globalAlpha = 1;
   }
-  if ($('proj').value === 'pca') axes();
-  if ($('lab').value) labels();
+  if (!scatter && $('proj').value === 'pca') axes();
+  if (!scatter && $('lab').value) labels();
   $('clock').textContent = whole ? 'Whole con' : clock(Math.floor(t / 10) * 10);
   $('n').textContent = un && !build ? '' : whole ? `${ng.toLocaleString()} of ${DATA.N.toLocaleString()} games checked out*` : build ? `${ng.toLocaleString()} games checked out so far*` : `${ng.toLocaleString()} games out*`;
   $('warn').textContent = un && !inOutage(t) ? 'Not observed' : '';
@@ -225,14 +240,18 @@ function hover() {
   const tip = $('tip'); tip.style.display = best ? 'block' : 'none'; if (!best) return;
   const t = toT(pos()), cum = p < 0 || $('mode').value === 'build', n = p < 0 ? best.iv.length : cum ? best.iv.filter(([a]) => a <= t).length : outCount(best, t);
   tip.textContent = best.n + (best.y4 ? ` (${best.y4})` : '') + (cum ? ` · ${n} checkout${n === 1 ? '' : 's'}` + (n && best.k ? `, all copies out ${Math.round(100 * unavailable(best, p < 0 ? 1e9 : t))}% of the con` : '') : unk(t) ? '' : n ? ` · ${n}${best.k ? ` of ${best.k}` : ''} out` : ' · none out');
+  if (scatter) tip.textContent = `${best.n}${best.y4 ? ` (${best.y4})` : ''}
+Complexity ${best.w.toFixed(2)}
+Average rating ${best.r.toFixed(2)}
+${n} checkout${n === 1 ? '' : 's'}${n && best.k ? `, all copies out ${Math.round(100 * unavailable(best, 1e9))}% of the con` : ''}`;
   const isNow = p >= 0 && $('mode').value === 'now', lit = isNow ? !unk(t) && n > 0 : n > 0;
-  tip.style.color = lit ? dotColor(best, p < 0 ? 1e9 : t, isNow) : cols['--fg'];
+  tip.style.color = lit && !scatter ? dotColor(best, p < 0 ? 1e9 : t, isNow) : cols['--fg'];
   tip.style.borderColor = lit ? dotColor(best, p < 0 ? 1e9 : t, isNow) : cols['--border'];
   tip.style.left = Math.min(x + 12, W - 230) + 'px'; tip.style.top = y + 12 + 'px';
 };
 map.onpointerleave = () => { mouse = null; $('tip').style.display = 'none'; };
 R.seg($('spd'), 'Speed', [['40', 'Slow'], ['80', 'Normal'], ['160', 'Fast']], '80', v => { $('speed').value = v; });
-root.classList.toggle('still', still); $('by').value = color;
+root.classList.toggle('still', still || scatter); root.classList.toggle('scatter', scatter); $('by').value = color;
 let setLab;
 for (const i of ['proj', 'mode', 'by', 'lab']) { // the viewer's segmented control in place of each menu
   const s = $(i); if (i === 'lab') s.value = $('wrap').clientWidth < 560 ? '' : 'R'; // no room for region names on a phone

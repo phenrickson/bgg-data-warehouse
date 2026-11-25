@@ -30,6 +30,15 @@ def weight(b):
     return round(w, 2) if w else 0
 
 
+RATED = {str(r_["game_id"]): (r_["average_rating"], r_["users_rated"] or 0) for r_ in con._t.select(["game_id", "average_rating", "users_rated"]).to_pylist()}
+
+
+def rating(b):
+    """BGG average rating; 0 with fewer than 30 ratings (BGG's own cutoff for ranking a game) or if not in the catalog."""
+    r_, n = RATED.get(b, (0, 0))
+    return round(r_, 2) if r_ and n >= 30 else 0
+
+
 def all_out(b):
     """Intervals when every copy was out (minutes since Wed 00:00); empty without a copy count."""
     g, L, cur, start = GAMES.get(b), [], 0, None
@@ -48,7 +57,7 @@ def all_out(b):
 def row(b, xy):
     n, y = meta(b)
     return dict(b=b, n=n or LIB.get(b, {}).get("name"), y4=y, k=LIB.get(b, {}).get("copies"),
-                ao=all_out(b), w=weight(b), c=cat_code(b), x=round(xy[0], 3), y=round(xy[1], 3), a=round(PC[b][0], 3), b2=round(PC[b][1], 3),
+                ao=all_out(b), w=weight(b), r=rating(b), c=cat_code(b), x=round(xy[0], 3), y=round(xy[1], 3), a=round(PC[b][0], 3), b2=round(PC[b][1], 3),
                 iv=[[m(k["o"]), m(k["i"] or END)] for k in GAMES[b]["ks"]] if b in GAMES else [])
 
 

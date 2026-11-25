@@ -45,6 +45,12 @@ charts.numbers([[f"{len(data.K):,}", "checkouts"], [f"{len(data.GAMES):,}", "dif
 charts.exhibit("barChart", dict(items=data.by_day(), what="Checkouts"), "Checkouts each day", note="Most of Thursday afternoon and evening wasn't recorded (2–9 PM). Sunday is 8 AM–1 PM.")
 ```
 
+[Complexity and rating.]
+
+```{python}
+charts.game_map("Complexity and average rating", "Color is the share of the con when every copy was out", note="Games with at least 30 ratings and a complexity rating.", scatter=True, color="unavailable", top=.8)
+```
+
 [The map.]
 
 ```{python}

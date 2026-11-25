@@ -27,14 +27,15 @@ def exhibit(kind, data, title, desc="", note="", wide=False):
                 f'<script>R.{kind}(document.getElementById("{i}"),{_json(data)});</script>')
 
 
-def game_map(title, desc="", note="", still=False, color="weight", top=None):
+def game_map(title, desc="", note="", still=False, color="weight", top=None, scatter=False):
     """The map: with playback, or still=True for the whole con at once, colored by weight, category or unavailable (in demand).
     top is the share of the con, with every copy out, that gets the hottest in-demand color (default: about half).
+    scatter puts complexity on x and average rating on y in place of the map.
 
     Needs build_playback.py to have run (it writes playback.json).
     """
     i = f"x{next(_ids)}"
-    opts = _json(dict(still=still, color=color) | (dict(top=top) if top else {}))
+    opts = _json(dict(still=still or scatter, color=color, scatter=scatter) | (dict(top=top) if top else {}))
     src = f'<div class="src">{note}</div>' if note else ""
     data = (DATA / "playback.json").read_text(encoding="utf-8")
     load = "" if getattr(game_map, "loaded", False) else "const MAPDATA=" + data + ";" + _read("report_map.js")

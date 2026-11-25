@@ -49,6 +49,7 @@ input[type=search]{font:inherit;font-size:16px;color:var(--fg);background:var(--
 .cmap [data-m=tip]{position:absolute;pointer-events:none;display:none;background:var(--card);border:2px solid var(--border);border-radius:10px;padding:5px 10px;font-size:13px;max-width:220px}
 /* a still map: no playback */
 .cmap.still .top,.cmap.still .ctl label:not(:first-child,.lab),.cmap.still .row{display:none}.cmap.still .ctl{margin:12px 0 0}.cmap.still [data-m=wrap]{margin-top:12px}
+.cmap.scatter .ctl{display:none}.cmap.scatter [data-m=tip]{white-space:pre-line;max-width:270px}
 /* summary numbers */
 .sums{display:flex;flex-wrap:wrap;gap:2px 28px;margin-top:16px;font-size:15px;line-height:1.6;color:var(--muted)}.sums b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
 section.footnotes{border-top:1px solid var(--border);margin-top:56px;padding-top:4px;font-size:15px;color:var(--muted)}section.footnotes hr{display:none}section.footnotes ol{padding-left:20px}
