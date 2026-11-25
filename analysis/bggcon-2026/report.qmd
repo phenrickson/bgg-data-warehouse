@@ -19,7 +19,6 @@ import numpy as np
 import report_charts as charts
 import report_data as data
 import stats_complexity_by_hour as hours
-import stats_days
 import stats_patterns
 
 rng = np.random.default_rng(1)
@@ -94,19 +93,6 @@ charts.exhibit("games", dict(search=True, views=[["Once", data.ranked(lambda g: 
 
 ```{python}
 charts.exhibit("lookup", "964", "One game's availability", "Each cell is 15 minutes")
-```
-
-## Day to day
-
-[Whether the same games went out each day.]
-
-```{python}
-overlaps = stats_days.overlaps(rng)
-charts.exhibit("pairs", dict(items=overlaps), "Games checked out on both days", "Share of the games checked out on either day, at hours all four days were observed")
-```
-
-```{python}
-charts.exhibit("days", dict(items=stats_days.mix(rng)), "What was checked out each day", "Share of checkouts, and average complexity, at hours all four days were observed")
 ```
 
 ## Complexity
