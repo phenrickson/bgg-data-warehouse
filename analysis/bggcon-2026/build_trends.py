@@ -44,6 +44,16 @@ def library_out():
     return y / np.nanmax(y)
 
 
+def days_alike(y):
+    """Average correlation between Wednesday, Friday and Saturday, noon to midnight, hour by hour.
+
+    A day that's all out or all available counts as 0. Thursday is left out: most of it wasn't recorded.
+    """
+    days = [y[(HOURS >= 24 * d + 12) & (HOURS < 24 * d + 24)] for d in (0, 2, 3)]
+    pairs = [(days[i][ok], days[j][ok]) for i, j in ((0, 1), (0, 2), (1, 2)) for ok in [np.isfinite(days[i]) & np.isfinite(days[j])]]
+    return np.mean([np.corrcoef(a, b)[0, 1] if a.std() > 0 and b.std() > 0 else 0 for a, b in pairs])
+
+
 # ---------------------------------------------------------------- drawing
 
 W, H, D = 300, 58, 40  # chart width, height, and height of the rate-of-change strip
@@ -110,7 +120,7 @@ def card(game, library, base):
              f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
-    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}"'
+    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-d="{days_alike(y):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[start:]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · out {share:.0%}</span>'
             + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag">{labels}</g>')
