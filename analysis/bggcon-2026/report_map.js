@@ -152,7 +152,10 @@ function labels() {
   mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = LABEL_FONT; mx.textBaseline = 'middle'; mx.textAlign = 'center'; mx.lineJoin = 'round';
   for (const l of spots) {
     const ax = Math.max(l.x0, Math.min(l.x1, l.x)), ay = Math.max(l.y0, Math.min(l.y1, l.y)), d = Math.hypot(l.x - ax, l.y - ay);
-    if (d > 30) { const q = (d - 12) / d; mx.lineWidth = 1; mx.strokeStyle = cols['--muted']; mx.beginPath(); mx.moveTo(ax, ay); mx.lineTo(ax + (l.x - ax) * q, ay + (l.y - ay) * q); mx.stroke(); }
+    if (d > 8) { // a line to a ring at the spot, edged in the background color so they read over the dots
+      const q = (d - 5) / d, path = () => { mx.beginPath(); if (d > 24) { mx.moveTo(ax, ay); mx.lineTo(ax + (l.x - ax) * q, ay + (l.y - ay) * q); } mx.moveTo(l.x + 5, l.y); mx.arc(l.x, l.y, 5, 0, 7); mx.stroke(); };
+      mx.lineWidth = 4.5; mx.strokeStyle = cols['--bg']; path(); mx.lineWidth = 1.5; mx.strokeStyle = cols['--fg']; path();
+    }
     const put = (t, y, font, ink) => { mx.font = font; mx.lineWidth = 4; mx.strokeStyle = cols['--bg']; mx.strokeText(t, l.cx, y); mx.fillStyle = ink; mx.fillText(t, l.cx, y); };
     put(l.t, l.cy - (l.s ? 8 : 0), LABEL_FONT, cols['--fg']); if (l.s) put(l.s, l.cy + 9, '11px system-ui, sans-serif', cols['--muted']);
   }

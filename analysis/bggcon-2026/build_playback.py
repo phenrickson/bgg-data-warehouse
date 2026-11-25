@@ -105,17 +105,15 @@ R, lab = regions(rows, con)
 from sklearn.cluster import KMeans
 big = int(np.argmax([r["co"] for r in R])); bm = np.where(lab == big)[0]
 lab[bm] = np.where(KMeans(2, n_init=20, random_state=2026).fit_predict(P[bm]) == 0, big, 100)
-# Another holds several kinds of game: trains and economic games at one end, area control in the middle, lighter strategy games (no label).
+# Another holds several kinds of game: trains and economic games at one end, area control below them, lighter and mixed strategy games (no label).
 at = {g["n"]: i for i, g in enumerate(rows)}
 wide = np.where(lab == lab[at["Brass: Birmingham"]])[0]
 part = dict(zip(wide, KMeans(4, n_init=20, random_state=1).fit_predict(P[wide])))
-control = {part[at["Root"]], part[at["Blood Rage"]]}
-assert part[at["Brass: Birmingham"]] not in control
 for i in wide:
-    lab[i] = 101 if part[i] in control else 102 + part[i]
+    lab[i] = 101 + part[i]
 # PLACEHOLDER names (Phil's to write). Each names the region holding its first example; regions not listed get no label.
 NAMES = [("Modern strategy", ["SETI: Search for Extraterrestrial Intelligence", "Dune: Imperium"]), ("Co-op adventures", ["Gloomhaven", "Arkham Horror"]), ("Puzzly tile-layers", ["Cascadia", "Calico"]),
-         ("Trains & economic", ["Brass: Birmingham", "Age of Steam"]), ("Area control", ["Root", "Blood Rage"]), ("Trick-taking & card games", ["SCOUT", "The Crew: The Quest for Planet Nine"]), ("Party & social deduction", ["Codenames", "The Resistance"]),
+         ("Trains & economic", ["Brass: Birmingham", "Age of Steam"]), ("Area control", ["Root", "Rising Sun"]), ("Trick-taking & card games", ["SCOUT", "The Crew: The Quest for Planet Nine"]), ("Party & social deduction", ["Codenames", "The Resistance"]),
          ("Kids & dexterity", ["Rhino Hero", "ICECOOL"]), ("Wargames", ["Twilight Struggle", "Undaunted: Normandy"])]
 REG, used = [], {}
 for name, ex in NAMES:
