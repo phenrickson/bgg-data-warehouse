@@ -49,6 +49,30 @@ def ranked(keep=lambda g: True):
     return [g["b"] for g in GAMES_TABLE if keep(g)]
 
 
+# ---- top games, overall and by group
+
+def top(measure, keep=lambda g: True, n=10):
+    """Ids of the n games highest on a measure: "c" checkouts, or "p" share of the con with every copy out."""
+    games = [g for g in GAMES_TABLE if keep(g) and (measure == "c" or g["p"])]
+    other = "p" if measure == "c" else "c"
+    return [g["b"] for g in sorted(games, key=lambda g: (-g[measure], -(g[other] or 0), g["n"]))[:n]]
+
+
+# Group: which games are in it. A game with two of these categories is in both.
+BY_CATEGORY = {name: (lambda g, tag=tag: tag in hours.CATEGORIES.get(g["b"], ()))
+               for name, tag in (("Party games", "Party Game"), ("Economic games", "Economic"), ("Wargames", "Wargame"), ("Abstract games", "Abstract Strategy"))}
+BY_YEAR = {name: (lambda g, a=a, b=b: bool(g["y"]) and a <= g["y"] <= b)
+           for name, a, b in [(str(y), y, y) for y in range(2026, 2021, -1)] + [("2010–21", 2010, 2021), ("2000s", 2000, 2009), ("1990s", 1990, 1999)]}
+BY_COMPLEXITY = {name: (lambda g, a=a, b=b: a <= hours.complexity(g["b"]) < b)
+                 for name, a, b in (("Under 1.5", 0, 1.5), ("1.5–2", 1.5, 2), ("2–2.5", 2, 2.5), ("2.5–3", 2.5, 3), ("3 and up", 3, 9))}
+
+
+def facets(measure, groups=None, n=10):
+    """Data for a chart of top games: a panel per group, or one panel of everything."""
+    panels = [[name, top(measure, keep, n)] for name, keep in groups.items()] if groups else [["", top(measure, n=n)]]
+    return dict(by=measure, panels=panels)
+
+
 def checkouts_per_game():
     """Library games never checked out, then games checked out once, twice, ... 10 or more times."""
     n = collections.Counter(min(g["c"], 10) for g in GAMES.values())

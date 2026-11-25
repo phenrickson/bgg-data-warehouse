@@ -156,6 +156,22 @@ const R = (() => {
     input.value = name(g); fit(el, x => { w = x; draw(); });
   }
 
+  // Top games as bars, one panel per group, all on the same scale. by: 'c' checkouts, 'p' share of the con with every copy out
+  function facets(el, { by, panels, height = 440 }) {
+    const val = g => by === 'c' ? g.c : g.p, lab = g => by === 'c' ? g.c : g.p.toFixed(0) + '%', fill = by === 'c' ? 'var(--lit)' : 'var(--hot)';
+    const all = panels.map(([t, ids]) => [t, ids.map(b => byId.get(b))]), max = Math.max(...all.flatMap(([, g]) => g.map(val))), one = all.length === 1, RH = 24;
+    el.classList.add('facets'); if (one) el.classList.add('one');
+    for (const [t, list] of all) {
+      const c = make('div', 'facet', el); if (t) make('h4', '', c).textContent = t;
+      const box = make('div', one ? 'rbox' : '', c), p = make('div', 'fp', box); if (one) box.style.maxHeight = height + 'px';
+      fit(p, w => {
+        const L = Math.round(Math.min(one ? 260 : 170, w * .46)), V = 38, k = (w - L - V) / max, h = list.length * RH;
+        p.innerHTML = svg(w, h, list.map((g, i) => `<rect x="${L}" y="${i * RH + 4}" width="${Math.max(2, val(g) * k).toFixed(1)}" height="${RH - 8}" rx="2" fill="${fill}"/><text class="v" x="${(L + val(g) * k + 6).toFixed(1)}" y="${i * RH + RH / 2 + 4}">${lab(g)}</text><rect data-i="${i}" y="${i * RH}" width="${w}" height="${RH}" fill="transparent"/>`).join('')) + list.map((g, i) => `<div class="nm" style="top:${i * RH}px;width:${L - 10}px;height:${RH}px;line-height:${RH}px">${esc(g.n)}</div>`).join('');
+      });
+      p.onpointermove = e => { const g = list[e.target.dataset && e.target.dataset.i]; if (g) show(e, name(g), gameRows(g)); else hide(); }; p.onpointerleave = hide; box.onscroll = hide;
+    }
+  }
+
   // Bars: [[label, value, tooltip label]]
   function barChart(el, { items, what, muted = 0 }) {
     fit(el, w => {
@@ -263,5 +279,5 @@ const R = (() => {
       });
     }
   }
-  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, eachDay, stack, pairs, days };
+  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, facets, eachDay, stack, pairs, days };
 })();

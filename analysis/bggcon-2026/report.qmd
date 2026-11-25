@@ -73,6 +73,48 @@ charts.game_map("The most in-demand games", "Color is the share of the con when 
 charts.game_map("The con, played back", "Press Play to watch the con", note="* Some games, mostly expansions, aren't shown on the map.")
 ```
 
+## Most checked out and most in demand
+
+[Most checked out and most in demand.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", n=100), "Most checked out", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", n=100), "Most in demand", "Share of the con when every copy was out")
+```
+
+[By category.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", data.BY_CATEGORY), "Most checked out, by category", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", data.BY_CATEGORY), "Most in demand, by category", "Share of the con when every copy was out")
+```
+
+[By year.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", data.BY_YEAR), "Most checked out, by year published", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", data.BY_YEAR), "Most in demand, by year published", "Share of the con when every copy was out")
+```
+
+[By complexity.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", data.BY_COMPLEXITY), "Most checked out, by complexity", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", data.BY_COMPLEXITY), "Most in demand, by complexity", "Share of the con when every copy was out")
+```
+
 ## The most in-demand games
 
 [Hot Games, and the hottest games that weren't on the list.]
