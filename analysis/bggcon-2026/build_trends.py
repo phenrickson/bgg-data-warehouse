@@ -44,20 +44,14 @@ def library_out():
     return y / np.nanmax(y)
 
 
-def days_alike(y):
-    """Average correlation between Wednesday, Friday and Saturday, noon to midnight, hour by hour.
+def night_gaps(y):
+    """All-out rate after 6 PM minus before 4 PM, on Wednesday (from noon), Friday and Saturday.
 
-    A day that's all out or all available counts as 0. Thursday is left out: most of it wasn't recorded.
+    Thursday is left out: most of its evening wasn't recorded.
     """
-    days = [y[(HOURS >= 24 * d + 12) & (HOURS < 24 * d + 24)] for d in (0, 2, 3)]
-    pairs = [(days[i][ok], days[j][ok]) for i, j in ((0, 1), (0, 2), (1, 2)) for ok in [np.isfinite(days[i]) & np.isfinite(days[j])]]
-    return np.mean([np.corrcoef(a, b)[0, 1] if a.std() > 0 and b.std() > 0 else 0 for a, b in pairs])
-
-
-def daily_pattern(y):
-    """Average all-out rate at each hour of the day, 8 AM to midnight, from Wednesday noon."""
-    y = np.where(FITTED, y, np.nan)
-    return np.array([np.nanmean(y[HOURS % 24 == h]) for h in range(8, 24)])
+    hour, day = HOURS % 24, HOURS // 24
+    rate = lambda d, part: np.nanmean(y[FITTED & (day == d) & part])
+    return [rate(d, hour >= 18) - rate(d, hour < 16) for d in (0, 2, 3)]
 
 
 # ---------------------------------------------------------------- drawing
@@ -121,6 +115,7 @@ def card(game, library, base):
     y = by_hour(all_out_steps(game))
     fits = [trend(y, s) for s in SMOOTHNESS]
     start, mid = np.argmax(FITTED), D // 2
+    gaps = night_gaps(y)
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
                    for j, v in enumerate(y) if np.isfinite(v) and v > 0)
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
@@ -132,7 +127,7 @@ def card(game, library, base):
              f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
-    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-p="{",".join(f"{v:.2f}" for v in daily_pattern(y))}" data-d="{days_alike(y):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
+    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[start:]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
             + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag">{labels}</g>')

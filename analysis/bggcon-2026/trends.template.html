@@ -15,7 +15,7 @@ body{grid-template-columns:1fr min(1240px,100% - 32px) 1fr;padding-top:36px}
 <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="rate" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2="/*STRIP*/"><stop offset=".48" stop-color="var(--w2)"/><stop offset=".48" stop-color="var(--muted)"/><stop offset=".52" stop-color="var(--muted)"/><stop offset=".52" stop-color="var(--w0)"/></linearGradient></defs></svg>
 <h1>Availability trends</h1>
 <div id="top">
-<div class="bar"><input type="search" id="q" placeholder="Find a game" aria-label="Find a game" style="margin-left:0"><select id="s" aria-label="Sort"><option value="r">Shuffled</option><option value="n">Name</option><option value="net">Rose most</option><option value="-net">Fell most</option><option value="amp">Trend moves most</option><option value="-amp">Trend moves least</option><option value="d">Days most alike</option><option value="m">Most time all out</option><option value="c">Most checkouts</option></select><button type="button" class="btn" id="b">Shuffle</button><select data-f="k" aria-label="Copies"></select><select data-f="c" aria-label="Checkouts"></select><select data-f="w" aria-label="Smoothness"></select><span class="count" id="t"></span></div>
+<div class="bar"><input type="search" id="q" placeholder="Find a game" aria-label="Find a game" style="margin-left:0"><select id="s" aria-label="Sort"><option value="r">Shuffled</option><option value="n">Name</option><option value="net">Rose most</option><option value="-net">Fell most</option><option value="amp">Trend moves most</option><option value="-amp">Trend moves least</option><option value="night">Night games</option><option value="day">Daytime games</option><option value="m">Most time all out</option><option value="c">Most checkouts</option></select><button type="button" class="btn" id="b">Shuffle</button><select data-f="k" aria-label="Copies"></select><select data-f="c" aria-label="Checkouts"></select><select data-f="w" aria-label="Smoothness"></select><span class="count" id="t"></span></div>
 <div class="lg"><span><i style="background:color-mix(in oklab,var(--lit) 55%,var(--bg))"></i>All out: share of the hour when every copy was out</span><span><i class="ln" style="border-top:2px solid var(--hot)"></i>Trend</span><span><i class="ln" style="border-top:1px solid var(--muted)"></i>Library: all copies out, as a share of its peak (compare direction, not height)</span><span><i style="background:var(--w2)"></i>Rising</span><span><i style="background:var(--w0)"></i>Cooling</span></div>
 </div>
 <div id="g"><!--CARDS--></div>
@@ -27,21 +27,15 @@ for (const el of document.querySelectorAll('[data-f]')) {
   el.value = F[el.dataset.f]; el.onchange = () => { F[el.dataset.f] = +el.value; go(); };
 }
 function ends() { const n = getComputedStyle($('g')).gridTemplateColumns.split(' ').length; [...$('g').children].forEach((c, i) => c.classList.toggle('end', i % n === 0 || i % n === n - 1)); } // labels on the first and last chart in each row
-// Games like the one clicked: correlation between their trends over the con (at the default smoothness), or between their
-// average days hour by hour. A daily pattern only counts if the game's days agree with each other (REPEATS or more).
-const REPEATS = .3;
-function shape(c, key) { const id = key + C.indexOf(c); if (!T.has(id)) { const v = c.dataset[key].split(',').map(Number), m = v.reduce((a, b) => a + b) / v.length, d = v.map(x => x - m), n = Math.hypot(...d); T.set(id, n > .2 ? d.map(x => x / n) : null); } return T.get(id); }
+// Games like the one clicked: correlation between their trends (at the default smoothness). A game that never moves matches nothing.
+function shape(c) { if (!T.has(c)) { const v = c.dataset.t.split(',').map(Number), m = v.reduce((a, b) => a + b) / v.length, d = v.map(x => x - m), n = Math.hypot(...d); T.set(c, n > .2 ? d.map(x => x / n) : null); } return T.get(c); }
 let like = null;
-function alike(c, key) { if (c === like) return 2; if (key === 'p' && +c.dataset.d < REPEATS) return -2; const a = shape(like, key), b = shape(c, key); return a && b ? a.reduce((t, x, i) => t + x * b[i], 0) : -2; }
-$('g').onclick = e => {
-  const b = e.target.closest('b'); if (!b) return; like = b.parentNode;
-  for (const [v, t] of [['like-t', 'Similar trend to '], ['like-p', 'Similar daily pattern to ']]) { let o = $('s').querySelector(`[value=${v}]`); if (!o) $('s').add(o = new Option('', v)); o.textContent = t + b.textContent; }
-  if (!$('s').value.startsWith('like')) $('s').value = 'like-t'; $('q').value = ''; go(); scrollTo(0, 0);
-};
+function alike(c) { const a = shape(like), b = shape(c); return c === like ? 2 : a && b ? a.reduce((t, x, i) => t + x * b[i], 0) : -2; }
+$('g').onclick = e => { const b = e.target.closest('b'); if (!b) return; like = b.parentNode; let o = $('s').querySelector('[value=like]'); if (!o) $('s').add(o = new Option('', 'like')); o.textContent = 'Similar to ' + b.textContent; $('s').value = 'like'; $('q').value = ''; go(); scrollTo(0, 0); };
 function go() {
-  const s = $('s').value, q = $('q').value.toLowerCase(), key = s.startsWith('like') ? s : s.replace('-', ''), sign = s[0] === '-' ? -1 : 1; $('g').className = 's' + F.w;
-  const val = c => s.startsWith('like') ? alike(c, s.slice(5)) : key === 'net' || key === 'amp' ? +c.dataset[key + 's'].split(',')[F.w] : +c.dataset[key];
-  const list = C.filter(c => (!F.k || (F.k === 1 ? c.dataset.k == 1 : c.dataset.k > 1)) && +c.dataset.c >= F.c && c.dataset.n.includes(q) && (!s.startsWith('like') || alike(c, s.slice(5)) > -2));
+  const s = $('s').value, q = $('q').value.toLowerCase(), key = s.replace('-', ''), sign = s[0] === '-' ? -1 : 1; $('g').className = 's' + F.w;
+  const val = c => s === 'like' ? alike(c) : key === 'net' || key === 'amp' ? +c.dataset[key + 's'].split(',')[F.w] : +c.dataset[key];
+  const list = C.filter(c => (!F.k || (F.k === 1 ? c.dataset.k == 1 : c.dataset.k > 1)) && +c.dataset.c >= F.c && c.dataset.n.includes(q) && (s !== 'night' && s !== 'day' || +c.dataset[s] > 0));
   list.sort((a, b) => s === 'r' ? a.r - b.r : s === 'n' ? a.dataset.n.localeCompare(b.dataset.n) : sign * (val(b) - val(a)));
   $('g').replaceChildren(...list); ends(); $('t').textContent = list.length.toLocaleString() + ' games';
 }
