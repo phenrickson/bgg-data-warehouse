@@ -19,8 +19,8 @@ for (const g of G) { // observed parts of the time every copy was out
 // Share of the con's observed open time, up to t, when every copy was out. Divides by the whole con, so it only grows.
 const unavailable = (g, t) => { let n = 0; for (const [a, b] of g.na) if (t > a) n += Math.min(t, b) - a; return n / OPEN_MIN; };
 const NOWFAINT = .3;
-// A dot's area is checkouts so far, up to the most checked out game (never smaller than 2px radius), fixed for the whole con so dots grow to their end size.
-const TOP = Math.max(...G.map(g => g.iv.length)), radius = n => Math.max(2, 10 * Math.sqrt(n / TOP));
+// A dot's area is checkouts so far to the power 0.7 (1 = raw count, 0.5 = square root), up to the most checked out game, fixed for the whole con so dots grow to their end size.
+const TOP = Math.max(...G.map(g => g.iv.length)), radius = n => 8 * Math.sqrt((n / TOP) ** .7);
 const soFar = (g, t) => { let n = 0; for (const [a] of g.iv) if (a <= t) n += Math.min(1, (t - a) / FADE); return n; };
 const OUT = G.filter(g => g.iv.length).sort((a, b) => a.iv.length - b.iv.length); // most checked out drawn last, on top
 if (still && color === 'unavailable') { const d = new Map(OUT.map(g => [g, unavailable(g, 1e9)])); OUT.sort((a, b) => d.get(a) - d.get(b)); } // hottest on top
@@ -57,7 +57,7 @@ function key() {
   if (now && by !== 'unavailable') for (const [o, x] of [[NOWFAINT, 'Some copies out'], [1, 'All copies out']]) {
     const s = document.createElement('span'), i = document.createElement('i'); i.style.background = cols['--fg']; i.style.opacity = o; s.append(i, x); K.append(s);
   }
-  if (!now) for (const n of [1, 10, 25, TOP]) {
+  if (!now) for (const n of [1, 5, 25, TOP]) {
     const s = document.createElement('span'), i = document.createElement('i'), d = 2 * radius(n); i.style.cssText = `background:${cols['--muted']};width:${d}px;height:${d}px;vertical-align:middle`; s.append(i, n === 1 ? '1 checkout' : String(n)); K.append(s);
   }
   if (by === 'unavailable') { if (now) { ramp('Few copies out', 'All copies out', NOW); item(cols['--c0'], 'Number of copies unknown'); } else ramp('Never ran out', `All copies out ${pct}%+ of the con`, DEM); }
