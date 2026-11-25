@@ -13,7 +13,8 @@ _json = lambda d: json.dumps(d, ensure_ascii=False, separators=(",", ":")).repla
 
 
 # The chart code, in load order; one closure, so the files share names.
-_CODE = ["base.js", "standard.js", "games.js", "dots.js"]
+_CODE = ["base.js", "plots.js", "games.js", "dots.js"]
+_LIBRARIES = ["d3-7.9.0.min.js", "plot-0.6.17.min.js"]  # Observable Plot, and D3, which it needs
 _EXPORTS = "data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, facets, trends, eachDay, stack"
 
 
@@ -21,11 +22,17 @@ def _code():
     return "const R = (() => {" + "".join(_read("js/" + f) for f in _CODE) + "return {" + _EXPORTS + "};})();"
 
 
+def _library(f):
+    """A library as a script. Quarto's page has require.js, which would take it instead of letting it load, so define is hidden."""
+    return "<script>(function(define){" + _read("vendor/" + f) + "\n}).call(window);</script>"
+
+
 def setup(games):
     """Shared chart code, the tooltip, and every game's checkouts; call once, at the top of the report."""
     game_map.loaded = False
     con = dict(O=OPEN_SPANS, U=GAP_SPANS, W=OBSERVED_SPANS)
-    return HTML(f'<div id="rtip"></div><script>\n{_code()}\nR.data({_json(con)},{_json(games)});</script>')
+    libraries = "".join(_library(f) for f in _LIBRARIES)
+    return HTML(f'<div id="rtip"></div>{libraries}<script>\n{_code()}\nR.data({_json(con)},{_json(games)});</script>')
 
 
 def exhibit(kind, data, title, desc="", note="", wide=False):

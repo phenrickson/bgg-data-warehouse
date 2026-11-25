@@ -82,26 +82,6 @@ function seg(parent, label, options, value, onchange) {
   set(value);
   return set;
 }
-const path = (r, x, y) => {
-  let p = '',
-    up = 1;
-  r.forEach((v, i) => {
-    if (v == null) {
-      up = 1;
-      return;
-    }
-    p += (up ? 'M' : 'L') + x(i).toFixed(1) + ',' + y(v).toFixed(1);
-    up = 0;
-  });
-  return p;
-};
-const grid = (ticks, y, f, L, w) =>
-  ticks
-    .map(
-      (t) =>
-        `<line x1="${L}" x2="${w}" y1="${y(t)}" y2="${y(t)}" stroke="var(--border)"/><text x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${f(t)}</text>`,
-    )
-    .join('');
 const HATCH = 'repeating-linear-gradient(45deg,var(--bg) 0 3px,var(--muted) 3px 4px)';
 const hatch = (id) =>
   `<defs><pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--bg)"/><rect width="1.2" height="5" fill="var(--muted)"/></pattern></defs>`;
@@ -128,11 +108,6 @@ const hovs = (L, n, w, T, B) =>
     (_, i) =>
       `<rect class="hov" data-i="${i}" opacity="0" x="${L + (i * (w - L)) / n}" width="${(w - L) / n}" y="${T}" height="${B - T}" fill="var(--hover)"/>`,
   ).join('');
-const hours = (H, x, h, sm) =>
-  H.map((v, i) => (i % (sm ? 4 : 2) ? '' : `<text x="${x(i)}" y="${h - 8}" text-anchor="middle">${hr(v)}</text>`)).join(
-    '',
-  );
-
 // ---- time axis over library hours only
 let CON; // {O open, U gaps, W observed}, minutes since Wed midnight
 const ov = (a, b, x, y) => Math.max(0, Math.min(b, y) - Math.max(a, x));

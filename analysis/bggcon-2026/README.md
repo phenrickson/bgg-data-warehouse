@@ -9,7 +9,7 @@ From this folder, with Quarto installed and `QUARTO_PYTHON` pointing at the repo
     python -X utf8 build_playback.py   # once, for the map
     quarto render report.qmd
 
-`stats_*.py` hold the statistics, `availability.py` and `report_data.py` the descriptive numbers, `report_charts.py`, `js/`, `report_map.html` and `report.css` the drawing.
+`stats_*.py` hold the statistics, `availability.py` and `report_data.py` the descriptive numbers, `report_charts.py`, `js/`, `report_map.html` and `report.css` the drawing. The ordinary charts are in `js/plots.js`, drawn with Observable Plot (`vendor/`, with D3; both ISC license). Format `js/` with `npx prettier@3.6.2 --print-width 120 --single-quote --write js/*.js`.
 
 `build_trends.py` writes the separate trends page. `days.py`, `daytypes.py`, `once.py` and `heat.py` print numbers and tests.
 

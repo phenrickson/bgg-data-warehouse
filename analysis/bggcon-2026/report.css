@@ -23,7 +23,7 @@ figcaption span{display:block;font-size:15px;line-height:1.45;color:var(--muted)
 .lg{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;line-height:1.5;color:var(--muted);margin:10px 0 8px}
 .lg i{display:inline-block;width:12px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}.lg i.ln{width:16px;height:0;border-radius:0;vertical-align:4px}.lg i.dot{border-radius:50%;vertical-align:middle}
 .src{font-size:13px;line-height:1.45;color:var(--muted);border-top:1px solid var(--border);margin-top:10px;padding-top:8px}
-.plot svg,.plot canvas{display:block}.plot text{font-size:13px;fill:var(--muted);font-variant-numeric:tabular-nums}.plot text.nm,.plot text.v{fill:var(--fg)}.plot text.nm{font-size:14px}
+.plot svg,.plot canvas{display:block}.plot text{font-size:13px;fill:var(--muted);font-variant-numeric:tabular-nums}.plot text.nm,.plot text.v{fill:var(--fg)}.plot g.v text{fill:var(--fg)}.plot text.nm{font-size:14px}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:12px;font-size:14px;line-height:1.4}.bar .count{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}.bar input{margin-left:auto}
 input[type=search]{font:inherit;font-size:16px;color:var(--fg);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:5px 12px;min-height:36px;width:150px;max-width:100%}
 .pick{position:relative;width:330px;max-width:100%}.pick input{width:100%;margin:0}.menu{position:absolute;z-index:5;top:calc(100% + 4px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px oklch(0 0 0/.18);padding:4px;max-height:340px;overflow:auto}
