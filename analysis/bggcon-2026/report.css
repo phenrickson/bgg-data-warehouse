@@ -38,7 +38,7 @@ input[type=search]{font:inherit;font-size:16px;color:var(--fg);background:var(--
 /* top games, a panel per group */
 :root{--hot:#c8641b}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--hot:#f08a2b}}:root[data-theme="dark"]{--hot:#f08a2b}
 .hotname{font-weight:700;color:var(--fg)}
-.facets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 32px;margin-top:14px}.facets.one{grid-template-columns:minmax(0,1fr)}.facet h4{font-size:14px;line-height:1.3;font-weight:600;margin:0 0 6px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.facets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 32px;padding:12px 12px 4px 0}.facets.one{grid-template-columns:minmax(0,1fr)}.facet h4{font-size:14px;line-height:1.3;font-weight:600;margin:0 0 6px;padding-bottom:5px;border-bottom:1px solid var(--border)}
 .fp{position:relative}.fp .nm{position:absolute;left:0;font-size:13px;line-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}@media(max-width:560px){.facets{grid-template-columns:minmax(0,1fr)}}
 /* the viewer's day colors */
 :root{--day-1:oklch(.62 .14 250);--day-2:oklch(.78 .13 75);--day-3:oklch(.65 .12 170);--day-4:oklch(.62 .12 300);--day-5:oklch(.65 .15 25)}

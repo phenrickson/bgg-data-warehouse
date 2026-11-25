@@ -8,6 +8,11 @@ from availability import OBSERVED_SPANS, OPEN_SPANS, minute, table
 from checkouts import GAMES, K, LIB, ct, meta
 from game_types import TYPES, is_type
 
+# The complexity categories every chart uses: name, from, up to (not including)
+COMPLEXITY_BANDS = [("Under 1.5", 0, 1.5), ("1.5–2", 1.5, 2), ("2–2.5", 2, 2.5), ("2.5–3", 2.5, 3), ("3–3.5", 3, 3.5), ("3.5 and up", 3.5, 9)]
+COMPLEXITY_NAMES = [name for name, _, _ in COMPLEXITY_BANDS]
+COMPLEXITY_EDGES = [0] + [b for _, _, b in COMPLEXITY_BANDS]
+
 GAMES_TABLE = table()  # every checked-out game, most in demand first
 
 
@@ -63,8 +68,7 @@ def top(measure, keep=lambda g: True, n=10):
 BY_TYPE = {name: (lambda g, name=name: is_type(g["b"], name)) for name in TYPES}
 BY_YEAR = {name: (lambda g, a=a, b=b: bool(g["y"]) and a <= g["y"] <= b)
            for name, a, b in [(str(y), y, y) for y in range(2026, 2021, -1)] + [("2010–21", 2010, 2021), ("2000s", 2000, 2009), ("1990s", 1990, 1999)]}
-BY_COMPLEXITY = {name: (lambda g, a=a, b=b: a <= hours.complexity(g["b"]) < b)
-                 for name, a, b in (("Under 1.5", 0, 1.5), ("1.5–2", 1.5, 2), ("2–2.5", 2, 2.5), ("2.5–3", 2.5, 3), ("3–3.5", 3, 3.5), ("3.5 and up", 3.5, 9))}
+BY_COMPLEXITY = {name: (lambda g, a=a, b=b: a <= hours.complexity(g["b"]) < b) for name, a, b in COMPLEXITY_BANDS}
 
 
 def facets(measure, groups=None, n=10):
@@ -87,13 +91,11 @@ def dots_and_share(column_of, value_of, names):
     return dots, rate
 
 
-# By complexity: columns a quarter point wide, 4 and up together
-COMPLEXITY_NAMES = [f"{1 + i / 4:g}–{1.25 + i / 4:g}" for i in range(12)] + ["4+"]
-COMPLEXITY_TICKS = [[i * 2, f"{1 + i / 2:.1f}", i % 2 == 0] for i in range(6)] + [[12.5, "4+", True]]
+COMPLEXITY_TICKS = [[i + .5, name.replace("Under ", "<").replace(" and up", "+"), True] for i, name in enumerate(COMPLEXITY_NAMES)]
 
 
 def by_complexity():
-    col = lambda b: None if np.isnan(hours.complexity(b)) else min(12, int((hours.complexity(b) - 1) * 4 + 1e-6))
+    col = lambda b: None if np.isnan(hours.complexity(b)) else int(np.digitize(hours.complexity(b), COMPLEXITY_EDGES[1:-1]))
     return dots_and_share(col, lambda b: f"{hours.complexity(b):.2f}", COMPLEXITY_NAMES)
 
 
@@ -109,9 +111,6 @@ def by_year():
     return dots_and_share(col, lambda b: str(meta(b)[1]), YEAR_NAMES)
 
 
-BAND_NAMES = ["Under 1.5", "1.5–2", "2–2.5", "2.5–3", "3 and up"]
-
-
 def complexity_mix(c):
-    """Share of each hour's checkouts in each complexity band."""
-    return [(np.histogram(c.value[c.hour == h], [0, 1.5, 2, 2.5, 3, 9])[0] / (c.hour == h).sum()).round(4).tolist() for h in hours.HOURS]
+    """Share of each hour's checkouts in each complexity category."""
+    return [(np.histogram(c.value[c.hour == h], COMPLEXITY_EDGES)[0] / (c.hour == h).sum()).round(4).tolist() for h in hours.HOURS]

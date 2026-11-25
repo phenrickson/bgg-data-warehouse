@@ -200,7 +200,7 @@ charts.exhibit("hourly", dict(S=by_hour, ticks=[1.8, 2, 2.2, 2.4, 2.6, 2.8]), "A
 [Numbers come from the code: `{python} f"{result['n']:,}"` checkouts, from `{python} f"{by_hour['m'][0]:.2f}"` at 8 AM to `{python} f"{by_hour['m'][-1]:.2f}"` at 11 PM. Hour explains `{python} f"{result['share_explained']:.0%}"` of the variation (p = `{python} f"{result['p_hours_shuffle']:.4f}"`).[^method]]
 
 ```{python}
-charts.exhibit("stack", dict(H=by_hour["H"], n=by_hour["n"], mix=data.complexity_mix(checkouts), names=data.BAND_NAMES), "Mix of complexity by time of day")
+charts.exhibit("stack", dict(H=by_hour["H"], n=by_hour["n"], mix=data.complexity_mix(checkouts), names=data.COMPLEXITY_NAMES), "Mix of complexity by time of day")
 ```
 
 ```{python}
