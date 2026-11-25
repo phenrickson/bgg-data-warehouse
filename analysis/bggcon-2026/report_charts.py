@@ -44,5 +44,5 @@ def game_map(title, desc="", note="", still=False, color="weight", top=None):
 
 
 def numbers(items):
-    """Headline numbers: [[number, label], ...]"""
-    return HTML('<div class="kpis">' + "".join(f"<div><b>{n}</b><span>{t}</span></div>" for n, t in items) + "</div>")
+    """Summary numbers on one line: [[number, label], ...]"""
+    return HTML('<div class="sums">' + "".join(f"<span><b>{n}</b> {t}</span>" for n, t in items) + "</div>")

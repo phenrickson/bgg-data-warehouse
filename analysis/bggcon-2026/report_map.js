@@ -98,7 +98,7 @@ function outageNote() {
 let spots = [], placedFor = '';
 const cross = (ax, ay, bx, by, cx, cy, dx, dy) => { const o = (px, py, qx, qy, rx, ry) => Math.sign((qx - px) * (ry - py) - (qy - py) * (rx - px)); return o(ax, ay, bx, by, cx, cy) !== o(ax, ay, bx, by, dx, dy) && o(cx, cy, dx, dy, ax, ay) !== o(cx, cy, dx, dy, bx, by); };
 function placeLabels() {
-  mx.font = LABEL_FONT; spots = []; placedFor = $('lab').value; if (!placedFor) return;
+  mx.font = LABEL_FONT; spots = []; placedFor = $('lab').value; if (!placedFor || placedFor === 'D') return;
   const order = DATA[placedFor].map(l => { const [x, y] = place(l); return { t: l.t, x, y, s: l.s || '', w: Math.max(mx.measureText(l.t).width, (l.s || '').length * 5.8) + 8, h: l.s ? 36 : 20 }; });
   for (const l of order) {
     let best = null;
@@ -114,7 +114,19 @@ function placeLabels() {
   }
 }
 const LABEL_FONT = '600 13px system-ui, sans-serif';
+// The two PCA dimensions: a faint axis each, named at its ends. PLACEHOLDER copy (Phil's to write)
+const AXES = { a: ['Lighter', 'Heavier'], b2: ['Solo and co-op', 'Bigger groups'] };
+function axes() {
+  const [ox, oy] = place({ [X]: 0, [Y]: 0 });
+  mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = .55; mx.strokeStyle = cols['--muted']; mx.lineWidth = 1;
+  mx.beginPath(); mx.moveTo(0, oy); mx.lineTo(W, oy); mx.moveTo(ox, 0); mx.lineTo(ox, H); mx.stroke(); mx.globalAlpha = 1;
+  mx.lineJoin = 'round'; mx.textBaseline = 'middle';
+  const put = (t, sub, x, y, align) => { mx.textAlign = align; for (const [s, dy, font, ink] of [[t, 0, LABEL_FONT, '--fg'], [sub, 16, '11px system-ui, sans-serif', '--muted']]) { mx.font = font; mx.lineWidth = 5; mx.strokeStyle = cols['--bg']; mx.strokeText(s, x, y + dy); mx.fillStyle = cols[ink]; mx.fillText(s, x, y + dy); } };
+  put('← ' + AXES.a[0], 'Component 1', 12, oy - 22, 'left'); put(AXES.a[1] + ' →', 'Component 1', W - 12, oy - 22, 'right');
+  put('↑ ' + AXES.b2[1], 'Component 2', ox + 10, 18, 'left'); put('↓ ' + AXES.b2[0], 'Component 2', ox + 10, H - 32, 'left');
+}
 function labels() {
+  if ($('lab').value === 'D') return axes();
   if (placedFor !== $('lab').value) placeLabels();
   mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = LABEL_FONT; mx.textBaseline = 'middle'; mx.textAlign = 'center'; mx.lineJoin = 'round';
   for (const l of spots) {
@@ -214,11 +226,14 @@ function hover() {
 map.onpointerleave = () => { mouse = null; $('tip').style.display = 'none'; };
 R.seg($('spd'), 'Speed', [['40', 'Slow'], ['80', 'Normal'], ['160', 'Fast']], '80', v => { $('speed').value = v; });
 root.classList.toggle('still', still); $('by').value = color;
+let setLab;
 for (const i of ['proj', 'mode', 'by', 'lab']) { // the viewer's segmented control in place of each menu
-  const s = $(i); if (i === 'lab' && $('wrap').clientWidth < 560) s.value = ''; // no room for region names on a phone
-  R.seg(s.parentNode, s.parentNode.firstChild.textContent.trim(), [...s.options].map(o => [o.value, o.text]), s.value, v => { s.value = v; s.onchange(); });
+  const s = $(i); if (i === 'lab') s.value = $('wrap').clientWidth < 560 ? '' : 'R'; // no room for region names on a phone
+  const set = R.seg(s.parentNode, s.parentNode.firstChild.textContent.trim(), [...s.options].map(o => [o.value, o.text]), s.value, v => { s.value = v; s.onchange(); });
+  if (i === 'lab') setLab = v => { s.value = v; set(v); s.parentNode.querySelector('[data-v=D]').hidden = $('proj').value !== 'pca'; };
 }
-$('proj').onchange = size;
+const regions = $('lab').value; setLab(regions);
+$('proj').onchange = () => { setLab($('proj').value === 'pca' ? 'D' : regions); size(); }; // PCA opens on its dimensions
 $('lab').onchange = $('by').onchange = $('mode').onchange = () => { key(); draw(); }; label(); let lastW = $('wrap').clientWidth; new ResizeObserver(() => { const w = $('wrap').clientWidth; if (w && w !== lastW) { lastW = w; size(); } }).observe($('wrap')); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', size);
 size(); if (!still) requestAnimationFrame(ts => { last = ts; tick(ts); });
 };
