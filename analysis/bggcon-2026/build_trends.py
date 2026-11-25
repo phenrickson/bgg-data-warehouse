@@ -1,22 +1,21 @@
 """Writes trends.html: how each game's availability moved over the con, one small chart per game.
 
 Data    Games with a known copy count and at least MIN_CHECKOUTS checkouts, Wed-Sat.
-Shown   The share of each hour when every copy was out, and a smoothing spline fit to it from Wednesday
-        noon (before that the rise is just the library opening full), with the spline's derivative.
+Shown   The share of each hour when every copy was out; a look-back average of it from Wednesday noon
+        (before that the rise is just the library opening full); and how that average has moved lately.
         The library line is all copies out, as a share of its own peak. It isn't used in the fit.
 """
 import html
 
 import numpy as np
-from scipy.interpolate import make_smoothing_spline
 
 from availability import STEPS, all_out_steps, minute
 from checkouts import END, GAMES, K
 from page import DATA, HERE
 
 MIN_CHECKOUTS = 3
-SMOOTHNESS = [1000, 300, 100, 30]  # the spline's penalty: higher is smoother
-DEFAULT_SMOOTHNESS = 2  # 100
+HALF_LIVES = [8, 6, 4, 2]  # recorded hours
+DEFAULT_HALF_LIFE = 2  # 4 hours
 
 HOURS = np.arange(8, 96)  # every clock hour from Wed 8 AM, counted from Wed midnight
 FITTED = HOURS >= 12  # from Wed noon
@@ -29,11 +28,19 @@ def by_hour(steps):
     return np.array([steps[STEP_HOURS == h].mean() if ok else np.nan for h, ok in zip(HOURS, OBSERVED)])
 
 
-def trend(y, smoothness):
-    """Spline fit to hourly values, and its derivative in percentage points per day."""
-    use = OBSERVED & FITTED
-    f = make_smoothing_spline(HOURS[use].astype(float), y[use], lam=smoothness)
-    return np.where(FITTED, f(HOURS), np.nan), np.where(FITTED, f.derivative()(HOURS) * 24 * 100, np.nan)
+def trend(y, half_life):
+    """Average of the hours so far, where an hour counts half as much every half_life recorded hours, and how many
+    points that average has moved in the last half_life hours. Looks back only, so it can be worked out live.
+    """
+    use = np.where(OBSERVED & FITTED)[0]
+    weight, average = .5 ** (1 / half_life), np.full(len(HOURS), np.nan)
+    total = count = 0
+    for i in use:
+        total, count = total * weight + y[i], count * weight + 1
+        average[i] = total / count
+    change = np.full(len(HOURS), np.nan)
+    change[use[half_life:]] = 100 * (average[use[half_life:]] - average[use[:-half_life]])
+    return average, change
 
 
 def library_out():
@@ -57,7 +64,7 @@ def night_gaps(y):
 # ---------------------------------------------------------------- drawing
 
 W, H, D = 300, 74, 28  # chart width, height, and height of the rate-of-change strip
-MAX_RATE = 400  # points a day at the strip's edge
+MAX_RATE = 60  # points, at the strip's edge
 BAR = W / len(HOURS)
 
 
@@ -112,21 +119,21 @@ def svg(height, inner):
 
 def card(game, library, base):
     y = by_hour(all_out_steps(game))
-    fits = [trend(y, s) for s in SMOOTHNESS]
+    fits = [trend(y, h) for h in HALF_LIVES]
     start, mid = np.argmax(FITTED), D // 2
     gaps = night_gaps(y)
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
                    for j, v in enumerate(y) if np.isfinite(v) and v > 0)
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
-    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 20 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate((f, np.where(OBSERVED, r, np.nan)) for f, r in fits))
+    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 3 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate((f, np.where(OBSERVED, r, np.nan)) for f, r in fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
     axis = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
     names = "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
     strip = (f'<text class="up" x="-5" y="{mid - 2}" text-anchor="end">rising</text><text class="dn" x="-5" y="{mid + 10}" text-anchor="end">cooling</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
-    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
-            f' data-nets="{numbers(lambda v: v[-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[start:]))}">'
+    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_HALF_LIFE][0][FITTED & OBSERVED])}"'
+            f' data-nets="{numbers(lambda v: v[OBSERVED][-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[FITTED & OBSERVED]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
             + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag axis">{axis}</g><g class="tag names">{names}</g>')
             + svg(D, f'<line class="zero" x2="{W}" y1="{mid}" y2="{mid}"/>{rates}<g class="tag axis">{strip}</g>') + "</div>")
@@ -136,7 +143,7 @@ def main():
     library, base = library_out(), baseline()
     games = [g for g in GAMES.values() if g["k"] and g["c"] >= MIN_CHECKOUTS]
     page = (HERE / "trends.template.html").read_text(encoding="utf-8")
-    for key, value in (("/*CSS*/", (HERE / "report.css").read_text(encoding="utf-8")), ("/*SMOOTH*/", str(SMOOTHNESS)), ("/*DEFAULT*/", str(DEFAULT_SMOOTHNESS)), ("/*STRIP*/", str(D)),
+    for key, value in (("/*CSS*/", (HERE / "report.css").read_text(encoding="utf-8")), ("/*SMOOTH*/", str(HALF_LIVES)), ("/*DEFAULT*/", str(DEFAULT_HALF_LIFE)), ("/*STRIP*/", str(D)),
                        ("<!--CARDS-->", "".join(card(g, library, base) for g in games))):
         page = page.replace(key, value)
     (DATA / "trends.html").write_text(page, encoding="utf-8")
