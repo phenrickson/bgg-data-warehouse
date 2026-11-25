@@ -1,7 +1,8 @@
-const DATA = /*DATA*/;
+// The map of every library game. still: the whole con at once, with no playback or controls; color: weight, category or unavailable.
+R.map = (root, DATA, { still = false, color = 'weight' } = {}) => {
 // Times: minutes since Wed 18 Nov 00:00 Chicago. O = library hours, U = not-observed windows.
 // Playback time p runs over open hours only (nights are skipped): total length = sum of O.
-const $ = i => document.getElementById(i), G = DATA.G, DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const $ = i => root.querySelector(`[data-m="${i}"]`), G = DATA.G.map(g => ({ ...g })), DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 let total = 0; const SEG = DATA.O.map(([a, b]) => { const s = { a, b, p: total }; total += b - a; return s; });
 const toT = p => { const s = SEG.findLast(s => p >= s.p); return s.a + (p - s.p); };
 const clock = t => { const d = Math.floor(t / 1440), m = Math.floor(t) % 1440, h = Math.floor(m / 60); return `${DAYS[d]} ${(h + 11) % 12 + 1}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
@@ -208,9 +209,11 @@ function hover() {
 };
 map.onpointerleave = () => { mouse = null; $('tip').style.display = 'none'; };
 R.seg($('spd'), 'Speed', [['40', 'Slow'], ['80', 'Normal'], ['160', 'Fast']], '80', v => { $('speed').value = v; });
+root.classList.toggle('still', still); $('by').value = color;
 for (const i of ['mode', 'by', 'lab']) { // the viewer's segmented control in place of each menu
   const s = $(i); if (i === 'lab' && $('wrap').clientWidth < 560) s.value = ''; // no room for region names on a phone
   R.seg(s.parentNode, s.parentNode.firstChild.textContent.trim(), [...s.options].map(o => [o.value, o.text]), s.value, v => { s.value = v; s.onchange(); });
 }
 $('lab').onchange = $('by').onchange = $('mode').onchange = () => { key(); draw(); }; label(); let lastW = $('wrap').clientWidth; new ResizeObserver(() => { const w = $('wrap').clientWidth; if (w && w !== lastW) { lastW = w; size(); } }).observe($('wrap')); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', size);
-size(); requestAnimationFrame(ts => { last = ts; tick(ts); });
+size(); if (!still) requestAnimationFrame(ts => { last = ts; tick(ts); });
+};

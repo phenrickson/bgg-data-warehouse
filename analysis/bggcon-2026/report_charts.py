@@ -26,9 +26,21 @@ def exhibit(kind, data, title, desc="", note="", wide=False):
                 f'<script>R.{kind}(document.getElementById("{i}"),{_json(data)});</script>')
 
 
-def game_map(title, desc="", note=""):
-    """The playback map. Needs build_playback.py to have run (it writes playback.json)."""
-    body = _read("report_map.html")
+def game_map(title, desc="", note="", still=False, color="weight"):
+    """The map: with playback, or still=True for the whole con at once, colored by weight, category or unavailable (in demand).
+
+    Needs build_playback.py to have run (it writes playback.json).
+    """
+    i = f"x{next(_ids)}"
+    opts = _json(dict(still=still, color=color))
+    src = f'<div class="src">{note}</div>' if note else ""
     data = (DATA / "playback.json").read_text(encoding="utf-8")
-    js = _read("report_map.js").replace("/*DATA*/", data)
-    return HTML(f'<figure class="wide"><figcaption><b>{title}</b><span>{desc}</span></figcaption>{body}<div class="src">{note}</div></figure><script>{{\n{js}\n}}</script>')
+    load = "" if getattr(game_map, "loaded", False) else "const MAPDATA=" + data + ";" + _read("report_map.js")
+    game_map.loaded = True  # the data and code go in the page once
+    return HTML(f'<figure class="wide" id="{i}"><figcaption><b>{title}</b><span>{desc}</span></figcaption>{_read("report_map.html")}{src}</figure>'
+                f'<script>{load}R.map(document.querySelector("#{i} .cmap"),MAPDATA,{opts});</script>')
+
+
+def numbers(items):
+    """Headline numbers: [[number, label], ...]"""
+    return HTML('<div class="kpis">' + "".join(f"<div><b>{n}</b><span>{t}</span></div>" for n, t in items) + "</div>")

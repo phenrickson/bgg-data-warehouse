@@ -27,6 +27,15 @@ charts.setup(data.GAMES_TABLE)
 
 [Opening.]
 
+```{python}
+day, hour, most = data.busiest_hour()
+charts.numbers([[f"{len(data.K):,}", "checkouts"], [f"{len(data.GAMES):,}", "different games checked out"], [f"{day} {hour}", f"busiest hour · {most} checkouts"]])
+```
+
+```{python}
+charts.exhibit("barChart", dict(items=data.by_day(), what="Checkouts"), "Checkouts each day", note="Most of Thursday afternoon and evening wasn't recorded (2–9 PM). Sunday is 8 AM–1 PM.")
+```
+
 ## How the data was collected
 
 [How we collected it, the API rules, and the outage.]
@@ -38,7 +47,13 @@ charts.exhibit("timeline", data.timeline(), "Checkouts through the con", "Librar
 [The map.]
 
 ```{python}
-charts.game_map("Every game in the library", "Games near each other are similar. Press Play to watch the con.", note="* Some games, mostly expansions, aren't shown on the map.")
+charts.game_map("Every game in the library", "Games near each other are similar", note="Some games, mostly expansions, aren't shown.", still=True)
+```
+
+[Playback.]
+
+```{python}
+charts.game_map("The con, played back", "Press Play to watch the con", note="* Some games, mostly expansions, aren't shown on the map.")
 ```
 
 ## The most in-demand games

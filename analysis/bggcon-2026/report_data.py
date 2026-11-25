@@ -5,7 +5,7 @@ import numpy as np
 
 import stats_complexity_by_hour as hours
 from availability import OPEN_SPANS, minute, table
-from checkouts import GAMES, K, LIB, meta
+from checkouts import GAMES, K, LIB, ct, meta
 
 GAMES_TABLE = table()  # every checked-out game, most in demand first
 
@@ -14,6 +14,20 @@ def timeline():
     """[start minute, checkouts] for each 15 minutes of library time."""
     n = collections.Counter(int(minute(k["o"]) // 15 * 15) for k in K)
     return [[t, n[t]] for a, b in OPEN_SPANS for t in range(int(a), int(b), 15)]
+
+
+def busiest_hour():
+    """The clock hour with the most checkouts: (day, hour, checkouts)."""
+    (day, hour), n = collections.Counter((ct(k["o"]).strftime("%a"), ct(k["o"]).hour) for k in K).most_common(1)[0]
+    return day, f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}", n
+
+
+def by_day():
+    """Checkouts each day, Wed-Sun, as bars."""
+    n = collections.Counter(ct(k["o"]).strftime("%a") for k in K)
+    names = dict(Wed="Wednesday", Thu="Thursday", Fri="Friday", Sat="Saturday", Sun="Sunday")
+    assert set(n) == set(names)
+    return [[d, n[d], name] for d, name in names.items()]
 
 
 def ranked(keep=lambda g: True):
