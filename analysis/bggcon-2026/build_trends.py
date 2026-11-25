@@ -56,8 +56,7 @@ def night_gaps(y):
 
 # ---------------------------------------------------------------- drawing
 
-W, H, D = 300, 58, 40  # chart width, height, and height of the rate-of-change strip
-LEFT, RIGHT = 40, 56  # room for labels
+W, H, D = 300, 74, 28  # chart width, height, and height of the rate-of-change strip
 MAX_RATE = 400  # points a day at the strip's edge
 BAR = W / len(HOURS)
 
@@ -108,7 +107,7 @@ def baseline():
 
 
 def svg(height, inner):
-    return f'<svg viewBox="{-LEFT} 0 {LEFT + W + RIGHT} {height}">{inner}</svg>'
+    return f'<svg viewBox="0 0 {W} {height}">{inner}</svg>'
 
 
 def card(game, library, base):
@@ -121,17 +120,16 @@ def card(game, library, base):
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
     rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 8 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate((f, np.where(OBSERVED, r, np.nan)) for f, r in fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
-    labels = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
-    labels += "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
-    strip = (f'<text class="up" x="-5" y="{mid - 6}" text-anchor="end">rising</text><text class="dn" x="-5" y="{mid + 13}" text-anchor="end">cooling</text>'
-             f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
+    axis = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
+    names = "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
+    strip = (f'<text x="-5" y="{mid - 2}" text-anchor="end">rising</text><text x="-5" y="{mid + 10}" text-anchor="end">cooling</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
     return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[start:]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
-            + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag">{labels}</g>')
-            + svg(D, f'<line class="zero" x2="{W}" y1="{mid}" y2="{mid}"/>{rates}<g class="tag">{strip}</g>') + "</div>")
+            + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag axis">{axis}</g><g class="tag names">{names}</g>')
+            + svg(D, f'<line class="zero" x2="{W}" y1="{mid}" y2="{mid}"/>{rates}<g class="tag axis">{strip}</g>') + "</div>")
 
 
 def main():
