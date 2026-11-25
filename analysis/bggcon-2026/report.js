@@ -160,13 +160,14 @@ const R = (() => {
   function facets(el, { by, panels, height = 440 }) {
     const val = g => by === 'c' ? g.c : g.p, lab = g => by === 'c' ? g.c : g.p.toFixed(0) + '%', fill = by === 'c' ? 'var(--lit)' : 'var(--hot)';
     const all = panels.map(([t, ids]) => [t, ids.map(b => byId.get(b))]), max = Math.max(...all.flatMap(([, g]) => g.map(val))), one = all.length === 1, RH = 24;
+    const longest = () => { const c = facets.ctx = facets.ctx || document.createElement('canvas').getContext('2d'); c.font = '13px ' + getComputedStyle(el).fontFamily; return Math.max(...all.flatMap(([, l]) => l.map(g => c.measureText(g.n).width))); };
     el.classList.add('facets'); if (one) el.classList.add('one');
     for (const [t, list] of all) {
       const c = make('div', 'facet', el); if (t) make('h4', '', c).textContent = t;
       const box = make('div', one ? 'rbox' : '', c), p = make('div', 'fp', box); if (one) box.style.maxHeight = height + 'px';
-      fit(p, w => {
-        const L = Math.round(Math.min(one ? 260 : 170, w * .46)), V = 38, k = (w - L - V) / max, h = list.length * RH;
-        p.innerHTML = svg(w, h, list.map((g, i) => `<rect x="${L}" y="${i * RH + 4}" width="${Math.max(2, val(g) * k).toFixed(1)}" height="${RH - 8}" rx="2" fill="${fill}"/><text class="v" x="${(L + val(g) * k + 6).toFixed(1)}" y="${i * RH + RH / 2 + 4}">${lab(g)}</text><rect data-i="${i}" y="${i * RH}" width="${w}" height="${RH}" fill="transparent"/>`).join('')) + list.map((g, i) => `<div class="nm" style="top:${i * RH}px;width:${L - 10}px;height:${RH}px;line-height:${RH}px">${esc(g.n)}</div>`).join('');
+      fit(p, w => { // names get the room the longest one in the figure needs, up to about half a panel (270px in a full-width chart); longer ones are cut off, so rows line up across panels (hover has the full name)
+        const L = Math.ceil(Math.min(longest() + 14, w < 450 ? w * .54 : 270)), V = 38, k = (w - L - V) / max;
+        p.innerHTML = svg(w, list.length * RH, list.map((g, i) => `<rect x="${L}" y="${i * RH + 4}" width="${Math.max(2, val(g) * k).toFixed(1)}" height="16" rx="2" fill="${fill}"/><text class="v" x="${(L + val(g) * k + 6).toFixed(1)}" y="${i * RH + 16}">${lab(g)}</text><rect data-i="${i}" y="${i * RH}" width="${w}" height="${RH}" fill="transparent"/>`).join('')) + list.map((g, i) => `<div class="nm" style="top:${i * RH}px;width:${L - 12}px">${esc(g.n)}</div>`).join('');
       });
       p.onpointermove = e => { const g = list[e.target.dataset && e.target.dataset.i]; if (g) show(e, name(g), gameRows(g)); else hide(); }; p.onpointerleave = hide; box.onscroll = hide;
     }

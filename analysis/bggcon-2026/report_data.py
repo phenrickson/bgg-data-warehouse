@@ -64,7 +64,7 @@ BY_CATEGORY = {name: (lambda g, tag=tag: tag in hours.CATEGORIES.get(g["b"], ())
 BY_YEAR = {name: (lambda g, a=a, b=b: bool(g["y"]) and a <= g["y"] <= b)
            for name, a, b in [(str(y), y, y) for y in range(2026, 2021, -1)] + [("2010–21", 2010, 2021), ("2000s", 2000, 2009), ("1990s", 1990, 1999)]}
 BY_COMPLEXITY = {name: (lambda g, a=a, b=b: a <= hours.complexity(g["b"]) < b)
-                 for name, a, b in (("Under 1.5", 0, 1.5), ("1.5–2", 1.5, 2), ("2–2.5", 2, 2.5), ("2.5–3", 2.5, 3), ("3 and up", 3, 9))}
+                 for name, a, b in (("Under 1.5", 0, 1.5), ("1.5–2", 1.5, 2), ("2–2.5", 2, 2.5), ("2.5–3", 2.5, 3), ("3–3.5", 3, 3.5), ("3.5 and up", 3.5, 9))}
 
 
 def facets(measure, groups=None, n=10):

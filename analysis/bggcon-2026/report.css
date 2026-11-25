@@ -6,8 +6,8 @@
 :root[data-theme="dark"]{color-scheme:dark;--bg:oklch(.19 .02 260);--fg:oklch(.94 .006 80);--muted:oklch(.68 .02 260);--border:oklch(.32 .02 260);--card:oklch(.23 .02 260);--fill:oklch(.27 .02 260);--primary:oklch(.70 .16 48);--on-primary:oklch(.18 .02 260);--lit:#56b4e9;--some:color-mix(in oklab,#56b4e9 45%,oklch(.36 .015 260));--never:oklch(.36 .015 260);--bandc:oklch(.28 .015 260);--day:oklch(.52 .02 260);--hover:oklch(.94 .006 80/.06);--context:oklch(.27 .01 260);--flash:#cfeafc;--closed:oklch(.36 .02 260);--w0:#14b8a6;--w1:#f1efea;--w2:#ff5277}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scrollbar-gutter:stable}
-/* One grid: everything sits in the 728px column; a wide exhibit is centered on it. */
-body{margin:0;background:var(--bg);color:var(--fg);font:400 17px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;grid-template-columns:1fr min(728px,100% - 32px) 1fr;padding:56px 0 96px}
+/* One grid: everything sits in the 840px column; a wide exhibit is centered on it. */
+body{margin:0;background:var(--bg);color:var(--fg);font:400 17px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;display:grid;grid-template-columns:1fr min(840px,100% - 32px) 1fr;padding:56px 0 96px}
 body>*{grid-column:2;min-width:0}
 body>.cell:has(figure.wide){grid-column:1/-1;justify-self:center;width:min(1040px,100% - 32px)}
 h1,.title{font-size:clamp(28px,20px + 2vw,40px);line-height:1.15;font-weight:700;letter-spacing:-.015em;margin:0;text-wrap:balance}
@@ -38,7 +38,7 @@ input[type=search]{font:inherit;font-size:16px;color:var(--fg);background:var(--
 /* top games, a panel per group */
 :root{--hot:#c8641b}@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--hot:#f08a2b}}:root[data-theme="dark"]{--hot:#f08a2b}
 .facets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 32px;margin-top:14px}.facets.one{grid-template-columns:minmax(0,1fr)}.facet h4{font-size:14px;line-height:1.3;font-weight:600;margin:0 0 6px;padding-bottom:5px;border-bottom:1px solid var(--border)}
-.fp{position:relative}.fp .nm{position:absolute;left:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;text-align:right;pointer-events:none}@media(max-width:560px){.facets{grid-template-columns:minmax(0,1fr)}}
+.fp{position:relative}.fp .nm{position:absolute;left:0;font-size:13px;line-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}@media(max-width:560px){.facets{grid-template-columns:minmax(0,1fr)}}
 /* the viewer's day colors */
 :root{--day-1:oklch(.62 .14 250);--day-2:oklch(.78 .13 75);--day-3:oklch(.65 .12 170);--day-4:oklch(.62 .12 300);--day-5:oklch(.65 .15 25)}
 /* map */
