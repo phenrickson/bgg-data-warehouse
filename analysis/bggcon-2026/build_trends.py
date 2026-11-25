@@ -54,6 +54,12 @@ def days_alike(y):
     return np.mean([np.corrcoef(a, b)[0, 1] if a.std() > 0 and b.std() > 0 else 0 for a, b in pairs])
 
 
+def daily_pattern(y):
+    """Average all-out rate at each hour of the day, 8 AM to midnight, from Wednesday noon."""
+    y = np.where(FITTED, y, np.nan)
+    return np.array([np.nanmean(y[HOURS % 24 == h]) for h in range(8, 24)])
+
+
 # ---------------------------------------------------------------- drawing
 
 W, H, D = 300, 58, 40  # chart width, height, and height of the rate-of-change strip
@@ -80,9 +86,15 @@ def line(values, y):
 
 
 def area(rates):
-    """Outline between the rate of change and zero."""
-    xs = [(j + .5) * BAR for j, v in enumerate(rates) if np.isfinite(v)]
-    return f"{line(rates, rate_at)}L{xs[-1]:.1f},{D / 2}L{xs[0]:.1f},{D / 2}Z"
+    """Between the rate of change and zero, one shape per stretch of recorded hours."""
+    shapes, run = [], []
+    for j, v in enumerate([*rates, np.nan]):
+        if np.isfinite(v):
+            run.append(((j + .5) * BAR, rate_at(v)))
+        elif run:
+            shapes.append(f"M{run[0][0]:.1f},{D / 2}" + "".join(f"L{x:.1f},{y:.1f}" for x, y in run) + f"L{run[-1][0]:.1f},{D / 2}Z")
+            run = []
+    return "".join(shapes)
 
 
 def end_labels(library, fitted):
@@ -112,7 +124,7 @@ def card(game, library, base):
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
                    for j, v in enumerate(y) if np.isfinite(v) and v > 0)
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
-    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 8 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate(fits))
+    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 8 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate((f, np.where(OBSERVED, r, np.nan)) for f, r in fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
     labels = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
     labels += "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
@@ -120,7 +132,7 @@ def card(game, library, base):
              f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
-    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-d="{days_alike(y):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
+    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-p="{",".join(f"{v:.2f}" for v in daily_pattern(y))}" data-d="{days_alike(y):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[start:]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
             + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag">{labels}</g>')
