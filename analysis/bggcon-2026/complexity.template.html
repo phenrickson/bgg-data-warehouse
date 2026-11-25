@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Complexity</title>
+<style>
+/*CSS*/
+</style><main id="m"></main><div id="tip"></div><script>
+// All titles and labels are placeholder copy.
+const D = /*DATA*/;
+/*CHARTS*/
+const DAYS = ['Wed', 'Thu', 'Fri', 'Sat'];
+const BC = ['var(--w0)', 'color-mix(in oklab,var(--w0) 50%,var(--w1))', 'var(--w1)', 'color-mix(in oklab,var(--w2) 50%,var(--w1))', 'var(--w2)'];
+const BN = ['Under 1.5', '1.5–2', '2–2.5', '2.5–3', '3 and up'];
+const s = (X1 - X0) / D.H.length, x = i => X0 + (i + .5) * s;
+const xax = h => D.H.map((v, i) => i % 2 ? '' : `<text x="${x(i)}" y="${h - 12}" text-anchor="middle">${hr(v)}</text>`).join('');
+
+dotChart('Every game in the library, by complexity', 'Complexity', D.dots, D.names);
+shareChart('Share of library games that were checked out, by complexity', 'Complexity', D.rate, D.names, .6);
+
+panel('Mix of complexity by time of day', BN.map((n, i) => sw(BC[i], n)).join(''), 330, h => {
+  const y = v => h - 36 - (h - 50) * v;
+  let o = yaxis([0, .25, .5, .75, 1], y, pc) + xax(h);
+  D.mix.forEach((r, i) => {
+    let a = 0;
+    r.forEach((v, j) => { o += `<rect x="${x(i) - s / 2 + 2}" width="${s - 4}" y="${y(a + v) + 1}" height="${Math.max(0, y(a) - y(a + v) - 2)}" fill="${BC[j]}"/>`; a += v; });
+    o += hit(x(i) - s / 2, s, h - 36, `${hr(D.H[i])} · ${D.cx.n[i].toLocaleString()} checkouts\n` + r.map((v, j) => BN[j] + '  ' + pc(v)).reverse().join('\n'));
+  });
+  return o;
+});
+
+function vs(title, S, ticks, f) {
+  panel(title, ln('var(--lit)', 3, 'All days') + ln('var(--day)', 1, 'Each day') + sw('var(--bandc)', 'Range from chance alone'), 300, h => {
+    const lo = ticks[0], hi = ticks[ticks.length - 1], y = v => h - 36 - (h - 52) * (v - lo) / (hi - lo);
+    let o = yaxis(ticks, y, f) + xax(h);
+    o += `<path d="${line(S.band[0], x, y)}${S.band[1].map((v, i) => [v, i]).reverse().map(([v, i]) => 'L' + x(i) + ',' + y(v)).join('')}Z" fill="var(--bandc)"/>`;
+    S.days.forEach(r => o += `<path d="${line(r, x, y)}" fill="none" stroke="var(--day)"/>`);
+    o += `<path d="${line(S.m, x, y)}" fill="none" stroke="var(--lit)" stroke-width="2.5"/>`;
+    S.m.forEach((v, i) => o += `<circle cx="${x(i)}" cy="${y(v)}" r="4.5" fill="var(--lit)" stroke="var(--bg)" stroke-width="2"/>`);
+    S.m.forEach((v, i) => o += hit(x(i) - s / 2, s, h - 36, `${hr(D.H[i])} · ${S.n[i].toLocaleString()} checkouts\nAll days  ${f(v)}\n` + DAYS.map((d, k) => S.days[k][i] == null ? '' : d + '  ' + f(S.days[k][i]) + '\n').join('') + `Chance  ${f(S.band[0][i])} to ${f(S.band[1][i])}`));
+    return o;
+  });
+}
+vs('Average complexity by time of day', D.cx, [1.8, 2, 2.2, 2.4, 2.6, 2.8], two);
+vs('Share of checkouts that were party games', D.party, [0, .05, .1, .15, .2], pc);
+</script>

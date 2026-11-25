@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Availability heatmap</title>
+<style>
+.viz-root{color-scheme:light;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#6f6d68;--hair:#e1e0d9;--hatch:#b5b3ab;--hbg:#fcfcfb;--avail:#dddcd5;--out:#256abf}
+@media(prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz-root{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#a09e97;--hair:#2c2c2a;--hatch:#6a6963;--hbg:#1a1a19;--avail:#3d3d3a;--out:#3987e5}}
+:root[data-theme="dark"] .viz-root{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#a09e97;--hair:#2c2c2a;--hatch:#6a6963;--hbg:#1a1a19;--avail:#3d3d3a;--out:#3987e5}
+body{margin:0}
+.viz-root{min-height:100vh;box-sizing:border-box;background:var(--surface);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px 16px}
+main{max-width:1040px;margin:auto}
+label{color:var(--ink2);margin-right:8px}
+input{font:inherit;width:min(26rem,100%);box-sizing:border-box;padding:6px 10px;border:1px solid var(--hair);border-radius:6px;background:var(--surface);color:var(--ink)}
+h1{font-size:20px;margin:20px 0 2px}
+.sub{color:var(--ink2);margin:0 0 14px}
+.scroll{overflow-x:auto}
+svg{display:block;width:100%;min-width:720px}
+text{fill:var(--muted);font-size:11px}
+text.day{fill:var(--ink);font-size:13px}
+.c:hover,.c:focus{stroke:var(--ink);stroke-width:1.5;outline:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:12px 0;color:var(--ink2);font-size:12px}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:3px}
+#tip{position:fixed;pointer-events:none;display:none;background:var(--surface);color:var(--ink2);border:1px solid var(--hair);border-radius:6px;padding:6px 10px;font-size:12px;box-shadow:0 2px 10px #0003}
+#tip b{display:block;color:var(--ink);font-size:13px}
+table{border-collapse:collapse;font-variant-numeric:tabular-nums}
+td{padding:4px 14px 4px 0;border-bottom:1px solid var(--hair)}
+summary{cursor:pointer;color:var(--ink2)}
+</style>
+<div class="viz-root"><main>
+<label for="q">Game</label><input id="q" list="gl" autocomplete="off"><datalist id="gl"></datalist>
+<h1 id="t"></h1><p class="sub" id="s"></p>
+<div class="scroll" id="plot"></div><div class="legend" id="lg"></div>
+<details><summary>Table</summary><table id="tb"></table></details>
+</main><div id="tip"></div></div>
+<script>
+const DATA = /*DATA*/;
+// Times are minutes since Wed 18 Nov 00:00 Chicago. W = observed open time, O = library hours.
+const DAYS = ['Wed 18', 'Thu 19', 'Fri 20', 'Sat 21', 'Sun 22'];
+const ov = (a, b, x, y) => Math.max(0, Math.min(b, y) - Math.max(a, x));
+const obs = (a, b) => DATA.W.reduce((s, [x, y]) => s + ov(a, b, x, y), 0);
+function cells(g) {
+  return DAYS.map((_, d) => Array.from({ length: 64 }, (_, q) => {
+    const a = d * 1440 + 480 + 15 * q, b = a + 15;
+    if (!DATA.O.some(([x, y]) => x <= a && a < y)) return null;
+    const m = obs(a, b);
+    if (m < 7.5) return '?';
+    const sum = L => L.reduce((s, [x, y]) => s + (x < b && y > a ? obs(Math.max(a, x), Math.min(b, y)) : 0), 0);
+    const cuts = [a, b, ...g.iv.flat(), ...DATA.W.flat()].filter(t => t >= a && t <= b).sort((x, y) => x - y);
+    let lo = Infinity, hi = 0;
+    for (let i = 1; i < cuts.length; i++) {
+      const t = (cuts[i - 1] + cuts[i]) / 2;
+      if (cuts[i] - cuts[i - 1] < 1e-9 || !DATA.W.some(([x, y]) => x <= t && t < y)) continue;
+      const n = g.iv.filter(([x, y]) => x <= t && t < y).length;
+      lo = Math.min(lo, n); hi = Math.max(hi, n);
+    }
+    return { lo, hi, out: sum(g.ao) >= m / 2 };
+  }));
+}
+if (typeof module !== 'undefined') module.exports = { cells, DATA };
+const clock = m => { const h = Math.floor(m / 60) % 24, n = m % 60; return ((h + 11) % 12 + 1) + (n ? ':' + String(n).padStart(2, '0') : '') + (h < 12 ? ' AM' : ' PM'); };
+if (typeof document !== 'undefined') {
+  const $ = i => document.getElementById(i), NS = 'http://www.w3.org/2000/svg';
+  const el = (n, a, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.append(e); return e; };
+  const tip = $('tip'), hide = () => tip.style.display = 'none';
+  function show(r, g, d, q, v) {
+    const a = 480 + 15 * q, b = document.createElement('b');
+    b.textContent = v === '?' ? 'Not observed' : v.out ? 'Not available' : 'Available';
+    const when = document.createElement('div'); when.textContent = `${DAYS[d]}, ${clock(a)}–${clock(a + 15)}`;
+    tip.replaceChildren(b, when);
+    if (v !== '?' && g.k > 1) tip.append(`${v.lo === v.hi ? v.lo : `${v.lo} to ${v.hi}`} of ${g.k} copies out`);
+    tip.style.display = 'block';
+    const x = r.getBoundingClientRect(), w = tip.offsetWidth;
+    tip.style.left = Math.max(4, Math.min(innerWidth - w - 8, x.left + x.width / 2 - w / 2)) + 'px';
+    tip.style.top = Math.max(4, x.top - tip.offsetHeight - 6) + 'px';
+  }
+  function swatch(bg, label) {
+    const s = document.createElement('span'), w = document.createElement('i');
+    w.className = 'sw'; w.style.background = bg; s.append(w, label); $('lg').append(s);
+  }
+  function draw(g) {
+    hide();
+    const C = cells(g), L = 64, cw = 15, ch = 34, top = 24;
+    $('t').textContent = g.n;
+    $('s').textContent = `${g.y || 'Year unknown'} · ${g.k} ${g.k > 1 ? 'copies' : 'copy'} · ${g.c} ${g.c > 1 ? 'checkouts' : 'checkout'} · not available ${Math.round(g.p)}% of observed open time`;
+    const svg = el('svg', { viewBox: `0 0 ${L + 64 * cw + 4} ${top + 5 * ch + 4}`, role: 'group', 'aria-label': 'Availability of ' + g.n + ' by day, in 15-minute steps' });
+    const pt = el('pattern', { id: 'h', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, el('defs', {}, svg));
+    el('rect', { width: 6, height: 6, style: 'fill:var(--hbg)' }, pt);
+    el('rect', { width: 1.5, height: 6, style: 'fill:var(--hatch)' }, pt);
+    for (let h = 8; h < 24; h += 2) el('text', { x: L + (h - 8) * 4 * cw + 1, y: 14 }, svg).textContent = clock(h * 60);
+    C.forEach((row, d) => {
+      el('text', { x: 0, y: top + d * ch + ch / 2 + 4, class: 'day' }, svg).textContent = DAYS[d];
+      row.forEach((v, q) => {
+        if (v === null) return;
+        const r = el('rect', { class: 'c', x: L + q * cw + 1, y: top + d * ch + 1, width: cw - 2, height: ch - 2, rx: 2, tabindex: -1, style: `fill:${v === '?' ? 'url(#h)' : v.out ? 'var(--out)' : 'var(--avail)'}` }, svg);
+        r.onpointerenter = r.onfocus = () => show(r, g, d, q, v);
+        r.onpointerleave = r.onblur = hide;
+      });
+    });
+    $('plot').replaceChildren(svg);
+    $('lg').replaceChildren();
+    swatch('var(--avail)', 'Available');
+    swatch('var(--out)', g.k > 1 ? 'Not available (every copy out)' : 'Not available (out)');
+    swatch('repeating-linear-gradient(45deg,var(--hbg) 0 3px,var(--hatch) 3px 4.5px)', 'Not observed');
+    const tb = $('tb'); tb.replaceChildren();
+    const tr = a => { const r = tb.insertRow(); a.forEach(x => r.insertCell().textContent = x); };
+    tr(['Day', 'Observed 15-min cells', 'Not available', 'Available']);
+    C.forEach((row, d) => { const v = row.filter(x => x && x !== '?'); tr([DAYS[d], v.length, v.filter(x => x.out).length, v.filter(x => !x.out).length]); });
+  }
+  const by = new Map();
+  for (const g of DATA.G) {
+    let n = g.n + (g.y ? ` (${g.y})` : ''); if (by.has(n)) n += ` #${g.b}`;
+    g.l = n; by.set(n, g);
+    const o = document.createElement('option'); o.value = n; $('gl').append(o);
+  }
+  const q = $('q'); q.onfocus = () => q.select(); q.oninput = () => { const g = by.get(q.value); if (g) draw(g); };
+  const want = location.hash.slice(1), first = DATA.G.find(g => g.b === want) || DATA.G.find(g => g.b === '465669') || DATA.G[0];
+  q.value = first.l; draw(first);
+}
+</script>
+</html>
