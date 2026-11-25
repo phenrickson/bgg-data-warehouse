@@ -4,7 +4,7 @@ import collections
 import numpy as np
 
 import stats_complexity_by_hour as hours
-from availability import OPEN_SPANS, minute, table
+from availability import OBSERVED_SPANS, OPEN_SPANS, minute, table
 from checkouts import GAMES, K, LIB, ct, meta
 
 GAMES_TABLE = table()  # every checked-out game, most in demand first
@@ -28,6 +28,20 @@ def by_day():
     names = dict(Wed="Wednesday", Thu="Thursday", Fri="Friday", Sat="Saturday", Sun="Sunday")
     assert set(n) == set(names)
     return [[d, n[d], name] for d, name in names.items()]
+
+
+def by_hour_each_day():
+    """Checkouts per clock hour, Wed-Sun. None when the library was closed or under half the hour was recorded
+    (Thursday 2-9 PM, Saturday 1 PM).
+    """
+    n = collections.Counter((ct(k["o"]).day, ct(k["o"]).hour) for k in K)
+
+    def hour(d, h):
+        start = (d - 18) * 1440 + h * 60
+        recorded = sum(max(0, min(start + 60, b) - max(start, a)) for a, b in OBSERVED_SPANS)
+        return n[d, h] if recorded >= 30 else None
+
+    return dict(H=list(range(8, 24)), days=[[hour(d, h) for h in range(8, 24)] for d in range(18, 23)])
 
 
 def ranked(keep=lambda g: True):

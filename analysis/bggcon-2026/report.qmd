@@ -45,6 +45,10 @@ charts.numbers([[f"{len(data.K):,}", "checkouts"], [f"{len(data.GAMES):,}", "dif
 charts.exhibit("barChart", dict(items=data.by_day(), what="Checkouts"), "Checkouts each day", note="Most of Thursday afternoon and evening wasn't recorded (2–9 PM). Sunday is 8 AM–1 PM.")
 ```
 
+```{python}
+charts.exhibit("eachDay", data.by_hour_each_day(), "Each day, hour by hour", "Checkouts per hour", note="Thursday 2–9 PM and most of Saturday 1 PM weren't recorded.")
+```
+
 [Complexity and rating.]
 
 ```{python}

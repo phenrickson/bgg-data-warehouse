@@ -167,10 +167,11 @@ const R = (() => {
   }
 
   // Every library game as a dot, in columns filled from the bottom, most checked out first.
+  // Sized like the map: area is checkouts to the power 0.7.
   // games: [name, value, checkouts, column]; ticks: [[position in columns, label, show when narrow]]
   function dots(el, { games: G, names, ticks, what }) {
-    const base = n => n ? 1.4 + 2.6 * Math.min(n, 25) / 25 : 1.2, lg = legend(el, []);
-    lg.innerHTML = [1, 10, 25].map(n => `<span><i class="dot" style="background:var(--lit);width:${2 * base(n)}px;height:${2 * base(n)}px"></i>${n === 1 ? '1 checkout' : n === 25 ? '25+' : n}</span>`).join('') + '<span><i class="dot" style="background:var(--never);width:4px;height:4px"></i>Never checked out</span>';
+    const top = Math.max(...GAMES.map(g => g.c)), base = n => n ? 6.4 * Math.sqrt((n / top) ** .7) : 1.2, lg = legend(el, []);
+    lg.innerHTML = [1, 5, 25, top].map(n => `<span><i class="dot" style="background:var(--lit);width:${2 * base(n)}px;height:${2 * base(n)}px"></i>${n === 1 ? '1 checkout' : n}</span>`).join('') + '<span><i class="dot" style="background:var(--never);width:4px;height:4px"></i>Never checked out</span>';
     const C = make('canvas', '', el), cols = Array.from({ length: names.length }, () => []); G.forEach(g => cols[g[3]].push(g)); cols.forEach(c => c.sort((a, b) => b[2] - a[2]));
     let P = [], w = 0, H = 0, f = 1;
     const draw = () => {
@@ -215,6 +216,17 @@ const R = (() => {
     });
   }
 
+  // Checkouts per clock hour, one line per day. days: Wed-Sun, null = closed or not recorded
+  function eachDay(el, { H, days }) {
+    const col = i => `var(--day-${i + 1})`; legend(el, days.map((_, i) => [col(i), DN[i], '3px solid']));
+    fit(el, w => {
+      const sm = w < 520, h = sm ? 260 : 320, L = 36, T = 8, B = h - 30, n = H.length, s = (w - L) / n, x = i => L + (i + .5) * s, top = Math.ceil(Math.max(...days.flat()) / 100) * 100, y = v => B - (B - T) * v / top, tk = []; for (let t = 0; t <= top; t += 100) tk.push(t);
+      let o = hovs(L, n, w, T, B) + grid(tk, y, v => v, L, w) + hours(H, x, h, sm);
+      days.forEach((r, k) => { o += `<path d="${path(r, x, y)}" fill="none" stroke="${col(k)}" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>`; r.forEach((v, i) => { if (v != null) o += `<circle cx="${x(i)}" cy="${y(v)}" r="${sm ? 2 : 3}" fill="${col(k)}"/>`; }); });
+      el.innerHTML = svg(w, h, o); columns(el, L, n, w, h, i => [hr(H[i]), days.map((r, k) => `<div><span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col(k)};margin-right:6px"></i>${DN[k]}</span><span>${r[i] == null ? (k === 0 || k === 4 ? 'closed' : 'not recorded') : r[i]}</span></div>`)]);
+    });
+  }
+
   // Stacked shares by hour. mix: one array of shares per hour, in band order
   function stack(el, { H, n, mix, names }) {
     const c = ['var(--w0)', 'color-mix(in oklab,var(--w0) 50%,var(--w1))', 'var(--w1)', 'color-mix(in oklab,var(--w2) 50%,var(--w1))', 'var(--w2)'];
@@ -251,5 +263,5 @@ const R = (() => {
       });
     }
   }
-  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, stack, pairs, days };
+  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, eachDay, stack, pairs, days };
 })();
