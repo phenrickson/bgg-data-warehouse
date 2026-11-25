@@ -47,7 +47,7 @@ def library_out():
 # ---------------------------------------------------------------- drawing
 
 W, H, D = 300, 58, 40  # chart width, height, and height of the rate-of-change strip
-LEFT, RIGHT = 34, 56  # room for labels
+LEFT, RIGHT = 40, 56  # room for labels
 MAX_RATE = 400  # points a day at the strip's edge
 BAR = W / len(HOURS)
 
@@ -102,7 +102,7 @@ def card(game, library, base):
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
                    for j, v in enumerate(y) if np.isfinite(v) and v > 0)
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
-    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate(fits))
+    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 8 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate(fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
     labels = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
     labels += "".join(f'<g class="v{i}">{end_labels(library, y, f)}</g>' for i, (f, _) in enumerate(fits))
