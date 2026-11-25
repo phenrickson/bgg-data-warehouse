@@ -1,5 +1,6 @@
+// top: share of the con, all copies out, that gets the hottest in-demand color.
 // The map of every library game. still: the whole con at once, with no playback or controls; color: weight, category or unavailable.
-R.map = (root, DATA, { still = false, color = 'weight' } = {}) => {
+R.map = (root, DATA, { still = false, color = 'weight', top = DATA.topNA } = {}) => {
 // Times: minutes since Wed 18 Nov 00:00 Chicago. O = library hours, U = not-observed windows.
 // Playback time p runs over open hours only (nights are skipped): total length = sum of O.
 const $ = i => root.querySelector(`[data-m="${i}"]`), G = DATA.G.map(g => ({ ...g })), DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -22,6 +23,7 @@ const NOWFAINT = .3;
 const radius = n => 2 + 4 * Math.min(n, DATA.top) / DATA.top;
 const soFar = (g, t) => { let n = 0; for (const [a] of g.iv) if (a <= t) n += Math.min(1, (t - a) / FADE); return n; };
 const OUT = G.filter(g => g.iv.length).sort((a, b) => a.iv.length - b.iv.length); // most checked out drawn last, on top
+if (still && color === 'unavailable') { const d = new Map(OUT.map(g => [g, unavailable(g, 1e9)])); OUT.sort((a, b) => d.get(a) - d.get(b)); } // hottest on top
 function fade(list, t) {
   let m = 0;
   for (const [a, b] of list) if (t >= a && t < b + FADE) m = Math.max(m, Math.min(1, (t - a) / FADE, t < b ? 1 : 1 - (t - b) / FADE));
@@ -37,7 +39,7 @@ let NOW = []; // share of copies out right now
 // Copies out right now as a share of the game's copies; each loan eases in and out over FADE minutes.
 const shareOut = (g, t) => Math.min(1, g.iv.reduce((n, [a, b]) => n + (t >= a && t < b + FADE ? Math.min(1, (t - a) / FADE, t < b ? 1 : 1 - (t - b) / FADE) : 0), 0) / g.k);
 function buildRamps() { NOW = mix(['--n0', '--d1', '--d2'], 16); DEM = mix(['--d0', '--d1', '--d2'], 16); SEQ = mix(['--w0', '--w1', '--w2'], 13); }
-const demand = (g, t) => Math.min(1, unavailable(g, t) / DATA.topNA);
+const demand = (g, t) => Math.min(1, unavailable(g, t) / top);
 const step = (v, lo, hi, n = 12) => Math.min(n - 1, Math.max(0, Math.floor((v - lo) / (hi - lo) * n)));
 const BY = {
   weight: g => g.w ? SEQ[step(g.w, 1, 4, SEQ.length)] : cols['--c0'],
@@ -51,7 +53,7 @@ function key() {
   item(cols['--context'], 'Not checked out');
   const by = $('by').value;
   const now = p >= 0 && $('mode').value === 'now';
-  const pct = Math.round(DATA.topNA * 100);
+  const pct = Math.round(top * 100);
   if (now && by !== 'unavailable') for (const [o, x] of [[NOWFAINT, 'Some copies out'], [1, 'All copies out']]) {
     const s = document.createElement('span'), i = document.createElement('i'); i.style.background = cols['--fg']; i.style.opacity = o; s.append(i, x); K.append(s);
   }
@@ -66,9 +68,11 @@ const probe = document.body.appendChild(document.createElement('i')); probe.hidd
 const css = n => { probe.style.color = `var(${n})`; return getComputedStyle(probe).color; };
 const map = $('map'), mx = map.getContext('2d'), line = $('line'), lx = line.getContext('2d');
 let base, W, H, dpr, cols, p = -1, hold = 0, playing = false, last = 0; // p: open minutes played, -1 = whole con
-const xs = G.map(g => g.x), ys = G.map(g => g.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-function place(g) { const s = Math.min((W - 32) / (x1 - x0), (H - 32) / (y1 - y0)); return [W / 2 + (g.x - (x0 + x1) / 2) * s, H / 2 - (g.y - (y0 + y1) / 2) * s]; }
+let X, Y, x0, x1, y0, y1; // which pair of coordinates, and their extent
+function layout() { [X, Y] = $('proj').value === 'pca' ? ['a', 'b2'] : ['x', 'y']; const xs = G.map(g => g[X]), ys = G.map(g => g[Y]); x0 = Math.min(...xs); x1 = Math.max(...xs); y0 = Math.min(...ys); y1 = Math.max(...ys); }
+function place(g) { const s = Math.min((W - 32) / (x1 - x0), (H - 32) / (y1 - y0)); return [W / 2 + (g[X] - (x0 + x1) / 2) * s, H / 2 - (g[Y] - (y0 + y1) / 2) * s]; }
 function size() {
+  layout();
   dpr = devicePixelRatio || 1; W = $('wrap').clientWidth - 2; H = Math.round(Math.min(W * (W < 560 ? 1.1 : .72), 640));
   map.width = W * dpr; map.height = H * dpr; map.style.height = H + 'px';
   line.width = line.clientWidth * dpr; line.height = 40 * dpr;
@@ -210,10 +214,11 @@ function hover() {
 map.onpointerleave = () => { mouse = null; $('tip').style.display = 'none'; };
 R.seg($('spd'), 'Speed', [['40', 'Slow'], ['80', 'Normal'], ['160', 'Fast']], '80', v => { $('speed').value = v; });
 root.classList.toggle('still', still); $('by').value = color;
-for (const i of ['mode', 'by', 'lab']) { // the viewer's segmented control in place of each menu
+for (const i of ['proj', 'mode', 'by', 'lab']) { // the viewer's segmented control in place of each menu
   const s = $(i); if (i === 'lab' && $('wrap').clientWidth < 560) s.value = ''; // no room for region names on a phone
   R.seg(s.parentNode, s.parentNode.firstChild.textContent.trim(), [...s.options].map(o => [o.value, o.text]), s.value, v => { s.value = v; s.onchange(); });
 }
+$('proj').onchange = size;
 $('lab').onchange = $('by').onchange = $('mode').onchange = () => { key(); draw(); }; label(); let lastW = $('wrap').clientWidth; new ResizeObserver(() => { const w = $('wrap').clientWidth; if (w && w !== lastW) { lastW = w; size(); } }).observe($('wrap')); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', size);
 size(); if (!still) requestAnimationFrame(ts => { last = ts; tick(ts); });
 };

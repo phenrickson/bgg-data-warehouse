@@ -50,6 +50,12 @@ charts.exhibit("timeline", data.timeline(), "Checkouts through the con", "Librar
 charts.game_map("Every game in the library", "Games near each other are similar", note="Some games, mostly expansions, aren't shown.", still=True)
 ```
 
+[In demand.]
+
+```{python}
+charts.game_map("The most in-demand games", "Color is the share of the con when every copy was out", note="Some games, mostly expansions, aren't shown.", still=True, color="unavailable", top=.8)
+```
+
 [Playback.]
 
 ```{python}

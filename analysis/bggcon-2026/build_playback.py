@@ -10,8 +10,10 @@ try:
 except Exception:
     t = pa.ipc.open_stream(r).read_all()
 XY = {str(a): (b, c) for a, b, c in zip(*(t.column(x).to_pylist() for x in ("game_id", "umap_1", "umap_2")))}
+PC = {str(a): (b, c) for a, b, c in zip(*(t.column(x).to_pylist() for x in ("game_id", "pc_1", "pc_2")))}
 # Checked-out games the catalog leaves out: same model and version, from predictions.bgg_game_coordinates
 EXTRA = {r_["game_id"]: (float(r_["umap_1"]), float(r_["umap_2"])) for r_ in json.load(open(DATA / "extra_coordinates.json"))}
+PC |= {r_["game_id"]: (float(r_["pca_1"]), float(r_["pca_2"])) for r_ in json.load(open(DATA / "extra_coordinates.json")) if r_["game_id"] not in PC}
 # Primary category: same list, slot order and priority as bgg-viewer src/lib/catalog/primary-category.ts
 SLOTS = ["Trains", "Economic", "Wargame", "Party Game", "Children's Game", "Abstract Strategy", "Card Game"]
 PRIORITY = ["Trains", "Wargame", "Economic", "Party Game", "Children's Game", "Abstract Strategy", "Card Game"]
@@ -46,7 +48,7 @@ def all_out(b):
 def row(b, xy):
     n, y = meta(b)
     return dict(b=b, n=n or LIB.get(b, {}).get("name"), y4=y, k=LIB.get(b, {}).get("copies"),
-                ao=all_out(b), w=weight(b), c=cat_code(b), x=round(xy[0], 3), y=round(xy[1], 3),
+                ao=all_out(b), w=weight(b), c=cat_code(b), x=round(xy[0], 3), y=round(xy[1], 3), a=round(PC[b][0], 3), b2=round(PC[b][1], 3),
                 iv=[[m(k["o"]), m(k["i"] or END)] for k in GAMES[b]["ks"]] if b in GAMES else [])
 
 
@@ -62,6 +64,17 @@ def dens(q, pts):
     return np.exp(-((q[:, None, :] - pts[None, :, :]) ** 2).sum(2) / (2 * BW**2)).sum(1)
 
 
+Q = np.array([(g["a"], g["b2"]) for g in rows])
+
+
+def pca_spot(members):
+    """Where these games are densest on the PCA map."""
+    q = Q[members]
+    bw = BW * (Q.max(0) - Q.min(0)).max() / ext
+    best = q[np.exp(-((q[:, None] - q[None]) ** 2).sum(2) / (2 * bw**2)).sum(1).argmax()]
+    return dict(a=round(float(best[0]), 3), b2=round(float(best[1]), 3))
+
+
 LABELS = []
 for c, name in enumerate(SLOTS, 1):
     pts = P[C == c]
@@ -75,7 +88,7 @@ for c, name in enumerate(SLOTS, 1):
         if all(np.hypot(*(pts[i] - pts[j])) > 0.2 * ext for j in peaks):
             peaks.append(i)
     i = peaks[0]  # one label per category, at its strongest spot
-    LABELS.append(dict(t=name, x=round(float(pts[i][0]), 3), y=round(float(pts[i][1]), 3)))
+    LABELS.append(dict(t=name, x=round(float(pts[i][0]), 3), y=round(float(pts[i][1]), 3), **pca_spot(np.where(C == c)[0])))
     print(f"label {name:18s} local share {purity[i]:.0%}")
 from regions import regions
 # The busiest region splits cleanly in two (co-op adventure games vs heavy Euros).
@@ -95,7 +108,7 @@ for name, ex in NAMES:
     used[lab[ids[0]]] = name
     m_ = np.where(lab == lab[ids[0]])[0]
     c_ = m_[np.exp(-((P[m_][:, None] - P[m_][None]) ** 2).sum(2) / (2 * .35**2)).sum(1).argmax()]
-    REG.append(dict(t=name, s=", ".join(x.split(":")[0] for x in ex), x=rows[c_]["x"], y=rows[c_]["y"]))
+    REG.append(dict(t=name, s=", ".join(x.split(":")[0] for x in ex), x=rows[c_]["x"], y=rows[c_]["y"], **pca_spot(m_)))
     co_ = sum(len(rows[i]["iv"]) for i in m_)
     print(f"{name:28s} games {len(m_):5d} checkouts {co_:5d} ({co_ / len(m_):.1f}/game)")
 print("labeled share of checkouts", round(sum(len(rows[i]["iv"]) for i in range(len(rows)) if lab[i] in used) / sum(len(g["iv"]) for g in rows), 3))
