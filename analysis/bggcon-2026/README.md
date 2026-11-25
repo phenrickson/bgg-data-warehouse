@@ -19,13 +19,13 @@ Needs git, [uv](https://docs.astral.sh/uv/), [Quarto](https://quarto.org/docs/ge
        mkdir -p data/bggcon-2026
        gcloud storage cp "gs://bgg-data-warehouse-bgg-data/bggcon-2026/*" data/bggcon-2026/
 
-   Use the copy rather than fetching again: the catalog and coordinates have changed since, and the viewer bucket deletes the library list after 30 days. The folder is gitignored; keep it out of git, since the repo is public.
+   Use the copy rather than fetching again: the catalog and coordinates change over time, and the viewer bucket deletes the library list after 30 days. The folder is gitignored; keep it out of git, since the repo is public.
 
 ## Report
 
 From this folder:
 
-    export QUARTO_PYTHON="$(cd ../.. && uv run python -c 'import sys; print(sys.executable)')"
+    export QUARTO_PYTHON="$(cd ../.. && uv run --group analysis python -c 'import sys; print(sys.executable)')"
     unset VIRTUAL_ENV
     PYTHONUTF8=1 quarto render report.qmd
     mv report.html ../../data/bggcon-2026/
