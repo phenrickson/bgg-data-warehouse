@@ -11,10 +11,9 @@ const D = /*DATA*/;
 const LX = 250, RX = 945, H = 18, GAP = 8, NAMES = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const open_ = D.O.reduce((t, [a, b]) => t + b - a, 0), sc = (RX - LX - GAP * 4) / open_;
 const SEG = []; { let p = LX; for (const [a, b] of D.O) { SEG.push({ a, b, x: p }); p += (b - a) * sc + GAP; } }
-const px = t => { const s = SEG.find(s => t <= s.b) || SEG[4]; return s.x + (Math.max(t, s.a) - s.a) * sc; };
 const ov = (a, b, x, y) => Math.max(0, Math.min(b, y) - Math.max(a, x));
 const clock = t => { const h = Math.floor(t / 60) % 24; return (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'); };
-M.insertAdjacentHTML('beforeend', `<div class="key">${sw('var(--lit)', 'Every copy out')}${sw('var(--never)', 'Available')}${sw('repeating-linear-gradient(45deg,var(--bg) 0 3px,var(--muted) 3px 4px)', 'Not observed')}<span><i class="ln" style="border-top:0;border-left:2px solid var(--fg);height:12px;width:0"></i>Turning point</span></div><svg width="0" height="0" style="position:absolute"><defs><pattern id="ht" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--bg)"/><rect width="1.2" height="5" fill="var(--muted)"/></pattern></defs></svg>`);
+M.insertAdjacentHTML('beforeend', `<div class="key">${sw('var(--lit)', 'Every copy out')}${sw('var(--never)', 'Available')}${sw('repeating-linear-gradient(45deg,var(--bg) 0 3px,var(--muted) 3px 4px)', 'Not observed')}</div><svg width="0" height="0" style="position:absolute"><defs><pattern id="ht" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--bg)"/><rect width="1.2" height="5" fill="var(--muted)"/></pattern></defs></svg>`);
 const CELLS = []; for (const s of SEG) for (let a = s.a; a < s.b; a += 15) CELLS.push({ a, b: a + 15, x: s.x + (a - s.a) * sc, u: D.U.reduce((t, [x, y]) => t + ov(a, a + 15, x, y), 0) > 7.5 });
 for (const g of D.groups) {
   let hd = SEG.map((s, i) => `<text x="${s.x}" y="12">${NAMES[i]}</text>`).join('');
@@ -30,7 +29,6 @@ for (const g of D.groups) {
       o += `<rect x="${CELLS[j].x}" y="${y}" width="${CELLS[e].x - CELLS[j].x + 15 * sc}" height="${H - 3}" fill="${k === 'o' ? 'var(--lit)' : k === 'a' ? 'var(--never)' : 'url(#ht)'}"/>`;
       j = e + 1;
     }
-    if (r.mark) o += `<line x1="${px(r.mark)}" x2="${px(r.mark)}" y1="${y - 1}" y2="${y + H - 2}" stroke="var(--fg)" stroke-width="2"/>`;
     o += `<rect x="0" y="${y}" width="${W}" height="${H}" fill="transparent" data-t="${(r.n + (r.y ? ` (${r.y})` : '')).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}\n${r.k} ${r.k > 1 ? 'copies' : 'copy'} · ${r.c} checkouts\nEvery copy out: ${r.note}"/>`;
   });
   M.insertAdjacentHTML('beforeend', `<h2>${g.title} <span style="font-weight:400;color:var(--muted);font-size:13px">${g.rows.length} games</span></h2><div class="hd"><svg viewBox="0 0 ${W} 16">${hd}</svg></div><div class="rows"><svg viewBox="0 0 ${W} ${g.rows.length * H + 2}">${o}</svg></div>`);
