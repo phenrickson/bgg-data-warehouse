@@ -70,7 +70,7 @@ const map = $('map'), mx = map.getContext('2d'), line = $('line'), lx = line.get
 let base, W, H, dpr, cols, p = -1, hold = 0, playing = false, last = 0; // p: open minutes played, -1 = whole con
 let X, Y, x0, x1, y0, y1; // which pair of coordinates, and their extent
 function layout() { [X, Y] = $('proj').value === 'pca' ? ['a', 'b2'] : ['x', 'y']; const xs = G.map(g => g[X]), ys = G.map(g => g[Y]); x0 = Math.min(...xs); x1 = Math.max(...xs); y0 = Math.min(...ys); y1 = Math.max(...ys); }
-function place(g) { const s = Math.min((W - 32) / (x1 - x0), (H - 32) / (y1 - y0)); return [W / 2 + (g[X] - (x0 + x1) / 2) * s, H / 2 - (g[Y] - (y0 + y1) / 2) * s]; }
+function place(g) { const m = X === 'a' ? EDGE : 0, w = W - m, h = H - m, s = Math.min((w - 32) / (x1 - x0), (h - 32) / (y1 - y0)); return [m + w / 2 + (g[X] - (x0 + x1) / 2) * s, h / 2 - (g[Y] - (y0 + y1) / 2) * s]; }
 function size() {
   layout();
   dpr = devicePixelRatio || 1; W = $('wrap').clientWidth; H = Math.round(Math.min(W * (W < 560 ? 1.1 : .9), 640));
@@ -114,11 +114,23 @@ function placeLabels() {
   }
 }
 const LABEL_FONT = '600 13px system-ui, sans-serif';
-// The two PCA dimensions, named along the edges: complexity left to right, interactivity bottom to top.
+// The two PCA dimensions: a soft arrow below every dot and one left of every dot, as long as the cloud is. PLACEHOLDER copy (Phil's to write)
+const EDGE = 24; // room for the arrows, clear of dots
+const AXES = [['less complex', 'more complex'], ['less interactive', 'more interactive']];
+function axis(len, [from, to]) { // drawn left to right along y = 0
+  mx.font = '12px system-ui, sans-serif'; mx.textBaseline = 'middle'; mx.fillStyle = mx.strokeStyle = cols['--muted'];
+  const need = mx.measureText(from).width + mx.measureText(to).width + 46; if (need > len) { mx.translate((len - need) / 2, 0); len = need; } // a small cloud: room for the words
+  mx.globalAlpha = .9; mx.textAlign = 'left'; mx.fillText(from, 0, 0); mx.textAlign = 'right'; mx.fillText(to, len, 0);
+  const a = mx.measureText(from).width + 8, b = len - mx.measureText(to).width - 8;
+  mx.globalAlpha = .4; mx.lineWidth = 1; mx.lineCap = mx.lineJoin = 'round'; mx.beginPath(); mx.moveTo(a, 0); mx.lineTo(b, 0); mx.moveTo(b - 4, -3); mx.lineTo(b, 0); mx.lineTo(b - 4, 3); mx.stroke();
+}
 function axes() {
-  mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = LABEL_FONT; mx.fillStyle = cols['--muted']; mx.textAlign = 'center'; mx.textBaseline = 'middle';
-  mx.fillText('Complexity →', W / 2, H - 16);
-  mx.save(); mx.translate(16, H / 2); mx.rotate(-Math.PI / 2); mx.fillText('Interactivity →', 0, 0); mx.restore();
+  const at = (k, f) => { const v = G.map(g => g[k]).sort((a, b) => a - b); return v[Math.round(f * (v.length - 1))]; };
+  const l = at('px', .01), r = at('px', .99), t = at('py', .01), b = at('py', .99);
+  mx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mx.save(); mx.translate(l, at('py', 1) + 16); axis(r - l, AXES[0]); mx.restore();
+  mx.save(); mx.translate(at('px', 0) - 16, b); mx.rotate(-Math.PI / 2); axis(b - t, AXES[1]); mx.restore();
+  mx.globalAlpha = 1;
 }
 function labels() {
   if (placedFor !== $('lab').value) placeLabels();
