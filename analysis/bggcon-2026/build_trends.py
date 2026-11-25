@@ -85,15 +85,15 @@ def area(rates):
     return f"{line(rates, rate_at)}L{xs[-1]:.1f},{D / 2}L{xs[0]:.1f},{D / 2}Z"
 
 
-def end_labels(library, y, fitted):
-    """Names at the right end of each line, moved apart where they'd overlap."""
+def end_labels(library, fitted):
+    """Names at the right: the two lines where they end, moved apart if they'd overlap, and the bars at their base."""
     last = lambda v: v[np.isfinite(v)][-1]
-    labels = sorted([[at(last(library)), "lib", "library"], [at(last(fitted)), "tr", "trend"], [at(last(y)), "hr", "each hour"]])
-    for i, label in enumerate(labels):
-        label[0] = max(label[0], 12, labels[i - 1][0] + 11 if i else 0)
-    for i in (2, 1, 0):
-        labels[i][0] = min(labels[i][0], H - 5 - 11 * (2 - i))
-    return "".join(f'<text class="{c}" x="{W + 5}" y="{p + 3:.0f}">{t}</text>' for p, c, t in labels)
+    labels = sorted([[at(last(library)), "lib", "library"], [at(last(fitted)), "tr", "trend"]])
+    bars = H - 4
+    labels[0][0] = max(labels[0][0], 12)
+    labels[1][0] = min(max(labels[1][0], labels[0][0] + 11), bars - 11)
+    labels[0][0] = min(labels[0][0], labels[1][0] - 11)
+    return "".join(f'<text class="{c}" x="{W + 5}" y="{p + 3:.0f}">{t}</text>' for p, c, t in labels + [[bars, "hr", "all out"]])
 
 
 def baseline():
@@ -115,14 +115,14 @@ def card(game, library, base):
     rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 8 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate(fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
     labels = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
-    labels += "".join(f'<g class="v{i}">{end_labels(library, y, f)}</g>' for i, (f, _) in enumerate(fits))
+    labels += "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
     strip = (f'<text class="up" x="-5" y="{mid - 6}" text-anchor="end">rising</text><text class="dn" x="-5" y="{mid + 13}" text-anchor="end">cooling</text>'
              f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
     return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-d="{days_alike(y):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_SMOOTHNESS][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[start:]))}">'
-            f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · out {share:.0%}</span>'
+            f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
             + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag">{labels}</g>')
             + svg(D, f'<line class="zero" x2="{W}" y1="{mid}" y2="{mid}"/>{rates}<g class="tag">{strip}</g>') + "</div>")
 
