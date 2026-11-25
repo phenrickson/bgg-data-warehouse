@@ -69,6 +69,12 @@ def line(values, y):
     return "".join(parts)
 
 
+def area(rates):
+    """Outline between the rate of change and zero."""
+    xs = [(j + .5) * BAR for j, v in enumerate(rates) if np.isfinite(v)]
+    return f"{line(rates, rate_at)}L{xs[-1]:.1f},{D / 2}L{xs[0]:.1f},{D / 2}Z"
+
+
 def end_labels(library, y, fitted):
     """Names at the right end of each line, moved apart where they'd overlap."""
     last = lambda v: v[np.isfinite(v)][-1]
@@ -96,12 +102,12 @@ def card(game, library, base):
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
                    for j, v in enumerate(y) if np.isfinite(v) and v > 0)
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
-    rates = "".join(f'<path class="ln rt v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate(fits))
+    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate(fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
     labels = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
     labels += "".join(f'<g class="v{i}">{end_labels(library, y, f)}</g>' for i, (f, _) in enumerate(fits))
-    strip = (f'<text x="-5" y="{mid - 6}" text-anchor="end">rising</text><text x="-5" y="{mid + 13}" text-anchor="end">falling</text>'
-             f'<text class="rt" x="{W + 5}" y="{mid - 2}">rate of</text><text class="rt" x="{W + 5}" y="{mid + 9}">change</text>')
+    strip = (f'<text class="up" x="-5" y="{mid - 6}" text-anchor="end">rising</text><text class="dn" x="-5" y="{mid + 13}" text-anchor="end">cooling</text>'
+             f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
     return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}"'
@@ -115,7 +121,7 @@ def main():
     library, base = library_out(), baseline()
     games = [g for g in GAMES.values() if g["k"] and g["c"] >= MIN_CHECKOUTS]
     page = (HERE / "trends.template.html").read_text(encoding="utf-8")
-    for key, value in (("/*CSS*/", (HERE / "report.css").read_text(encoding="utf-8")), ("/*SMOOTH*/", str(SMOOTHNESS)), ("/*DEFAULT*/", str(DEFAULT_SMOOTHNESS)),
+    for key, value in (("/*CSS*/", (HERE / "report.css").read_text(encoding="utf-8")), ("/*SMOOTH*/", str(SMOOTHNESS)), ("/*DEFAULT*/", str(DEFAULT_SMOOTHNESS)), ("/*STRIP*/", str(D)),
                        ("<!--CARDS-->", "".join(card(g, library, base) for g in games))):
         page = page.replace(key, value)
     (DATA / "trends.html").write_text(page, encoding="utf-8")
