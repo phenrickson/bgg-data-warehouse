@@ -101,7 +101,7 @@ def card(game, library, base):
     labels = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
     labels += "".join(f'<g class="v{i}">{end_labels(library, y, f)}</g>' for i, (f, _) in enumerate(fits))
     strip = (f'<text x="-5" y="{mid - 6}" text-anchor="end">rising</text><text x="-5" y="{mid + 13}" text-anchor="end">falling</text>'
-             f'<text x="{W + 5}" y="{mid - 2}">rate of</text><text x="{W + 5}" y="{mid + 9}">change</text>')
+             f'<text class="rt" x="{W + 5}" y="{mid - 2}">rate of</text><text class="rt" x="{W + 5}" y="{mid + 9}">change</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
     return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}"'
