@@ -14,6 +14,7 @@ _json = lambda d: json.dumps(d, ensure_ascii=False, separators=(",", ":")).repla
 
 def setup(games):
     """Shared chart code, the tooltip, and every game's checkouts; call once, at the top of the report."""
+    game_map.loaded = False
     con = dict(O=OPEN_SPANS, U=GAP_SPANS, W=OBSERVED_SPANS)
     return HTML(f'<div id="rtip"></div><script>\n{_read("report.js")}\nR.data({_json(con)},{_json(games)});</script>')
 
