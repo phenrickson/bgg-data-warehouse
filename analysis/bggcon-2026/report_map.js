@@ -105,12 +105,13 @@ const cross = (ax, ay, bx, by, cx, cy, dx, dy) => { const o = (px, py, qx, qy, r
 function placeLabels() {
   mx.font = LABEL_FONT; spots = []; placedFor = $('lab').value; if (!placedFor) return;
   const order = DATA[placedFor].map(l => { const [x, y] = place(l); return { t: l.t, x, y, s: l.s || '', w: Math.max(mx.measureText(l.t).width, (l.s || '').length * 5.8) + 8, h: l.s ? 36 : 20 }; });
+  const left = X === 'a' ? Math.min(...G.map(g => g.px)) - 4 : 6, bottom = X === 'a' ? Math.max(...G.map(g => g.py)) + 4 : H - 6; // inside the PCA arrows
   for (const l of order) {
     let best = null;
     for (let r = 20; r <= 220; r += 8) for (let k = 0; k < 32; k++) {
       const an = k / 32 * 2 * Math.PI, cx = l.x + Math.cos(an) * (r + l.w / 2 * Math.abs(Math.cos(an))), cy = l.y + Math.sin(an) * r;
       const b = { x0: cx - l.w / 2, x1: cx + l.w / 2, y0: cy - l.h / 2, y1: cy + l.h / 2 };
-      if (b.x0 < 6 || b.x1 > W - 6 || b.y0 < 6 || b.y1 > H - 6) continue;
+      if (b.x0 < left || b.x1 > W - 6 || b.y0 < 6 || b.y1 > bottom) continue;
       if (spots.some(q => b.x0 < q.x1 + 4 && b.x1 > q.x0 - 4 && b.y0 < q.y1 + 4 && b.y1 > q.y0 - 4)) continue;
       let n = 0; for (const g of G) if (g.px > b.x0 - 3 && g.px < b.x1 + 3 && g.py > b.y0 - 3 && g.py < b.y1 + 3) n += g.iv.length ? 1 : .4;
       const cost = r + 14 * n + 400 * spots.filter(q => cross(cx, cy, l.x, l.y, q.cx, q.cy, q.x, q.y)).length; if (!best || cost < best.cost) best = { ...b, cx, cy, cost };

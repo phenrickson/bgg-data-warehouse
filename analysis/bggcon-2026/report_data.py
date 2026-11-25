@@ -6,6 +6,7 @@ import numpy as np
 import stats_complexity_by_hour as hours
 from availability import OBSERVED_SPANS, OPEN_SPANS, minute, table
 from checkouts import GAMES, K, LIB, ct, meta
+from game_types import TYPES, is_type
 
 GAMES_TABLE = table()  # every checked-out game, most in demand first
 
@@ -58,9 +59,8 @@ def top(measure, keep=lambda g: True, n=10):
     return [g["b"] for g in sorted(games, key=lambda g: (-g[measure], -(g[other] or 0), g["n"]))[:n]]
 
 
-# Group: which games are in it. A game with two of these categories is in both.
-BY_CATEGORY = {name: (lambda g, tag=tag: tag in hours.CATEGORIES.get(g["b"], ()))
-               for name, tag in (("Party games", "Party Game"), ("Economic games", "Economic"), ("Wargames", "Wargame"), ("Abstract games", "Abstract Strategy"))}
+# Group: which games are in it. A game of two types is in both.
+BY_TYPE = {name: (lambda g, name=name: is_type(g["b"], name)) for name in TYPES}
 BY_YEAR = {name: (lambda g, a=a, b=b: bool(g["y"]) and a <= g["y"] <= b)
            for name, a, b in [(str(y), y, y) for y in range(2026, 2021, -1)] + [("2010–21", 2010, 2021), ("2000s", 2000, 2009), ("1990s", 1990, 1999)]}
 BY_COMPLEXITY = {name: (lambda g, a=a, b=b: a <= hours.complexity(g["b"]) < b)

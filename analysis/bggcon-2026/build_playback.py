@@ -100,14 +100,22 @@ for c, name in enumerate(SLOTS, 1):
     LABELS.append(dict(t=name, x=round(float(pts[i][0]), 3), y=round(float(pts[i][1]), 3), **pca_spot(np.where(C == c)[0])))
     print(f"label {name:18s} local share {purity[i]:.0%}")
 from regions import regions
-# The busiest region splits cleanly in two (co-op adventure games vs heavy Euros).
+# The busiest region splits cleanly in two (co-op adventure games vs modern strategy games).
 R, lab = regions(rows, con)
 from sklearn.cluster import KMeans
 big = int(np.argmax([r["co"] for r in R])); bm = np.where(lab == big)[0]
 lab[bm] = np.where(KMeans(2, n_init=20, random_state=2026).fit_predict(P[bm]) == 0, big, 100)
+# Another holds several kinds of game: trains and economic games at one end, area control in the middle, lighter strategy games (no label).
+at = {g["n"]: i for i, g in enumerate(rows)}
+wide = np.where(lab == lab[at["Brass: Birmingham"]])[0]
+part = dict(zip(wide, KMeans(4, n_init=20, random_state=1).fit_predict(P[wide])))
+control = {part[at["Root"]], part[at["Blood Rage"]]}
+assert part[at["Brass: Birmingham"]] not in control
+for i in wide:
+    lab[i] = 101 if part[i] in control else 102 + part[i]
 # PLACEHOLDER names (Phil's to write). Each names the region holding its first example; regions not listed get no label.
-NAMES = [("Heavy Euros", ["Agricola", "A Feast for Odin"]), ("Co-op adventures", ["Gloomhaven", "Arkham Horror"]), ("Puzzly tile-layers", ["Cascadia", "Calico"]),
-         ("Economic games", ["Brass: Birmingham", "Power Grid"]), ("Trick-taking & card games", ["SCOUT", "The Crew: The Quest for Planet Nine"]), ("Party & social deduction", ["Codenames", "The Resistance"]),
+NAMES = [("Modern strategy", ["SETI: Search for Extraterrestrial Intelligence", "Dune: Imperium"]), ("Co-op adventures", ["Gloomhaven", "Arkham Horror"]), ("Puzzly tile-layers", ["Cascadia", "Calico"]),
+         ("Trains & economic", ["Brass: Birmingham", "Age of Steam"]), ("Area control", ["Root", "Blood Rage"]), ("Trick-taking & card games", ["SCOUT", "The Crew: The Quest for Planet Nine"]), ("Party & social deduction", ["Codenames", "The Resistance"]),
          ("Kids & dexterity", ["Rhino Hero", "ICECOOL"]), ("Wargames", ["Twilight Struggle", "Undaunted: Normandy"])]
 REG, used = [], {}
 for name, ex in NAMES:
@@ -117,7 +125,7 @@ for name, ex in NAMES:
     used[lab[ids[0]]] = name
     m_ = np.where(lab == lab[ids[0]])[0]
     c_ = m_[np.exp(-((P[m_][:, None] - P[m_][None]) ** 2).sum(2) / (2 * .35**2)).sum(1).argmax()]
-    REG.append(dict(t=name, s=", ".join(x.split(":")[0] for x in ex), x=rows[c_]["x"], y=rows[c_]["y"], **pca_spot(m_)))
+    REG.append(dict(t=name, s=", ".join(x if x.startswith("Dune") else x.split(":")[0] for x in ex), x=rows[c_]["x"], y=rows[c_]["y"], **pca_spot(m_)))
     co_ = sum(len(rows[i]["iv"]) for i in m_)
     print(f"{name:28s} games {len(m_):5d} checkouts {co_:5d} ({co_ / len(m_):.1f}/game)")
 print("labeled share of checkouts", round(sum(len(rows[i]["iv"]) for i in range(len(rows)) if lab[i] in used) / sum(len(g["iv"]) for g in rows), 3))

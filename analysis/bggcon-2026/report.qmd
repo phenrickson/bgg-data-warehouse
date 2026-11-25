@@ -85,14 +85,14 @@ charts.exhibit("facets", data.facets("c", n=100), "Most checked out", "Checkouts
 charts.exhibit("facets", data.facets("p", n=100), "Most in demand", "Share of the con when every copy was out")
 ```
 
-[By category.]
+[By type.]
 
 ```{python}
-charts.exhibit("facets", data.facets("c", data.BY_CATEGORY), "Most checked out, by category", "Checkouts")
+charts.exhibit("facets", data.facets("c", data.BY_TYPE), "Most checked out, by type", "Checkouts")
 ```
 
 ```{python}
-charts.exhibit("facets", data.facets("p", data.BY_CATEGORY), "Most in demand, by category", "Share of the con when every copy was out")
+charts.exhibit("facets", data.facets("p", data.BY_TYPE), "Most in demand, by type", "Share of the con when every copy was out")
 ```
 
 [By year.]
