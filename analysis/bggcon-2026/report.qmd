@@ -20,6 +20,7 @@ import numpy as np
 import report_charts as charts
 import report_data as data
 import stats_complexity_by_hour as hours
+import build_trends
 import stats_patterns
 
 rng = np.random.default_rng(1)
@@ -209,10 +210,12 @@ charts.exhibit("hourly", dict(S=party, ticks=[0, .05, .1, .15, .2], percent=True
 
 ## Patterns over the con
 
-[Games that gained steam, cooled off, or went out mostly by night or by day.]
+[How demand moved: games that got hotter or cooled off, stayed in demand, or went out mostly by night or by day.]
 
 ```{python}
-charts.exhibit("games", dict(views=list(map(list, stats_patterns.groups().items()))), "How availability changed", "When every copy was out")
+views = [[name, build_trends.cards(ids, stats_patterns.HALF_LIFE)] for name, ids in stats_patterns.groups().items()]
+charts.exhibit("trends", dict(views=views, strip=build_trends.D), "How demand changed", "Placeholder: demand is how often every copy was out lately",
+               note=f"Games with at least {stats_patterns.MIN_CHECKOUTS} checkouts. Nights and the Thursday outage are blank.")
 ```
 
 [Closing.]

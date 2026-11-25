@@ -40,6 +40,12 @@ input[type=search]{font:inherit;font-size:16px;color:var(--fg);background:var(--
 .hotname{font-weight:700;color:var(--fg)}
 .facets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 32px;padding:12px 12px 4px 0}.facets.one{grid-template-columns:minmax(0,1fr)}.facet h4{font-size:14px;line-height:1.3;font-weight:600;margin:0 0 6px;padding-bottom:5px;border-bottom:1px solid var(--border)}
 .fp{position:relative}.fp .nm{position:absolute;left:0;font-size:13px;line-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}@media(max-width:560px){.facets{grid-template-columns:minmax(0,1fr)}}
+/* demand over the con, one small chart per game */
+.tc{min-width:0}.tc b{display:block;font-size:15px;line-height:1.3;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tc>span{display:block;font-size:13px;line-height:1.4;color:var(--muted);margin-bottom:4px;font-variant-numeric:tabular-nums}
+.tc svg{display:block;width:100%;overflow:visible}.tc text,.plot .tc text{font-size:9.5px;fill:var(--muted)}.tc text.tr,.plot .tc text.tr{fill:var(--hot)}.tc text.hr,.plot .tc text.hr{fill:var(--lit)}.tc text.up,.plot .tc text.up{fill:var(--w2)}.tc text.dn,.plot .tc text.dn{fill:var(--w0)}
+.tc .hrs{fill:color-mix(in oklab,var(--lit) 78%,var(--bg))}.tc .base{fill:var(--border)}.tc .ln{fill:none}.tc .ln.lib{stroke:var(--muted);stroke-width:.9;opacity:.45}.tc .ln.tr{stroke:var(--hot);stroke-width:1.8}.tc .ln.rt{stroke:url(#rate);stroke-width:1.3}.tc .ln.flat{stroke:var(--muted)}.tc .area{fill:url(#rate);opacity:.4}.tc .zero{stroke:var(--border)}
+.tc .tag{display:none}.tcs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 28px;padding:16px 54px 0 46px}.tcs .tc:nth-child(odd) .axis,.tcs .tc:nth-child(even) .names{display:inline}
+@media(max-width:700px){.tcs{grid-template-columns:minmax(0,1fr)}.tcs .tc .tag{display:inline}.tc text,.plot .tc text{font-size:11.5px}}
 /* the viewer's day colors */
 :root{--day-1:oklch(.62 .14 250);--day-2:oklch(.78 .13 75);--day-3:oklch(.65 .12 170);--day-4:oklch(.62 .12 300);--day-5:oklch(.65 .15 25)}
 /* map */

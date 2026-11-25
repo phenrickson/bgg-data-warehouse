@@ -6,60 +6,18 @@ Shown   The share of each hour when every copy was out; a look-back average of i
         The library line is all copies out, as a share of its own peak. It isn't used in the fit.
 """
 import html
+import re
 
 import numpy as np
 
-from availability import STEPS, all_out_steps, minute
-from checkouts import END, GAMES, K
+from availability import all_out_steps
+from checkouts import GAMES
 from page import DATA, HERE
+from stats_patterns import FITTED, HOURS, OBSERVED, by_hour, demand, library_out, night_gaps
 
 MIN_CHECKOUTS = 3
-HALF_LIVES = [8, 6, 4, 2]  # recorded hours
+HALF_LIVES = [8, 6, 4, 2]  # recorded hours; the page's menu
 DEFAULT_HALF_LIFE = 2  # 4 hours
-
-HOURS = np.arange(8, 96)  # every clock hour from Wed 8 AM, counted from Wed midnight
-FITTED = HOURS >= 12  # from Wed noon
-STEP_HOURS = (STEPS // 60).astype(int)
-OBSERVED = np.array([(STEP_HOURS == h).sum() >= 3 for h in HOURS])  # at least half the hour recorded
-
-
-def by_hour(steps):
-    """Average of a 10-minute series over each clock hour; NaN where it wasn't recorded."""
-    return np.array([steps[STEP_HOURS == h].mean() if ok else np.nan for h, ok in zip(HOURS, OBSERVED)])
-
-
-def trend(y, half_life):
-    """Average of the hours so far, where an hour counts half as much every half_life recorded hours, and how many
-    points it moved from one recorded hour to the next. Looks back only, so it can be worked out live.
-    Starts when the library opens; kept from Wednesday noon.
-    """
-    use = np.where(OBSERVED)[0]
-    weight, average = .5 ** (1 / half_life), np.full(len(HOURS), np.nan)
-    total = count = 0
-    for i in use:
-        total, count = total * weight + y[i], count * weight + 1
-        average[i] = total / count
-    change = np.full(len(HOURS), np.nan)
-    change[use[1:]] = 100 * np.diff(average[use])
-    return np.where(FITTED, average, np.nan), np.where(FITTED, change, np.nan)
-
-
-def library_out():
-    """All copies out by hour, as a share of the peak."""
-    out = np.sort([minute(k["o"]) for k in K])
-    back = np.sort([minute(k["i"] or END) for k in K])
-    y = by_hour(np.searchsorted(out, STEPS, "right") - np.searchsorted(back, STEPS, "right"))
-    return y / np.nanmax(y)
-
-
-def night_gaps(y):
-    """All-out rate after 6 PM minus before 4 PM, on Wednesday (from noon), Friday and Saturday.
-
-    Thursday is left out: most of its evening wasn't recorded.
-    """
-    hour, day = HOURS % 24, HOURS // 24
-    rate = lambda d, part: np.nanmean(y[FITTED & (day == d) & part])
-    return [rate(d, hour >= 18) - rate(d, hour < 16) for d in (0, 2, 3)]
 
 
 # ---------------------------------------------------------------- drawing
@@ -118,9 +76,9 @@ def svg(height, inner):
     return f'<svg viewBox="0 0 {W} {height}">{inner}</svg>'
 
 
-def card(game, library, base):
+def card(game, library, base, half_lives=HALF_LIVES):
     y = by_hour(all_out_steps(game))
-    fits = [trend(y, h) for h in HALF_LIVES]
+    fits = [demand(y, h) for h in half_lives]
     start, mid = np.argmax(FITTED), D // 2
     gaps = night_gaps(y)
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
@@ -133,11 +91,17 @@ def card(game, library, base):
     strip = (f'<text class="up" x="-5" y="{mid - 2}" text-anchor="end">rising</text><text class="dn" x="-5" y="{mid + 10}" text-anchor="end">cooling</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
     name, share = html.escape(game["n"]), np.nanmean(y)
-    return (f'<div class="c" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[DEFAULT_HALF_LIFE][0][FITTED & OBSERVED])}"'
+    return (f'<div class="tc" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[-1 if len(fits) == 1 else DEFAULT_HALF_LIFE][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[OBSERVED][-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[FITTED & OBSERVED]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
             + svg(H, base + bars + f'<path class="ln lib" d="{line(library, at)}"/>' + curves + days + f'<g class="tag axis">{axis}</g><g class="tag names">{names}</g>')
             + svg(D, f'<line class="zero" x2="{W}" y1="{mid}" y2="{mid}"/>{rates}<g class="tag axis">{strip}</g>') + "</div>")
+
+
+def cards(ids, half_life):
+    """Charts for these games, with one half-life, to place in the report."""
+    library, base = library_out(), baseline()
+    return re.sub(r' data-[a-z]+="[^"]*"', "", "".join(card(GAMES[b], library, base, [half_life]) for b in ids))
 
 
 def main():

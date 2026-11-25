@@ -1,73 +1,85 @@
-"""Which games' availability changed or cycled over the con?
+"""How each game's demand moved over the con, and which games show the clearest patterns.
 
-Data       Games with a known copy count and at least MIN_CHECKOUTS checkouts, in 10-minute steps of
-           observed open time, each marked 1 if every copy was out.
-Compared   Gained / cooled: the share of time every copy was out before vs. after the moment that
-           makes the two differ most. Night / day: after 6 PM vs. before 4 PM, day by day.
-Chance     Not tested here. These are cutoffs for finding examples. The test is in steam.py: 9 of 357
-           games pass p < .05 for gaining, where luck alone gives about 18.
-Output     Numbers only. A game goes in the first group it fits.
+Data       Games with a known copy count, by clock hour, Wed-Sat. Each hour is the share of it when every copy was out.
+Demand     Average of the hours so far, where an hour counts half as much every HALF_LIFE recorded hours.
+           Looks back only, so it could be worked out live.
+Groups     Games with at least MIN_CHECKOUTS, the strongest few of each. These are descriptions, not tests.
+             Got hotter / Cooled off   average demand on Fri-Sat against Wed noon-Thu
+             In demand all con         the highest low point: demand never dropped far
+             Night / Daytime games     all out more after 6 PM than before 4 PM (or less) on Wed, Fri and Sat;
+                                       ordered by the day with the smallest difference
+Output     Numbers only. The drawing is in build_trends.py.
 """
 import numpy as np
 
-from availability import STEP_DAY, STEP_HOUR, STEPS, all_out_steps
-from checkouts import GAMES
+from availability import STEPS, all_out_steps, minute
+from checkouts import END, GAMES, K
 
-MIN_CHECKOUTS = 6
-MIN_CHANGE = 0.45       # gained / cooled: difference in share of time, before vs. after
-MIN_SIDE = 48           # at least 8 observed hours on each side of the moment
-SATURDAY_NOON = 3 * 1440 + 720  # cooling after this is the con winding down
-MIN_DAYS = 3            # night / day: on at least 3 of the 4 days...
-MIN_DAY_GAP = 0.15      # ...by more than this each day...
-MIN_MEAN_GAP = 0.25     # ...and by this much on average
+HALF_LIFE = 4  # recorded hours
+MIN_CHECKOUTS = 8
+PER_GROUP = 6
 LEFT_OUT = {"Braided Skies"}  # probably reached the library Friday night
 
-WED_TO_SAT = STEP_DAY < 4  # on Sunday nearly everything cools
+HOURS = np.arange(8, 96)  # every clock hour from Wed 8 AM, counted from Wed midnight
+FITTED = HOURS >= 12  # from Wed noon: before that the rise is just the library opening full
+STEP_HOURS = (STEPS // 60).astype(int)
+OBSERVED = np.array([(STEP_HOURS == h).sum() >= 3 for h in HOURS])  # at least half the hour recorded
 
 
-def biggest_change(out):
-    """Largest rise and largest fall in share of time out, over every moment to split at."""
-    u = out[WED_TO_SAT]
-    n, total = len(u), np.cumsum(u)
-    split = np.arange(MIN_SIDE - 1, n - MIN_SIDE)
-    before = total[split] / (split + 1)
-    after = (total[-1] - total[split]) / (n - split - 1)
-    fall = np.argmax(before - after)
-    fell_at = STEPS[WED_TO_SAT][split[fall]] + 5
-    return (after - before).max(), (before - after).max(), fell_at
+def by_hour(steps):
+    """Average of a 10-minute series over each clock hour; NaN where it wasn't recorded."""
+    return np.array([steps[STEP_HOURS == h].mean() if ok else np.nan for h, ok in zip(HOURS, OBSERVED)])
 
 
-def night_and_day(out):
-    """Share of time out, per day (Wed-Sat): after 6 PM, and before 4 PM."""
-    night = np.array([out[(STEP_DAY == d) & (STEP_HOUR >= 18)].mean() for d in range(4)])
-    day = np.array([out[(STEP_DAY == d) & (STEP_HOUR < 16)].mean() for d in range(4)])
-    return night, day
+def demand(y, half_life=HALF_LIFE):
+    """The look-back average, and how many points it moved from one recorded hour to the next.
+
+    Starts when the library opens; kept from Wednesday noon.
+    """
+    use = np.where(OBSERVED)[0]
+    weight, average = .5 ** (1 / half_life), np.full(len(HOURS), np.nan)
+    total = count = 0
+    for i in use:
+        total, count = total * weight + y[i], count * weight + 1
+        average[i] = total / count
+    change = np.full(len(HOURS), np.nan)
+    change[use[1:]] = 100 * np.diff(average[use])
+    return np.where(FITTED, average, np.nan), np.where(FITTED, change, np.nan)
+
+
+def library_out():
+    """All copies out by hour, as a share of the peak."""
+    out = np.sort([minute(k["o"]) for k in K])
+    back = np.sort([minute(k["i"] or END) for k in K])
+    y = by_hour(np.searchsorted(out, STEPS, "right") - np.searchsorted(back, STEPS, "right"))
+    return y / np.nanmax(y)
+
+
+def night_gaps(y):
+    """All-out rate after 6 PM minus before 4 PM, on Wednesday (from noon), Friday and Saturday.
+
+    Thursday is left out: most of its evening wasn't recorded.
+    """
+    hour, day = HOURS % 24, HOURS // 24
+    rate = lambda d, part: np.nanmean(y[FITTED & (day == d) & part])
+    return [rate(d, hour >= 18) - rate(d, hour < 16) for d in (0, 2, 3)]
 
 
 def groups():
-    """{group: [game id, ...]}, strongest first."""
+    """{group: [game id, ...]}, strongest first. A game can be in more than one."""
     rows = []
     for b, g in GAMES.items():
         if not g["k"] or g["c"] < MIN_CHECKOUTS or g["n"] in LEFT_OUT:
             continue
-        out = all_out_steps(g)
-        rise, fall, fell_at = biggest_change(out)
-        night, day = night_and_day(out)
-        rows.append(dict(b=b, rise=rise, fall=fall, fell_at=fell_at, gaps=night - day, gap=night.mean() - day.mean()))
-    rules = {
-        "Gained steam": (lambda r: r["rise"] >= MIN_CHANGE, lambda r: -r["rise"]),
-        "Cooled off": (lambda r: r["fall"] >= MIN_CHANGE and r["fell_at"] <= SATURDAY_NOON, lambda r: -r["fall"]),
-        "Night games": (lambda r: (r["gaps"] > MIN_DAY_GAP).sum() >= MIN_DAYS and r["gap"] >= MIN_MEAN_GAP, lambda r: -r["gap"]),
-        "Daytime games": (lambda r: (r["gaps"] < -MIN_DAY_GAP).sum() >= MIN_DAYS and -r["gap"] >= MIN_MEAN_GAP, lambda r: r["gap"]),
-    }
-    used, result = set(), {}
-    for name, (fits, order) in rules.items():
-        picked = sorted((r for r in rows if fits(r) and r["b"] not in used), key=order)
-        used.update(r["b"] for r in picked)
-        result[name] = [r["b"] for r in picked]
-    return result
+        y = by_hour(all_out_steps(g))
+        line, _ = demand(y)
+        gaps = night_gaps(y)
+        rows.append(dict(b=b, shift=np.nanmean(line[HOURS >= 48]) - np.nanmean(line[HOURS < 48]), low=np.nanmin(line), night=min(gaps), day=-max(gaps)))
+    top = lambda key: [r["b"] for r in sorted(rows, key=key, reverse=True)[:PER_GROUP]]
+    return {"Got hotter": top(lambda r: r["shift"]), "Cooled off": top(lambda r: -r["shift"]), "In demand all con": top(lambda r: r["low"]),
+            "Night games": top(lambda r: r["night"]), "Daytime games": top(lambda r: r["day"])}
 
 
 if __name__ == "__main__":
     for name, ids in groups().items():
-        print(f"{name}: {len(ids)}", [GAMES[b]["n"] for b in ids[:8]])
+        print(f"{name}:", [(GAMES[b]["n"], GAMES[b]["k"], GAMES[b]["c"]) for b in ids])

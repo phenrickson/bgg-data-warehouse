@@ -174,6 +174,15 @@ const R = (() => {
     }
   }
 
+  // Demand over the con: a tab per group of games, each a few small charts (drawn in build_trends.py). views: [[group, html]]
+  function trends(el, { views, strip }) {
+    const bar = make('div', 'bar', el), key = make('div', '', el), box = make('div', 'tcs', el);
+    box.insertAdjacentHTML('beforebegin', `<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="rate" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2="${strip}"><stop offset=".485" stop-color="var(--w2)"/><stop offset=".485" stop-color="var(--muted)"/><stop offset=".515" stop-color="var(--muted)"/><stop offset=".515" stop-color="var(--w0)"/></linearGradient></defs></svg>`);
+    legend(key, [['color-mix(in oklab,var(--lit) 78%,var(--bg))', 'All out (share of the hour)'], ['var(--hot)', 'Demand', '2px solid'], ['var(--muted)', 'Library (share of its peak)', '1px solid'], ['var(--w2)', 'Rising'], ['var(--w0)', 'Cooling']]);
+    const put = i => { box.innerHTML = views[i][1]; };
+    seg(bar, 'Games', views.map(([t], i) => [i, t]), 0, put); put(0);
+  }
+
   // Bars: [[label, value, tooltip label]]
   function barChart(el, { items, what, muted = 0 }) {
     fit(el, w => {
@@ -281,5 +290,5 @@ const R = (() => {
       });
     }
   }
-  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, facets, eachDay, stack, pairs, days };
+  return { data, seg, fit, show, hide, row, timeline, games, lookup, barChart, dots, share, hourly, facets, trends, eachDay, stack, pairs, days };
 })();
