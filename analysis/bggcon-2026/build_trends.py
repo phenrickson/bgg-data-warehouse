@@ -1,8 +1,8 @@
 """Writes trends.html: how each game's availability moved over the con, one small chart per game.
 
 Data    Games with a known copy count and at least MIN_CHECKOUTS checkouts, Wed-Sat.
-Shown   The share of each hour when every copy was out; a look-back average of it from Wednesday noon
-        (before that the rise is just the library opening full); and how that average has moved lately.
+Shown   The share of each hour when every copy was out; a look-back average of it, from Wednesday noon
+        (before that the rise is just the library opening full); and that average's change each hour.
         The library line is all copies out, as a share of its own peak. It isn't used in the fit.
 """
 import html
@@ -30,17 +30,18 @@ def by_hour(steps):
 
 def trend(y, half_life):
     """Average of the hours so far, where an hour counts half as much every half_life recorded hours, and how many
-    points that average has moved in the last half_life hours. Looks back only, so it can be worked out live.
+    points it moved from one recorded hour to the next. Looks back only, so it can be worked out live.
+    Starts when the library opens; kept from Wednesday noon.
     """
-    use = np.where(OBSERVED & FITTED)[0]
+    use = np.where(OBSERVED)[0]
     weight, average = .5 ** (1 / half_life), np.full(len(HOURS), np.nan)
     total = count = 0
     for i in use:
         total, count = total * weight + y[i], count * weight + 1
         average[i] = total / count
     change = np.full(len(HOURS), np.nan)
-    change[use[half_life:]] = 100 * (average[use[half_life:]] - average[use[:-half_life]])
-    return average, change
+    change[use[1:]] = 100 * np.diff(average[use])
+    return np.where(FITTED, average, np.nan), np.where(FITTED, change, np.nan)
 
 
 def library_out():
@@ -64,7 +65,7 @@ def night_gaps(y):
 # ---------------------------------------------------------------- drawing
 
 W, H, D = 300, 74, 28  # chart width, height, and height of the rate-of-change strip
-MAX_RATE = 60  # points, at the strip's edge
+MAX_RATE = 20  # points an hour, at the strip's edge
 BAR = W / len(HOURS)
 
 
@@ -125,7 +126,7 @@ def card(game, library, base):
     bars = "".join(f'<rect class="hrs" x="{j * BAR:.1f}" width="{BAR:.1f}" y="{at(v):.1f}" height="{at(0) - at(v):.1f}"/>'
                    for j, v in enumerate(y) if np.isfinite(v) and v > 0)
     curves = "".join(f'<path class="ln tr v{i}" d="{line(np.where(OBSERVED, f, np.nan), at)}"/>' for i, (f, _) in enumerate(fits))
-    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 3 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate((f, np.where(OBSERVED, r, np.nan)) for f, r in fits))
+    rates = "".join(f'<path class="area v{i}" d="{area(r)}"/><path class="ln rt{" flat" if np.nanmax(abs(r)) < 1 else ""} v{i}" d="{line(r, rate_at)}"/>' for i, (_, r) in enumerate((f, np.where(OBSERVED, r, np.nan)) for f, r in fits))
     days = "".join(f'<text x="{max(0, d * 24) * BAR:.0f}" y="8">{n}</text>' for d, n in enumerate(("Wed", "Thu", "Fri", "Sat")))
     axis = f'<text x="-5" y="{at(1) + 3:.0f}" text-anchor="end">100%</text><text x="-5" y="{at(0) + 3:.0f}" text-anchor="end">0%</text>'
     names = "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
