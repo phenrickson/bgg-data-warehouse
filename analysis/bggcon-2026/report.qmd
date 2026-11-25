@@ -1,0 +1,223 @@
+---
+# All titles, descriptions, notes and bracketed text are placeholders. Phil writes the copy.
+title: "Placeholder title"
+subtitle: "Placeholder subtitle"
+format:
+  html:
+    minimal: true
+    theme: none
+    embed-resources: true
+    css: report.css
+execute:
+  echo: false
+  warning: false
+  daemon: false  # start Python fresh each render
+---
+
+```{python}
+import numpy as np
+
+import report_charts as charts
+import report_data as data
+import stats_complexity_by_hour as hours
+import build_trends
+import stats_patterns
+
+rng = np.random.default_rng(1)
+charts.setup(data.GAMES_TABLE)
+```
+
+[Opening.]
+
+## How the data was collected
+
+[How we collected it, the API rules, and the outage.]
+
+```{python}
+charts.exhibit("timeline", data.timeline(), "Checkouts through the con", "Library hours only", note="Placeholder note.")
+```
+
+```{python}
+day, hour, most = data.busiest_hour()
+charts.numbers([[f"{len(data.K):,}", "checkouts"], [f"{len(data.GAMES):,}", "different games checked out"], [f"{day} {hour}", f"busiest hour · {most} checkouts"]])
+```
+
+```{python}
+charts.exhibit("barChart", dict(items=data.by_day(), what="Checkouts"), "Checkouts each day", note="Most of Thursday afternoon and evening wasn't recorded (2–9 PM). Sunday is 8 AM–1 PM.")
+```
+
+```{python}
+charts.exhibit("eachDay", data.by_hour_each_day(), "Each day, hour by hour", "Checkouts per hour", note="Thursday 2–9 PM and most of Saturday 1 PM weren't recorded.")
+```
+
+[Complexity and rating.]
+
+```{python}
+charts.game_map("Complexity and average rating", "Color is the share of the con when every copy was out", note="Games with at least 30 ratings and a complexity rating.", scatter=True, color="unavailable", top=.8)
+```
+
+[The map.]
+
+```{python}
+charts.game_map("Every game in the library", "Games near each other are similar", note="Some games, mostly expansions, aren't shown.", still=True)
+```
+
+[In demand.]
+
+```{python}
+charts.game_map("The most in-demand games", "Color is the share of the con when every copy was out", note="Some games, mostly expansions, aren't shown.", still=True, color="unavailable", top=.8)
+```
+
+[Playback.]
+
+```{python}
+charts.game_map("The con, played back", "Press Play to watch the con", note="* Some games, mostly expansions, aren't shown on the map.")
+```
+
+## Most checked out and most in demand
+
+[Most checked out and most in demand.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", n=100), "Most checked out", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", n=100), "Most in demand", "Share of the con when every copy was out")
+```
+
+[By type.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", data.BY_TYPE), "Most checked out, by type", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", data.BY_TYPE), "Most in demand, by type", "Share of the con when every copy was out")
+```
+
+[By year.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", data.BY_YEAR), "Most checked out, by year published", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", data.BY_YEAR), "Most in demand, by year published", "Share of the con when every copy was out")
+```
+
+[By complexity.]
+
+```{python}
+charts.exhibit("facets", data.facets("c", data.BY_COMPLEXITY), "Most checked out, by complexity", "Checkouts")
+```
+
+```{python}
+charts.exhibit("facets", data.facets("p", data.BY_COMPLEXITY), "Most in demand, by complexity", "Share of the con when every copy was out")
+```
+
+## The most in-demand games
+
+[Hot Games, and the hottest games that weren't on the list.]
+
+```{python}
+charts.exhibit("games", dict(sort=True, search=True, views=[
+    ["All", data.ranked()], ["Hot Games list", data.ranked(lambda g: g["hot"])], ["Not on the list", data.ranked(lambda g: not g["hot"])]]),
+    "Most in demand", "Share of the con when every copy was out", note="Placeholder note.")
+```
+
+[By year.]
+
+```{python}
+charts.exhibit("games", dict(sort=True, views=[[str(y), data.ranked(lambda g: g["y"] == y)] for y in range(2026, 2021, -1)]),
+               "Most in demand, by year published", "Share of the con when every copy was out")
+```
+
+```{python}
+dots, rate = data.by_year()
+charts.exhibit("dots", dict(games=dots, names=data.YEAR_NAMES, ticks=data.YEAR_TICKS, what="Published"), "Every game in the library, by year published")
+```
+
+```{python}
+charts.exhibit("share", dict(rate=rate, names=data.YEAR_NAMES, ticks=data.YEAR_TICKS, what="Published", max=1), "Share of library games checked out, by year published")
+```
+
+[Older games.]
+
+```{python}
+charts.exhibit("games", dict(sort=True, views=[["1990–2015", data.ranked(lambda g: g["y"] and 1990 <= g["y"] <= 2015)],
+    *[[n, data.ranked(lambda g, a=a, b=b: g["y"] and a <= g["y"] <= b)] for n, a, b in (("1990s", 1990, 1999), ("2000s", 2000, 2009), ("2010–15", 2010, 2015))]]),
+    "Most in demand, older games", "Share of the con when every copy was out")
+```
+
+## Games checked out once
+
+[Games checked out only once.]
+
+```{python}
+charts.exhibit("barChart", dict(items=data.checkouts_per_game(), what="Games", muted=1), "Games by number of checkouts", "Every library game, plus games checked out that aren't in the library list")
+```
+
+```{python}
+charts.exhibit("games", dict(search=True, views=[["Once", data.ranked(lambda g: g["c"] == 1)]]), "Checked out once")
+```
+
+## Look up a game
+
+[One game's availability over the con.]
+
+```{python}
+charts.exhibit("lookup", "964", "One game's availability", "Each cell is 15 minutes")
+```
+
+## Complexity
+
+[Complexity of what was checked out.]
+
+```{python}
+dots, rate = data.by_complexity()
+charts.exhibit("dots", dict(games=dots, names=data.COMPLEXITY_NAMES, ticks=data.COMPLEXITY_TICKS, what="Complexity"), "Every game in the library, by complexity")
+```
+
+```{python}
+charts.exhibit("share", dict(rate=rate, names=data.COMPLEXITY_NAMES, ticks=data.COMPLEXITY_TICKS, what="Complexity", max=.6), "Share of library games checked out, by complexity")
+```
+
+## Complexity by time of day
+
+[Complexity and time of day.]
+
+```{python}
+checkouts = hours.load()                 # one row per checkout: day, hour, complexity
+result = hours.test(checkouts, rng)      # is the hour-to-hour change more than chance?
+by_hour = hours.summary(checkouts, rng)  # averages, and the range chance alone would give
+party = hours.summary(hours.load(hours.in_category("Party Game")), rng)
+```
+
+```{python}
+charts.exhibit("hourly", dict(S=by_hour, ticks=[1.8, 2, 2.2, 2.4, 2.6, 2.8]), "Average complexity by time of day")
+```
+
+[Numbers come from the code: `{python} f"{result['n']:,}"` checkouts, from `{python} f"{by_hour['m'][0]:.2f}"` at 8 AM to `{python} f"{by_hour['m'][-1]:.2f}"` at 11 PM. Hour explains `{python} f"{result['share_explained']:.0%}"` of the variation (p = `{python} f"{result['p_hours_shuffle']:.4f}"`).[^method]]
+
+```{python}
+charts.exhibit("stack", dict(H=by_hour["H"], n=by_hour["n"], mix=data.complexity_mix(checkouts), names=data.COMPLEXITY_NAMES), "Mix of complexity by time of day")
+```
+
+```{python}
+charts.exhibit("hourly", dict(S=party, ticks=[0, .05, .1, .15, .2], percent=True), "Share of checkouts that were party games")
+```
+
+## Patterns over the con
+
+[How demand moved: games that got hotter or cooled off, stayed in demand, or went out mostly by night or by day.]
+
+```{python}
+views = [[name, build_trends.cards(ids, stats_patterns.HALF_LIFE)] for name, ids in stats_patterns.groups().items()]
+charts.exhibit("trends", dict(views=views, strip=build_trends.D), "How demand changed", "Placeholder: demand is how often every copy was out lately",
+               note=f"Games with at least {stats_patterns.MIN_CHECKOUTS} checkouts. Nights and the Thursday outage are blank.")
+```
+
+[Closing.]
+
+[^method]: [Method note.]
