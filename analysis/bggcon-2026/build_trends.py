@@ -90,7 +90,7 @@ def card(game, library, base, half_lives=HALF_LIVES):
     names = "".join(f'<g class="v{i}">{end_labels(library, f)}</g>' for i, (f, _) in enumerate(fits))
     strip = (f'<text class="up" x="-5" y="{mid - 2}" text-anchor="end">rising</text><text class="dn" x="-5" y="{mid + 10}" text-anchor="end">cooling</text>')
     numbers = lambda f: ",".join(f"{f(v):.4f}" for v, _ in fits)
-    name, share = html.escape(game["n"]), np.nanmean(y)
+    name, share = html.escape(game["n"]), game["p"] / 100  # Wed-Sun, as in the rankings
     return (f'<div class="tc" data-n="{name.lower()}" data-k="{game["k"]}" data-c="{game["c"]}" data-m="{share:.4f}" data-night="{min(gaps):.3f}" data-day="{-max(gaps):.3f}" data-t="{",".join(f"{v:.2f}" for v in fits[-1 if len(fits) == 1 else DEFAULT_HALF_LIFE][0][FITTED & OBSERVED])}"'
             f' data-nets="{numbers(lambda v: v[OBSERVED][-1] - v[start])}" data-amps="{numbers(lambda v: np.ptp(v[FITTED & OBSERVED]))}">'
             f'<b>{name}</b><span>{game["k"]} cop{"y" if game["k"] == 1 else "ies"} · {game["c"]} checkouts · all out {share:.0%}</span>'
