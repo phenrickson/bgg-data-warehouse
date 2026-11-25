@@ -114,16 +114,11 @@ function placeLabels() {
   }
 }
 const LABEL_FONT = '600 13px system-ui, sans-serif';
-// The two PCA dimensions: a faint axis each, named at its ends. PLACEHOLDER copy (Phil's to write)
-const AXES = { a: ['Lighter', 'Heavier'], b2: ['Solo and co-op', 'Bigger groups'] };
+// The two PCA dimensions, named along the edges: complexity left to right, interactivity bottom to top.
 function axes() {
-  const [ox, oy] = place({ [X]: 0, [Y]: 0 });
-  mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = .55; mx.strokeStyle = cols['--muted']; mx.lineWidth = 1;
-  mx.beginPath(); mx.moveTo(0, oy); mx.lineTo(W, oy); mx.moveTo(ox, 0); mx.lineTo(ox, H); mx.stroke(); mx.globalAlpha = 1;
-  mx.lineJoin = 'round'; mx.textBaseline = 'middle';
-  const put = (t, sub, x, y, align) => { mx.textAlign = align; for (const [s, dy, font, ink] of [[t, 0, LABEL_FONT, '--fg'], [sub, 16, '11px system-ui, sans-serif', '--muted']]) { mx.font = font; mx.lineWidth = 5; mx.strokeStyle = cols['--bg']; mx.strokeText(s, x, y + dy); mx.fillStyle = cols[ink]; mx.fillText(s, x, y + dy); } };
-  put('← ' + AXES.a[0], 'Component 1', 12, oy - 22, 'left'); put(AXES.a[1] + ' →', 'Component 1', W - 12, oy - 22, 'right');
-  put('↑ ' + AXES.b2[1], 'Component 2', ox + 10, 18, 'left'); put('↓ ' + AXES.b2[0], 'Component 2', ox + 10, H - 32, 'left');
+  mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = LABEL_FONT; mx.fillStyle = cols['--muted']; mx.textAlign = 'center'; mx.textBaseline = 'middle';
+  mx.fillText('Complexity →', W / 2, H - 16);
+  mx.save(); mx.translate(16, H / 2); mx.rotate(-Math.PI / 2); mx.fillText('Interactivity →', 0, 0); mx.restore();
 }
 function labels() {
   if ($('lab').value === 'D') return axes();

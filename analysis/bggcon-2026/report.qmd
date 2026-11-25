@@ -33,16 +33,16 @@ charts.setup(data.GAMES_TABLE)
 [How we collected it, the API rules, and the outage.]
 
 ```{python}
+charts.exhibit("timeline", data.timeline(), "Checkouts through the con", "Library hours only", note="Placeholder note.")
+```
+
+```{python}
 day, hour, most = data.busiest_hour()
 charts.numbers([[f"{len(data.K):,}", "checkouts"], [f"{len(data.GAMES):,}", "different games checked out"], [f"{day} {hour}", f"busiest hour · {most} checkouts"]])
 ```
 
 ```{python}
 charts.exhibit("barChart", dict(items=data.by_day(), what="Checkouts"), "Checkouts each day", note="Most of Thursday afternoon and evening wasn't recorded (2–9 PM). Sunday is 8 AM–1 PM.")
-```
-
-```{python}
-charts.exhibit("timeline", data.timeline(), "Checkouts through the con", "Library hours only", note="Placeholder note.")
 ```
 
 [The map.]
