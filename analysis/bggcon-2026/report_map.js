@@ -73,7 +73,7 @@ function layout() { [X, Y] = $('proj').value === 'pca' ? ['a', 'b2'] : ['x', 'y'
 function place(g) { const s = Math.min((W - 32) / (x1 - x0), (H - 32) / (y1 - y0)); return [W / 2 + (g[X] - (x0 + x1) / 2) * s, H / 2 - (g[Y] - (y0 + y1) / 2) * s]; }
 function size() {
   layout();
-  dpr = devicePixelRatio || 1; W = $('wrap').clientWidth - 2; H = Math.round(Math.min(W * (W < 560 ? 1.1 : .72), 640));
+  dpr = devicePixelRatio || 1; W = $('wrap').clientWidth; H = Math.round(Math.min(W * (W < 560 ? 1.1 : .9), 640));
   map.width = W * dpr; map.height = H * dpr; map.style.height = H + 'px';
   line.width = line.clientWidth * dpr; line.height = 40 * dpr;
   cols = Object.fromEntries(['--bg', '--fg', '--muted', '--border', '--context', '--lit', '--flash', '--closed', '--d0', '--d1', '--d2', '--n0', '--w0', '--w1', '--w2', ...CATNAMES.map((_, i) => '--c' + i)].map(k => [k, css(k)]));

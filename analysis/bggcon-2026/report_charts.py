@@ -39,7 +39,7 @@ def game_map(title, desc="", note="", still=False, color="weight", top=None):
     data = (DATA / "playback.json").read_text(encoding="utf-8")
     load = "" if getattr(game_map, "loaded", False) else "const MAPDATA=" + data + ";" + _read("report_map.js")
     game_map.loaded = True  # the data and code go in the page once
-    return HTML(f'<figure class="wide" id="{i}"><figcaption><b>{title}</b><span>{desc}</span></figcaption>{_read("report_map.html")}{src}</figure>'
+    return HTML(f'<figure id="{i}"><figcaption><b>{title}</b><span>{desc}</span></figcaption>{_read("report_map.html")}{src}</figure>'
                 f'<script>{load}R.map(document.querySelector("#{i} .cmap"),MAPDATA,{opts});</script>')
 
 
