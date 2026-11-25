@@ -98,7 +98,7 @@ function outageNote() {
 let spots = [], placedFor = '';
 const cross = (ax, ay, bx, by, cx, cy, dx, dy) => { const o = (px, py, qx, qy, rx, ry) => Math.sign((qx - px) * (ry - py) - (qy - py) * (rx - px)); return o(ax, ay, bx, by, cx, cy) !== o(ax, ay, bx, by, dx, dy) && o(cx, cy, dx, dy, ax, ay) !== o(cx, cy, dx, dy, bx, by); };
 function placeLabels() {
-  mx.font = LABEL_FONT; spots = []; placedFor = $('lab').value; if (!placedFor || placedFor === 'D') return;
+  mx.font = LABEL_FONT; spots = []; placedFor = $('lab').value; if (!placedFor) return;
   const order = DATA[placedFor].map(l => { const [x, y] = place(l); return { t: l.t, x, y, s: l.s || '', w: Math.max(mx.measureText(l.t).width, (l.s || '').length * 5.8) + 8, h: l.s ? 36 : 20 }; });
   for (const l of order) {
     let best = null;
@@ -121,7 +121,6 @@ function axes() {
   mx.save(); mx.translate(16, H / 2); mx.rotate(-Math.PI / 2); mx.fillText('Interactivity →', 0, 0); mx.restore();
 }
 function labels() {
-  if ($('lab').value === 'D') return axes();
   if (placedFor !== $('lab').value) placeLabels();
   mx.setTransform(dpr, 0, 0, dpr, 0, 0); mx.globalAlpha = 1; mx.font = LABEL_FONT; mx.textBaseline = 'middle'; mx.textAlign = 'center'; mx.lineJoin = 'round';
   for (const l of spots) {
@@ -150,6 +149,7 @@ function draw() {
     for (const g of DATA.OFF) if (whole || (build ? g.iv.some(([a]) => a <= t) : outCount(g, t))) ng++;
     mx.globalAlpha = 1;
   }
+  if ($('proj').value === 'pca') axes();
   if ($('lab').value) labels();
   $('clock').textContent = whole ? 'Whole con' : clock(Math.floor(t / 10) * 10);
   $('n').textContent = un && !build ? '' : whole ? `${ng.toLocaleString()} of ${DATA.N.toLocaleString()} games checked out*` : build ? `${ng.toLocaleString()} games checked out so far*` : `${ng.toLocaleString()} games out*`;
@@ -225,10 +225,10 @@ let setLab;
 for (const i of ['proj', 'mode', 'by', 'lab']) { // the viewer's segmented control in place of each menu
   const s = $(i); if (i === 'lab') s.value = $('wrap').clientWidth < 560 ? '' : 'R'; // no room for region names on a phone
   const set = R.seg(s.parentNode, s.parentNode.firstChild.textContent.trim(), [...s.options].map(o => [o.value, o.text]), s.value, v => { s.value = v; s.onchange(); });
-  if (i === 'lab') setLab = v => { s.value = v; set(v); s.parentNode.querySelector('[data-v=D]').hidden = $('proj').value !== 'pca'; };
+  if (i === 'lab') setLab = v => { s.value = v; set(v); };
 }
 const regions = $('lab').value; setLab(regions);
-$('proj').onchange = () => { setLab($('proj').value === 'pca' ? 'D' : regions); size(); }; // PCA opens on its dimensions
+$('proj').onchange = () => { setLab($('proj').value === 'pca' ? '' : regions); size(); }; // PCA opens with just its two dimensions named
 $('lab').onchange = $('by').onchange = $('mode').onchange = () => { key(); draw(); }; label(); let lastW = $('wrap').clientWidth; new ResizeObserver(() => { const w = $('wrap').clientWidth; if (w && w !== lastW) { lastW = w; size(); } }).observe($('wrap')); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', size);
 size(); if (!still) requestAnimationFrame(ts => { last = ts; tick(ts); });
 };
